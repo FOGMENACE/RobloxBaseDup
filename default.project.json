@@ -1,0 +1,20 @@
+{
+  "name": "RobloxBase",
+  "tree": {
+    "$className": "DataModel",
+
+    "ServerScriptService": {
+      "$path": "src/server"
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "src/client"
+      }
+    },
+
+    "ReplicatedStorage": {
+      "$path": "src/shared"
+    }
+  }
+}
