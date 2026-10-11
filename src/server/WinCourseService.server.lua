@@ -3,63 +3,49 @@
 --
 -- SERVER ONLY
 --
--- FLOW:
+-- RESPONSIBILITY:
 --
--- RunController
---      |
---      v
--- StartWinCourse (BindableEvent)
---      |
---      v
--- WinCourseService
---      |
---      v
--- WinCourseGenerator.Generate()
+-- 1. Validate Win Course start
+-- 2. Freeze/prep the ball
+-- 3. Generate Win Course
+-- 4. Move ball ONCE to official start
+-- 5. Initialize Win Course speed state
+-- 6. Initialize oil boost state
+-- 7. Hand movement ownership to WinCourseProgressService
 --
--- RESPONSIBILITIES:
 --
--- 1. Receive StartWinCourse
--- 2. Validate player + ball
--- 3. Freeze ball
--- 4. Remove lobby Win Course preview
--- 5. Generate actual WinCourse
--- 6. Ask WinCourseGenerator for the official
---    Win Course starting position
--- 7. Move ball to that position
--- 8. Release ball
+-- MOVEMENT OWNERSHIP:
 --
--- IMPORTANT:
+-- BallPhysicsController
+--     -> Lobby
+--     -> Normal Course
 --
--- WinCourseGenerator is the SINGLE SOURCE OF TRUTH
--- for Win Course positioning and tile configuration.
+-- WinCourseProgressService
+--     -> Win Course
 --
--- THIS SERVICE DOES NOT:
+-- WinCourseService NEVER moves the ball after
+-- activation.
 --
--- - Duplicate START_POSITION
--- - Duplicate TILE_SPACING
--- - Configure tile colors
--- - Configure trophy UI
--- - Create SurfaceGui
--- - Create BillboardGui
--- - Create ImageLabel
--- - Create WinAmount
--- - Create TrophyDecal
--- - Create ColorOverlay
--- - Move individual tile children
 --
--- CURRENT WIN TILE HIERARCHY:
+-- WIN COURSE BALL:
 --
--- WinTile
--- ├── Floor
--- │
--- └── TrophyDisplay
---     └── SurfaceGui
---         ├── ImageLabel
---         └── WinAmount
+--     Anchored = true
+--     Server owned
 --
--- SurfaceGui is directly inside TrophyDisplay.
 --
--- ImageLabel and WinAmount are directly inside SurfaceGui.
+-- SPEED:
+--
+-- BallDefinitions.ForwardSpeed
+--     -> base Win Course speed
+--
+-- WinCourseOilBoost
+--     -> oil speed multiplier
+--
+-- WinCourseCurrentSpeed
+--     -> authoritative current speed
+--
+-- WinCourseProgressService is responsible for
+-- accelerating this speed every frame.
 --------------------------------------------------
 
 
@@ -75,6 +61,18 @@ local ServerScriptService =
 
 local Workspace =
 	game:GetService("Workspace")
+
+
+--------------------------------------------------
+-- BALL DEFINITIONS
+--------------------------------------------------
+
+local BallDefinitions =
+	require(
+		ServerScriptService:WaitForChild(
+			"BallDefinitions"
+		)
+	)
 
 
 --------------------------------------------------
@@ -101,6 +99,7 @@ local startWinCourse =
 		"StartWinCourse"
 	)
 
+
 if not startWinCourse:IsA("BindableEvent") then
 
 	error(
@@ -118,6 +117,7 @@ local generatorModule =
 	ServerScriptService:WaitForChild(
 		"WinCourseGenerator"
 	)
+
 
 if not generatorModule:IsA("ModuleScript") then
 
@@ -192,10 +192,464 @@ end
 
 
 --------------------------------------------------
+-- SETTINGS
+--------------------------------------------------
+
+--------------------------------------------------
+-- Same acceleration model as normal course.
+--
+-- BallPhysicsController uses:
+--
+--     COURSE_ACCELERATION = 12
+--
+-- Keep the Win Course identical.
+--------------------------------------------------
+
+local WIN_COURSE_ACCELERATION =
+	12
+
+
+--------------------------------------------------
+-- Starting speed.
+--
+-- This is only a fallback.
+--
+-- The actual ball ForwardSpeed from
+-- BallDefinitions is preferred.
+--------------------------------------------------
+
+local WIN_COURSE_FALLBACK_SPEED =
+	10
+
+
+--------------------------------------------------
+-- Minimum speed.
+--------------------------------------------------
+
+local WIN_COURSE_MIN_SPEED =
+	6
+
+
+--------------------------------------------------
+-- Oil boost.
+--
+-- The ProgressService should increase this when
+-- oil is collected.
+--
+-- This value is intentionally initialized to 0.
+--------------------------------------------------
+
+local DEFAULT_OIL_BOOST =
+	0
+
+
+--------------------------------------------------
 -- STATE
 --------------------------------------------------
 
 local winCourseBusy = {}
+
+
+--------------------------------------------------
+-- FINITE NUMBER
+--------------------------------------------------
+
+local function isFiniteNumber(
+	value
+)
+
+	return typeof(value) == "number"
+		and value == value
+		and value ~= math.huge
+		and value ~= -math.huge
+
+end
+
+
+--------------------------------------------------
+-- GET BALL DEFINITION
+--------------------------------------------------
+
+local function getBallDefinition(
+	ball
+)
+
+	if not ball then
+
+		return nil
+
+	end
+
+
+	local ballId =
+		ball:GetAttribute(
+			"BallId"
+		)
+
+
+	if typeof(ballId) ~= "string" then
+
+		ballId =
+			ball:GetAttribute(
+				"BallType"
+			)
+
+	end
+
+
+	if typeof(ballId) ~= "string" then
+
+		return nil
+
+	end
+
+
+	local definition =
+		BallDefinitions[
+			ballId
+		]
+
+
+	if typeof(definition) ~= "table" then
+
+		warn(
+			"[WinCourseService] Missing BallDefinitions entry:",
+			ballId
+		)
+
+		return nil
+
+	end
+
+
+	return definition
+
+end
+
+
+--------------------------------------------------
+-- GET BALL FORWARD SPEED
+--
+-- THIS IS THE BALL'S ACTUAL SPEED.
+--
+-- BallDefinitions is authoritative.
+--------------------------------------------------
+
+local function getBallForwardSpeed(
+	ball
+)
+
+	local definition =
+		getBallDefinition(
+			ball
+		)
+
+
+	if definition
+		and isFiniteNumber(
+			definition.ForwardSpeed
+		)
+		and definition.ForwardSpeed > 0 then
+
+		return definition.ForwardSpeed
+
+	end
+
+
+	--------------------------------------------------
+	-- Attribute fallback
+	--------------------------------------------------
+
+	local attributeSpeed =
+		ball:GetAttribute(
+			"ForwardSpeed"
+		)
+
+
+	if isFiniteNumber(
+		attributeSpeed
+	)
+	and attributeSpeed > 0 then
+
+		return attributeSpeed
+
+	end
+
+
+	--------------------------------------------------
+	-- Final fallback
+	--------------------------------------------------
+
+	return WIN_COURSE_FALLBACK_SPEED
+
+end
+
+
+--------------------------------------------------
+-- GET HORIZONTAL SPEED
+--
+-- Stored as WinCourseHorizontalSpeed so the
+-- ProgressService can optionally use it.
+--------------------------------------------------
+
+local function getBallHorizontalSpeed(
+	ball
+)
+
+	local definition =
+		getBallDefinition(
+			ball
+		)
+
+
+	if definition
+		and isFiniteNumber(
+			definition.HorizontalSpeed
+		)
+		and definition.HorizontalSpeed > 0 then
+
+		return definition.HorizontalSpeed
+
+	end
+
+
+	local attributeSpeed =
+		ball:GetAttribute(
+			"HorizontalSpeed"
+		)
+
+
+	if isFiniteNumber(
+		attributeSpeed
+	)
+	and attributeSpeed > 0 then
+
+		return attributeSpeed
+
+	end
+
+
+	return getBallForwardSpeed(
+		ball
+	)
+
+end
+
+
+--------------------------------------------------
+-- GET OIL BOOST
+--
+-- Supports an existing oil boost attribute if
+-- another service already placed one on the ball.
+--
+-- Otherwise starts at 0.
+--------------------------------------------------
+
+local function getExistingOilBoost(
+	ball
+)
+
+	local boostNames = {
+
+		"OilBoost",
+		"WinCourseOilBoost",
+		"OilSpeedBoost",
+
+	}
+
+
+	for _, attributeName in ipairs(
+		boostNames
+	) do
+
+		local value =
+			ball:GetAttribute(
+				attributeName
+			)
+
+
+		if isFiniteNumber(
+			value
+		)
+		and value >= 0 then
+
+			return value
+
+		end
+
+	end
+
+
+	return DEFAULT_OIL_BOOST
+
+end
+
+
+--------------------------------------------------
+-- INITIALIZE WIN COURSE SPEED
+--
+-- THIS DOES NOT MOVE THE BALL.
+--
+-- It only establishes authoritative values that
+-- WinCourseProgressService will consume.
+--------------------------------------------------
+
+local function initializeWinCourseSpeed(
+	ball
+)
+
+	if not ball
+		or not ball:IsA("BasePart") then
+
+		return false
+
+	end
+
+
+	--------------------------------------------------
+	-- BALL'S ACTUAL BASE SPEED
+	--------------------------------------------------
+
+	local baseSpeed =
+		getBallForwardSpeed(
+			ball
+		)
+
+
+	--------------------------------------------------
+	-- BALL'S HORIZONTAL SPEED
+	--------------------------------------------------
+
+	local horizontalSpeed =
+		getBallHorizontalSpeed(
+			ball
+		)
+
+
+	--------------------------------------------------
+	-- OIL
+	--------------------------------------------------
+
+	local oilBoost =
+		getExistingOilBoost(
+			ball
+		)
+
+
+	--------------------------------------------------
+	-- SANITIZE
+	--------------------------------------------------
+
+	baseSpeed =
+		math.max(
+			baseSpeed,
+			WIN_COURSE_MIN_SPEED
+		)
+
+
+	horizontalSpeed =
+		math.max(
+			horizontalSpeed,
+			0
+		)
+
+
+	oilBoost =
+		math.max(
+			oilBoost,
+			0
+		)
+
+
+	--------------------------------------------------
+	-- INITIAL SPEED
+	--
+	-- Oil boost is represented as an additive
+	-- percentage multiplier.
+	--
+	-- Example:
+	--
+	-- base = 40
+	-- oil  = 0.25
+	--
+	-- current = 50
+	--------------------------------------------------
+
+	local currentSpeed =
+		baseSpeed
+		*
+		(
+			1
+			+
+			oilBoost
+		)
+
+
+	--------------------------------------------------
+	-- ATTRIBUTES
+	--
+	-- WinCourseProgressService should read these.
+	--------------------------------------------------
+
+	ball:SetAttribute(
+		"WinCourseBaseSpeed",
+		baseSpeed
+	)
+
+
+	ball:SetAttribute(
+		"WinCourseHorizontalSpeed",
+		horizontalSpeed
+	)
+
+
+	ball:SetAttribute(
+		"WinCourseOilBoost",
+		oilBoost
+	)
+
+
+	ball:SetAttribute(
+		"WinCourseAcceleration",
+		WIN_COURSE_ACCELERATION
+	)
+
+
+	ball:SetAttribute(
+		"WinCourseMinSpeed",
+		WIN_COURSE_MIN_SPEED
+	)
+
+
+	ball:SetAttribute(
+		"WinCourseCurrentSpeed",
+		currentSpeed
+	)
+
+
+	--------------------------------------------------
+	-- DEBUG
+	--------------------------------------------------
+
+	print(
+		"[WinCourseService]",
+		"Win Course speed initialized:",
+		"BaseSpeed =",
+		baseSpeed,
+		"HorizontalSpeed =",
+		horizontalSpeed,
+		"OilBoost =",
+		oilBoost,
+		"CurrentSpeed =",
+		currentSpeed,
+		"Acceleration =",
+		WIN_COURSE_ACCELERATION
+	)
+
+
+	return true
+
+end
 
 
 --------------------------------------------------
@@ -207,15 +661,17 @@ local function getWinCourseStartPosition()
 	local startPosition =
 		WinCourseGenerator.GetStartPosition()
 
+
 	if typeof(startPosition) ~= "Vector3" then
 
 		error(
-			"[WinCourseService] " ..
-			"WinCourseGenerator.GetStartPosition() " ..
-			"must return a Vector3."
+			"[WinCourseService] "
+			.. "WinCourseGenerator.GetStartPosition() "
+			.. "must return a Vector3."
 		)
 
 	end
+
 
 	return startPosition
 
@@ -235,6 +691,7 @@ local function removeLobbyWinPreview()
 
 	}
 
+
 	for _, previewName in ipairs(
 		previewNames
 	) do
@@ -243,6 +700,7 @@ local function removeLobbyWinPreview()
 			course:FindFirstChild(
 				previewName
 			)
+
 
 		if preview then
 
@@ -271,6 +729,7 @@ local function removeOldWinCourse()
 			"WinCourse"
 		)
 
+
 	if oldCourse then
 
 		print(
@@ -287,47 +746,21 @@ end
 
 --------------------------------------------------
 -- HARD FREEZE BALL
+--
+-- This only prepares the ball.
+--
+-- It does NOT provide Win Course movement.
 --------------------------------------------------
 
-local function freezeBall(ball)
+local function freezeBall(
+	ball
+)
 
 	if not ball
 		or not ball:IsA("BasePart")
 		or not ball.Parent then
 
 		return false
-
-	end
-
-
-	--------------------------------------------------
-	-- STOP PHYSICS
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	--------------------------------------------------
-	-- DISABLE BALL LINEAR VELOCITY
-	--------------------------------------------------
-
-	local linearVelocity =
-		ball:FindFirstChild(
-			"BallLinearVelocity"
-		)
-
-	if linearVelocity
-		and linearVelocity:IsA("LinearVelocity") then
-
-		linearVelocity.VectorVelocity =
-			Vector3.zero
-
-		linearVelocity.Enabled =
-			false
 
 	end
 
@@ -344,11 +777,51 @@ local function freezeBall(ball)
 
 
 	--------------------------------------------------
-	-- HARD FREEZE
+	-- STOP PHYSICS
+	--------------------------------------------------
+
+	ball.AssemblyLinearVelocity =
+		Vector3.zero
+
+	ball.AssemblyAngularVelocity =
+		Vector3.zero
+
+
+	--------------------------------------------------
+	-- DISABLE NORMAL PHYSICS CONTROLLER
+	--------------------------------------------------
+
+	local linearVelocity =
+		ball:FindFirstChild(
+			"BallLinearVelocity"
+		)
+
+
+	if linearVelocity
+		and linearVelocity:IsA(
+			"LinearVelocity"
+		) then
+
+		linearVelocity.VectorVelocity =
+			Vector3.zero
+
+		linearVelocity.Enabled =
+			false
+
+	end
+
+
+	--------------------------------------------------
+	-- ANCHOR
 	--------------------------------------------------
 
 	ball.Anchored =
 		true
+
+
+	--------------------------------------------------
+	-- CLEAR AGAIN
+	--------------------------------------------------
 
 	ball.AssemblyLinearVelocity =
 		Vector3.zero
@@ -364,9 +837,15 @@ end
 
 --------------------------------------------------
 -- MOVE BALL TO OFFICIAL WIN START
+--
+-- THIS IS THE ONLY MOVEMENT THIS SERVICE DOES.
+--
+-- It happens once during initialization.
 --------------------------------------------------
 
-local function moveBallToStart(ball)
+local function moveBallToStart(
+	ball
+)
 
 	if not ball
 		or not ball:IsA("BasePart")
@@ -376,10 +855,6 @@ local function moveBallToStart(ball)
 
 	end
 
-
-	--------------------------------------------------
-	-- GET POSITION FROM GENERATOR
-	--------------------------------------------------
 
 	local winStartPosition =
 		getWinCourseStartPosition()
@@ -392,11 +867,16 @@ local function moveBallToStart(ball)
 
 
 	--------------------------------------------------
-	-- KEEP BALL FROZEN
+	-- KEEP ANCHORED
 	--------------------------------------------------
 
 	ball.Anchored =
 		true
+
+
+	--------------------------------------------------
+	-- CLEAR PHYSICS
+	--------------------------------------------------
 
 	ball.AssemblyLinearVelocity =
 		Vector3.zero
@@ -406,80 +886,13 @@ local function moveBallToStart(ball)
 
 
 	--------------------------------------------------
-	-- MOVE BALL
+	-- MOVE ONCE
 	--------------------------------------------------
 
 	ball.CFrame =
 		CFrame.new(
 			winStartPosition
 		)
-
-
-	--------------------------------------------------
-	-- CLEAR MOTION
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	print(
-		"[WinCourseService] Ball moved to official Win Course start:",
-		winStartPosition
-	)
-
-
-	return true
-
-end
-
-
---------------------------------------------------
--- RELEASE BALL
---------------------------------------------------
-
-local function releaseBall(ball)
-
-	if not ball
-		or not ball:IsA("BasePart")
-		or not ball.Parent then
-
-		return false
-
-	end
-
-
-	--------------------------------------------------
-	-- SERVER OWNS PHYSICS
-	--------------------------------------------------
-
-	pcall(function()
-
-		ball:SetNetworkOwner(nil)
-
-	end)
-
-
-	--------------------------------------------------
-	-- CLEAR MOTION
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	--------------------------------------------------
-	-- UNFREEZE
-	--------------------------------------------------
-
-	ball.Anchored =
-		false
 
 
 	--------------------------------------------------
@@ -491,6 +904,23 @@ local function releaseBall(ball)
 
 	ball.AssemblyAngularVelocity =
 		Vector3.zero
+
+
+	--------------------------------------------------
+	-- SERVER OWNERSHIP
+	--------------------------------------------------
+
+	pcall(function()
+
+		ball:SetNetworkOwner(nil)
+
+	end)
+
+
+	print(
+		"[WinCourseService] Ball moved to official Win Course start:",
+		winStartPosition
+	)
 
 
 	return true
@@ -543,7 +973,7 @@ local function validateWinCourseRequest(
 
 
 	--------------------------------------------------
-	-- BALL MUST BE DIRECTLY INSIDE PLAYERBALLS
+	-- BALL LOCATION
 	--------------------------------------------------
 
 	if ball.Parent ~= playerBalls then
@@ -564,8 +994,11 @@ local function validateWinCourseRequest(
 	--------------------------------------------------
 
 	local expectedName =
-		"PlayerBall_" ..
-		player.UserId
+		"PlayerBall_"
+		..
+		tostring(
+			player.UserId
+		)
 
 
 	if ball.Name ~= expectedName then
@@ -644,7 +1077,8 @@ local function countGeneratedTiles(
 	winCourse
 )
 
-	local tileCount = 0
+	local tileCount =
+		0
 
 
 	for _, child in ipairs(
@@ -670,37 +1104,11 @@ end
 
 --------------------------------------------------
 -- VERIFY GENERATED WIN COURSE
---
--- EXACT CURRENT HIERARCHY:
---
--- WinCourse
--- └── WinTile_X
---     ├── Floor
---     │
---     └── TrophyDisplay
---         └── SurfaceGui
---             ├── ImageLabel
---             └── WinAmount
---
--- IMPORTANT:
---
--- SurfaceGui is NOT searched recursively.
--- It must be directly inside TrophyDisplay.
---
--- ImageLabel is NOT searched recursively.
--- It must be directly inside SurfaceGui.
---
--- WinAmount is NOT searched recursively.
--- It must be directly inside SurfaceGui.
 --------------------------------------------------
 
 local function verifyGeneratedWinCourse(
 	winCourse
 )
-
-	--------------------------------------------------
-	-- COURSE TYPE
-	--------------------------------------------------
 
 	if not winCourse
 		or not winCourse:IsA("Folder") then
@@ -714,10 +1122,6 @@ local function verifyGeneratedWinCourse(
 	end
 
 
-	--------------------------------------------------
-	-- COURSE LOCATION
-	--------------------------------------------------
-
 	if winCourse.Parent ~= course then
 
 		warn(
@@ -728,10 +1132,6 @@ local function verifyGeneratedWinCourse(
 
 	end
 
-
-	--------------------------------------------------
-	-- COURSE ATTRIBUTE
-	--------------------------------------------------
 
 	if winCourse:GetAttribute(
 		"IsWinCourse"
@@ -745,10 +1145,6 @@ local function verifyGeneratedWinCourse(
 
 	end
 
-
-	--------------------------------------------------
-	-- COUNT
-	--------------------------------------------------
 
 	local tileCount =
 		countGeneratedTiles(
@@ -777,10 +1173,6 @@ local function verifyGeneratedWinCourse(
 	end
 
 
-	--------------------------------------------------
-	-- VERIFY EACH TILE
-	--------------------------------------------------
-
 	for _, tile in ipairs(
 		winCourse:GetChildren()
 	) do
@@ -802,7 +1194,9 @@ local function verifyGeneratedWinCourse(
 
 
 			if not floor
-				or not floor:IsA("BasePart") then
+				or not floor:IsA(
+					"BasePart"
+				) then
 
 				warn(
 					"[WinCourseService] Tile missing Floor:",
@@ -816,8 +1210,6 @@ local function verifyGeneratedWinCourse(
 
 			--------------------------------------------------
 			-- TROPHY DISPLAY
-			--
-			-- Must be directly inside WinTile.
 			--------------------------------------------------
 
 			local trophyDisplay =
@@ -827,7 +1219,9 @@ local function verifyGeneratedWinCourse(
 
 
 			if not trophyDisplay
-				or not trophyDisplay:IsA("BasePart") then
+				or not trophyDisplay:IsA(
+					"BasePart"
+				) then
 
 				warn(
 					"[WinCourseService] Tile missing direct TrophyDisplay:",
@@ -841,8 +1235,6 @@ local function verifyGeneratedWinCourse(
 
 			--------------------------------------------------
 			-- SURFACE GUI
-			--
-			-- Must be directly inside TrophyDisplay.
 			--------------------------------------------------
 
 			local surfaceGui =
@@ -852,7 +1244,9 @@ local function verifyGeneratedWinCourse(
 
 
 			if not surfaceGui
-				or not surfaceGui:IsA("SurfaceGui") then
+				or not surfaceGui:IsA(
+					"SurfaceGui"
+				) then
 
 				warn(
 					"[WinCourseService] Tile missing TrophyDisplay.SurfaceGui:",
@@ -866,8 +1260,6 @@ local function verifyGeneratedWinCourse(
 
 			--------------------------------------------------
 			-- IMAGE LABEL
-			--
-			-- Must be directly inside SurfaceGui.
 			--------------------------------------------------
 
 			local imageLabel =
@@ -877,7 +1269,9 @@ local function verifyGeneratedWinCourse(
 
 
 			if not imageLabel
-				or not imageLabel:IsA("ImageLabel") then
+				or not imageLabel:IsA(
+					"ImageLabel"
+				) then
 
 				warn(
 					"[WinCourseService] Tile missing SurfaceGui.ImageLabel:",
@@ -891,8 +1285,6 @@ local function verifyGeneratedWinCourse(
 
 			--------------------------------------------------
 			-- WIN AMOUNT
-			--
-			-- Must be directly inside SurfaceGui.
 			--------------------------------------------------
 
 			local winAmount =
@@ -902,7 +1294,9 @@ local function verifyGeneratedWinCourse(
 
 
 			if not winAmount
-				or not winAmount:IsA("TextLabel") then
+				or not winAmount:IsA(
+					"TextLabel"
+				) then
 
 				warn(
 					"[WinCourseService] Tile missing SurfaceGui.WinAmount:",
@@ -912,41 +1306,6 @@ local function verifyGeneratedWinCourse(
 				return false
 
 			end
-
-
-			--------------------------------------------------
-			-- DEBUG
-			--------------------------------------------------
-
-			print(
-				"[WinCourseService] Verified tile:",
-				tile:GetFullName()
-			)
-
-			print(
-				"[WinCourseService] Floor:",
-				floor:GetFullName()
-			)
-
-			print(
-				"[WinCourseService] TrophyDisplay:",
-				trophyDisplay:GetFullName()
-			)
-
-			print(
-				"[WinCourseService] SurfaceGui:",
-				surfaceGui:GetFullName()
-			)
-
-			print(
-				"[WinCourseService] ImageLabel:",
-				imageLabel:GetFullName()
-			)
-
-			print(
-				"[WinCourseService] WinAmount:",
-				winAmount:GetFullName()
-			)
 
 		end
 
@@ -976,23 +1335,10 @@ local function generateWinCourse(
 	print("================================")
 
 
-	--------------------------------------------------
-	-- REMOVE LOBBY PREVIEW
-	--------------------------------------------------
-
 	removeLobbyWinPreview()
-
-
-	--------------------------------------------------
-	-- REMOVE OLD ACTUAL COURSE
-	--------------------------------------------------
 
 	removeOldWinCourse()
 
-
-	--------------------------------------------------
-	-- GENERATE
-	--------------------------------------------------
 
 	local success,
 		result =
@@ -1018,10 +1364,6 @@ local function generateWinCourse(
 	end
 
 
-	--------------------------------------------------
-	-- RESULT EXISTS
-	--------------------------------------------------
-
 	if not result then
 
 		warn(
@@ -1033,11 +1375,9 @@ local function generateWinCourse(
 	end
 
 
-	--------------------------------------------------
-	-- RESULT INSIDE COURSE
-	--------------------------------------------------
-
-	if not result:IsDescendantOf(course) then
+	if not result:IsDescendantOf(
+		course
+	) then
 
 		warn(
 			"[WinCourseService] Generated WinCourse is not inside Workspace.Course."
@@ -1047,10 +1387,6 @@ local function generateWinCourse(
 
 	end
 
-
-	--------------------------------------------------
-	-- VERIFY
-	--------------------------------------------------
 
 	if not verifyGeneratedWinCourse(
 		result
@@ -1065,19 +1401,11 @@ local function generateWinCourse(
 	end
 
 
-	--------------------------------------------------
-	-- COUNT
-	--------------------------------------------------
-
 	local tileCount =
 		countGeneratedTiles(
 			result
 		)
 
-
-	--------------------------------------------------
-	-- DEBUG
-	--------------------------------------------------
 
 	print("================================")
 
@@ -1105,11 +1433,6 @@ local function generateWinCourse(
 		WinCourseGenerator.GetTileSpacing()
 	)
 
-	print(
-		"[WinCourseService] Trophy UI:",
-		"TrophyDisplay > SurfaceGui > ImageLabel + WinAmount"
-	)
-
 	print("================================")
 
 
@@ -1123,9 +1446,12 @@ end
 --------------------------------------------------
 
 Players.PlayerRemoving:Connect(
-	function(player)
+	function(
+		player
+	)
 
-		winCourseBusy[player] = nil
+		winCourseBusy[player] =
+			nil
 
 	end
 )
@@ -1188,10 +1514,12 @@ startWinCourse.Event:Connect(
 
 
 		--------------------------------------------------
-		-- FREEZE BALL
+		-- FREEZE
 		--------------------------------------------------
 
-		if not freezeBall(ball) then
+		if not freezeBall(
+			ball
+		) then
 
 			winCourseBusy[player] =
 				nil
@@ -1225,7 +1553,7 @@ startWinCourse.Event:Connect(
 
 
 		--------------------------------------------------
-		-- GENERATE ACTUAL WIN COURSE
+		-- GENERATE COURSE
 		--------------------------------------------------
 
 		local winCourse =
@@ -1256,7 +1584,7 @@ startWinCourse.Event:Connect(
 
 
 		--------------------------------------------------
-		-- MOVE BALL TO OFFICIAL START
+		-- MOVE BALL TO START
 		--------------------------------------------------
 
 		if not moveBallToStart(
@@ -1283,28 +1611,27 @@ startWinCourse.Event:Connect(
 
 
 		--------------------------------------------------
-		-- READY
+		-- INITIALIZE SPEED
+		--
+		-- IMPORTANT:
+		--
+		-- This uses the actual ball's
+		-- BallDefinitions.ForwardSpeed.
+		--
+		-- Oil boost is also initialized.
+		--
+		-- WinCourseProgressService will accelerate
+		-- and update the current speed.
 		--------------------------------------------------
 
-		print(
-			"[WinCourseService]",
-			player.Name,
-			"BALL READY FOR WIN COURSE"
-		)
-
-
-		--------------------------------------------------
-		-- RELEASE
-		--------------------------------------------------
-
-		if not releaseBall(
+		if not initializeWinCourseSpeed(
 			ball
 		) then
 
 			warn(
 				"[WinCourseService]",
 				player.Name,
-				"FAILED TO RELEASE BALL"
+				"FAILED TO INITIALIZE WIN COURSE SPEED"
 			)
 
 			ball:SetAttribute(
@@ -1321,28 +1648,18 @@ startWinCourse.Event:Connect(
 
 
 		--------------------------------------------------
-		-- ACTIVE
+		-- KEEP RUN STATE FINISHING
 		--------------------------------------------------
 
-		print(
-			"[WinCourseService]",
-			player.Name,
-			"BALL RELEASED INTO WIN COURSE"
+		player:SetAttribute(
+			"RunState",
+			"Finishing"
 		)
---------------------------------------------------
--- ENTER BONUS / WIN COURSE STATE
---------------------------------------------------
 
-player:SetAttribute(
-    "RunState",
-    "Bonus"
-)
 
-	print(
-    	"[WinCourseService]",
-   	 player.Name,
-   	 "RunState = Bonus"
-)
+		--------------------------------------------------
+		-- READY
+		--------------------------------------------------
 
 		print("================================")
 
@@ -1350,6 +1667,53 @@ player:SetAttribute(
 			"[WinCourseService]",
 			player.Name,
 			"WIN COURSE ACTIVE"
+		)
+
+		print(
+			"[WinCourseService]",
+			"Ball remains ANCHORED."
+		)
+
+		print(
+			"[WinCourseService]",
+			"Ball remains SERVER OWNED."
+		)
+
+		print(
+			"[WinCourseService]",
+			"Base Ball Speed:",
+			ball:GetAttribute(
+				"WinCourseBaseSpeed"
+			)
+		)
+
+		print(
+			"[WinCourseService]",
+			"Oil Boost:",
+			ball:GetAttribute(
+				"WinCourseOilBoost"
+			)
+		)
+
+		print(
+			"[WinCourseService]",
+			"Current Speed:",
+			ball:GetAttribute(
+				"WinCourseCurrentSpeed"
+			)
+		)
+
+		print(
+			"[WinCourseService]",
+			"Acceleration:",
+			ball:GetAttribute(
+				"WinCourseAcceleration"
+			)
+		)
+
+		print(
+			"[WinCourseService]",
+			"WinCourseProgressService now controls movement."
 		)
 
 		print("================================")
@@ -1394,13 +1758,28 @@ print(
 )
 
 print(
-	"[WinCourseService] WinTile UI:",
-	"TrophyDisplay > SurfaceGui > ImageLabel + WinAmount"
+	"[WinCourseService] BALL MOVEMENT:",
+	"WinCourseProgressService ONLY"
 )
 
 print(
-	"[WinCourseService] Floor coloring:",
-	"Owned by WinCourseGenerator"
+	"[WinCourseService] BALL ANCHORED:",
+	"TRUE"
+)
+
+print(
+	"[WinCourseService] WIN COURSE ACCELERATION:",
+	WIN_COURSE_ACCELERATION
+)
+
+print(
+	"[WinCourseService] BALL SPEED:",
+	"BallDefinitions.ForwardSpeed"
+)
+
+print(
+	"[WinCourseService] OIL BOOST:",
+	"WinCourseOilBoost"
 )
 
 print("================================")

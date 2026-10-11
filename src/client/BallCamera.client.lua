@@ -1,3 +1,42 @@
+--------------------------------------------------
+-- BALL CAMERA
+-- LocalScript
+--
+-- LOCATION:
+-- StarterPlayer
+--     StarterPlayerScripts
+--
+-- CAMERA RULES
+--
+-- LOBBY:
+--   Right Mouse + mouse movement:
+--      Horizontal = orbit left/right
+--      Vertical   = orbit up/down
+--
+--   Mouse Wheel:
+--      3 zoom levels
+--
+-- COURSE:
+--   Camera is LOCKED behind the ball.
+--   Mouse does NOT rotate the camera.
+--   Mouse Wheel does NOT zoom.
+--
+-- IMPORTANT:
+--
+-- The lobby camera is a FREE ORBIT CAMERA.
+--
+-- There is NO camera-floor collision restriction.
+-- The camera is allowed to orbit below/above the
+-- ball according to the pitch limits.
+--
+-- The hidden Roblox character is never used.
+--------------------------------------------------
+
+
+--------------------------------------------------
+-- SERVICES
+--------------------------------------------------
+
 local Players =
 	game:GetService("Players")
 
@@ -43,75 +82,83 @@ local CAMERA_BIND_NAME =
 
 
 --------------------------------------------------
--- CAMERA SETTINGS
---------------------------------------------------
-
---------------------------------------------------
 -- LOBBY CAMERA
 --------------------------------------------------
 
-local LOBBY_DISTANCE =
-	18
+local LOBBY_ZOOM_LEVELS = {
 
-local LOBBY_HEIGHT =
-	8
+	--------------------------------------------------
+	-- CLOSE
+	--------------------------------------------------
 
+	{
+		distance = 14,
+		height = 7,
+		fov = 60
+	},
 
---------------------------------------------------
--- RUN CAMERA
---
--- IMPORTANT:
---
--- REGULAR COURSE AND WINCOURSE USE THE EXACT
--- SAME CAMERA SETTINGS.
---
--- There is only ONE set of Run Camera values.
---------------------------------------------------
+	--------------------------------------------------
+	-- NORMAL
+	--------------------------------------------------
 
-local RUN_DISTANCE =
-	16
+	{
+		distance = 18,
+		height = 8,
+		fov = 70
+	},
 
-local RUN_HEIGHT =
-	14
+	--------------------------------------------------
+	-- FAR
+	--------------------------------------------------
 
-local RUN_LOOK_AHEAD =
-	20
+	{
+		distance = 24,
+		height = 10,
+		fov = 80
+	}
 
-local RUN_LOOK_HEIGHT =
-	4
-
-
---------------------------------------------------
--- WORLD FORWARD
---
--- EVERYTHING IN THIS SYSTEM USES +Z.
---------------------------------------------------
-
-local WORLD_FORWARD =
-	Vector3.new(
-		0,
-		0,
-		1
-	)
+}
 
 
 --------------------------------------------------
--- ORBIT STATE
+-- CURRENT LOBBY ZOOM
 --------------------------------------------------
 
-local yaw =
+local currentLobbyZoom =
+	2
+
+
+--------------------------------------------------
+-- LOBBY ORBIT
+--------------------------------------------------
+
+local lobbyYaw =
 	0
 
-local pitch =
-	math.rad(-15)
+local lobbyPitch =
+	math.rad(15)
 
 
-local MIN_PITCH =
-	math.rad(-70)
+--------------------------------------------------
+-- PITCH LIMITS
+--
+-- NEGATIVE = camera moves below ball
+-- POSITIVE = camera moves above ball
+--
+-- These are intentionally wide so the player
+-- can freely look around the ball.
+--------------------------------------------------
 
-local MAX_PITCH =
-	math.rad(35)
+local MIN_LOBBY_PITCH =
+	math.rad(-80)
 
+local MAX_LOBBY_PITCH =
+	math.rad(80)
+
+
+--------------------------------------------------
+-- MOUSE ROTATION
+--------------------------------------------------
 
 local rotating =
 	false
@@ -121,50 +168,46 @@ local lastMousePosition =
 
 
 --------------------------------------------------
--- CAMERA MODE
---
--- Waiting:
---     Lobby
---
--- Starting:
---     Lobby
---
--- Running:
---     Run
---
--- Finishing:
---     Run
---
--- REGULAR COURSE AND WINCOURSE BOTH USE
--- THE SAME RUN CAMERA.
+-- CAMERA SMOOTHING
 --------------------------------------------------
 
-local cameraMode =
-	"Lobby"
+local currentCameraPosition =
+	nil
+
+local currentLookTarget =
+	nil
+
+
+local CAMERA_SMOOTHNESS =
+	12
 
 
 --------------------------------------------------
--- FINISH CAMERA LOCK
+-- COURSE CAMERA
+--------------------------------------------------
 --
 -- IMPORTANT:
 --
--- When FinishWall is touched, RunState changes
--- to "Finishing" and StartWinCourse can move the
--- ball.
+-- These values are fixed.
 --
--- We DO NOT allow that movement to pull the
--- camera downward.
---
--- The camera captures its current Y position
--- when Finishing begins and keeps that Y value
--- during the WinCourse transition.
+-- The player CANNOT change these with
+-- the mouse.
 --------------------------------------------------
 
-local finishCameraY =
-	nil
+local COURSE_DISTANCE =
+	16
 
-local previousRunState =
-	nil
+local COURSE_HEIGHT =
+	14
+
+local COURSE_LOOK_AHEAD =
+	20
+
+local COURSE_LOOK_HEIGHT =
+	4
+
+local COURSE_FOV =
+	70
 
 
 --------------------------------------------------
@@ -173,16 +216,91 @@ local previousRunState =
 
 local function getBall()
 
-	return playerBalls:FindFirstChild(
+	local ballName =
 		"PlayerBall_" ..
 		player.UserId
-	)
+
+
+	local ball =
+		playerBalls:FindFirstChild(
+			ballName
+		)
+
+
+	if ball
+		and ball:IsA("BasePart") then
+
+		return ball
+
+	end
+
+
+	return nil
 
 end
 
 
 --------------------------------------------------
--- CAMERA INPUT
+-- GET CAMERA MODE
+--------------------------------------------------
+
+local function getCameraMode(ball)
+
+	--------------------------------------------------
+	-- WIN COURSE
+	--------------------------------------------------
+
+	if ball:GetAttribute(
+		"WinCourseActive"
+	) == true then
+
+		return "Course"
+
+	end
+
+
+	--------------------------------------------------
+	-- RUN STATE
+	--------------------------------------------------
+
+	local runState =
+		player:GetAttribute(
+			"RunState"
+		)
+
+
+	if runState == "Running" then
+
+		return "Course"
+
+	end
+
+
+	if runState == "Finishing" then
+
+		return "Course"
+
+	end
+
+
+	if runState == "Bonus" then
+
+		return "Course"
+
+	end
+
+
+	--------------------------------------------------
+	-- LOBBY
+	--------------------------------------------------
+
+	return "Lobby"
+
+end
+
+
+--------------------------------------------------
+-- MOUSE BUTTON
 --------------------------------------------------
 
 UserInputService.InputBegan:Connect(
@@ -195,11 +313,33 @@ UserInputService.InputBegan:Connect(
 			return
 		end
 
+
 		if input.UserInputType ==
 			Enum.UserInputType.MouseButton2 then
 
+			--------------------------------------------------
+			-- ONLY ALLOW CAMERA ROTATION IN LOBBY
+			--------------------------------------------------
+
+			local ball =
+				getBall()
+
+			if not ball then
+				return
+			end
+
+
+			if getCameraMode(ball)
+				~= "Lobby" then
+
+				return
+
+			end
+
+
 			rotating =
 				true
+
 
 			lastMousePosition =
 				UserInputService:GetMouseLocation()
@@ -209,6 +349,10 @@ UserInputService.InputBegan:Connect(
 	end
 )
 
+
+--------------------------------------------------
+-- MOUSE RELEASE
+--------------------------------------------------
 
 UserInputService.InputEnded:Connect(
 	function(input)
@@ -228,12 +372,88 @@ UserInputService.InputEnded:Connect(
 )
 
 
+--------------------------------------------------
+-- MOUSE WHEEL
+--------------------------------------------------
+
+UserInputService.InputChanged:Connect(
+	function(input)
+
+		if input.UserInputType ~=
+			Enum.UserInputType.MouseWheel then
+
+			return
+
+		end
+
+
+		--------------------------------------------------
+		-- GET BALL
+		--------------------------------------------------
+
+		local ball =
+			getBall()
+
+		if not ball then
+			return
+		end
+
+
+		--------------------------------------------------
+		-- ONLY ZOOM IN LOBBY
+		--------------------------------------------------
+
+		if getCameraMode(ball)
+			~= "Lobby" then
+
+			return
+
+		end
+
+
+		--------------------------------------------------
+		-- ZOOM IN
+		--------------------------------------------------
+
+		if input.Position.Z > 0 then
+
+			currentLobbyZoom =
+				math.clamp(
+					currentLobbyZoom - 1,
+					1,
+					3
+				)
+
+		--------------------------------------------------
+		-- ZOOM OUT
+		--------------------------------------------------
+
+		elseif input.Position.Z < 0 then
+
+			currentLobbyZoom =
+				math.clamp(
+					currentLobbyZoom + 1,
+					1,
+					3
+				)
+
+		end
+
+	end
+)
+
+
+--------------------------------------------------
+-- MOUSE MOVEMENT
+--------------------------------------------------
+
 UserInputService.InputChanged:Connect(
 	function(input)
 
 		if not rotating then
 			return
 		end
+
 
 		if input.UserInputType ~=
 			Enum.UserInputType.MouseMovement then
@@ -242,8 +462,40 @@ UserInputService.InputChanged:Connect(
 
 		end
 
+
+		--------------------------------------------------
+		-- MAKE ABSOLUTELY SURE WE ARE IN LOBBY
+		--------------------------------------------------
+
+		local ball =
+			getBall()
+
+		if not ball then
+			return
+		end
+
+
+		if getCameraMode(ball)
+			~= "Lobby" then
+
+			rotating =
+				false
+
+			lastMousePosition =
+				nil
+
+			return
+
+		end
+
+
+		--------------------------------------------------
+		-- CURRENT MOUSE POSITION
+		--------------------------------------------------
+
 		local currentMousePosition =
 			UserInputService:GetMouseLocation()
+
 
 		if not lastMousePosition then
 
@@ -254,10 +506,16 @@ UserInputService.InputChanged:Connect(
 
 		end
 
+
+		--------------------------------------------------
+		-- DELTA
+		--------------------------------------------------
+
 		local delta =
 			currentMousePosition
 			-
 			lastMousePosition
+
 
 		lastMousePosition =
 			currentMousePosition
@@ -265,24 +523,39 @@ UserInputService.InputChanged:Connect(
 
 		--------------------------------------------------
 		-- HORIZONTAL
+		--
+		-- Mouse RIGHT = orbit RIGHT
+		-- Mouse LEFT  = orbit LEFT
 		--------------------------------------------------
 
-		yaw -=
+		lobbyYaw -=
 			delta.X * 0.005
 
 
 		--------------------------------------------------
 		-- VERTICAL
+		--
+		-- FIXED:
+		--
+		-- Mouse UP   = camera UP
+		-- Mouse DOWN = camera DOWN
+		--
+		-- This is the corrected direction.
 		--------------------------------------------------
 
-		pitch -=
+		lobbyPitch +=
 			delta.Y * 0.005
 
-		pitch =
+
+		--------------------------------------------------
+		-- LIMIT PITCH
+		--------------------------------------------------
+
+		lobbyPitch =
 			math.clamp(
-				pitch,
-				MIN_PITCH,
-				MAX_PITCH
+				lobbyPitch,
+				MIN_LOBBY_PITCH,
+				MAX_LOBBY_PITCH
 			)
 
 	end
@@ -290,375 +563,335 @@ UserInputService.InputChanged:Connect(
 
 
 --------------------------------------------------
--- LOBBY CAMERA
---
--- BALL FACES +Z
---
--- CAMERA SITS BEHIND BALL ON -Z
---
--- CAMERA LOOKS TOWARD +Z
+-- LOBBY ORBIT POSITION
 --------------------------------------------------
 
-local function updateLobbyCamera(ball)
-
-	camera.CameraType =
-		Enum.CameraType.Scriptable
-
+local function getLobbyOrbitPosition(
+	ballPosition,
+	distance
+)
 
 	--------------------------------------------------
-	-- CAMERA BEHIND BALL
+	-- START BEHIND BALL
+	--
+	-- Course direction = +Z
+	-- Behind = -Z
 	--------------------------------------------------
 
-	local cameraPosition =
-		ball.Position
-		+
+	local direction =
 		Vector3.new(
 			0,
-			LOBBY_HEIGHT,
-			-LOBBY_DISTANCE
+			0,
+			-distance
 		)
 
 
 	--------------------------------------------------
-	-- LOOK FORWARD IN +Z
+	-- YAW
+	--------------------------------------------------
+
+	direction =
+		CFrame.Angles(
+			0,
+			lobbyYaw,
+			0
+		)
+		*
+		direction
+
+
+	--------------------------------------------------
+	-- PITCH
+	--------------------------------------------------
+
+	direction =
+		CFrame.Angles(
+			lobbyPitch,
+			0,
+			0
+		)
+		*
+		direction
+
+
+	return ballPosition + direction
+
+end
+
+
+--------------------------------------------------
+-- SMOOTH CAMERA
+--------------------------------------------------
+
+local function smoothCamera(
+	targetPosition,
+	targetLookTarget,
+	deltaTime
+)
+
+	if not currentCameraPosition then
+
+		currentCameraPosition =
+			targetPosition
+
+	end
+
+
+	if not currentLookTarget then
+
+		currentLookTarget =
+			targetLookTarget
+
+	end
+
+
+	--------------------------------------------------
+	-- FRAME RATE INDEPENDENT SMOOTHING
+	--------------------------------------------------
+
+	local alpha =
+		1 -
+		math.exp(
+			-CAMERA_SMOOTHNESS
+			* deltaTime
+		)
+
+
+	currentCameraPosition =
+		currentCameraPosition:Lerp(
+			targetPosition,
+			alpha
+		)
+
+
+	currentLookTarget =
+		currentLookTarget:Lerp(
+			targetLookTarget,
+			alpha
+		)
+
+
+	--------------------------------------------------
+	-- APPLY
+	--------------------------------------------------
+
+	camera.CFrame =
+		CFrame.lookAt(
+			currentCameraPosition,
+			currentLookTarget,
+			Vector3.new(
+				0,
+				1,
+				0
+			)
+		)
+
+end
+
+
+--------------------------------------------------
+-- LOBBY CAMERA
+--------------------------------------------------
+
+local function updateLobbyCamera(
+	ball,
+	deltaTime
+)
+
+	local ballPosition =
+		ball.Position
+
+
+	--------------------------------------------------
+	-- GET ZOOM
+	--------------------------------------------------
+
+	local zoom =
+		LOBBY_ZOOM_LEVELS[
+			currentLobbyZoom
+		]
+
+
+	--------------------------------------------------
+	-- ORBIT
+	--------------------------------------------------
+
+	local cameraPosition =
+		getLobbyOrbitPosition(
+			ballPosition,
+			zoom.distance
+		)
+
+
+	--------------------------------------------------
+	-- IMPORTANT:
+	--
+	-- NO CAMERA FLOOR.
+	--
+	-- The camera is NOT forced above the ground
+	-- or above the ball.
+	--
+	-- This allows the player to freely orbit
+	-- vertically.
+	--------------------------------------------------
+
+
+	--------------------------------------------------
+	-- LOOK AT BALL
 	--------------------------------------------------
 
 	local lookTarget =
-		ball.Position
+		ballPosition
 		+
 		Vector3.new(
 			0,
 			1,
-			20
+			0
 		)
 
 
 	--------------------------------------------------
-	-- APPLY CAMERA
+	-- FOV
 	--------------------------------------------------
 
-	camera.CFrame =
-		CFrame.lookAt(
-			cameraPosition,
-			lookTarget,
-			Vector3.new(
-				0,
-				1,
-				0
-			)
-		)
+	camera.FieldOfView =
+		zoom.fov
+
+
+	--------------------------------------------------
+	-- APPLY
+	--------------------------------------------------
+
+	smoothCamera(
+		cameraPosition,
+		lookTarget,
+		deltaTime
+	)
 
 end
 
 
 --------------------------------------------------
--- RUN CAMERA
+-- COURSE CAMERA
+--------------------------------------------------
 --
--- REGULAR COURSE + WINCOURSE
+-- THIS CAMERA DOES NOT USE:
 --
--- SAME CAMERA.
+-- lobbyYaw
+-- lobbyPitch
+-- mouse input
+-- lobby zoom
 --
--- The only special behavior is that during
--- Finishing we lock the CAMERA'S Y position.
---
--- This prevents the WinCourse ball teleport from
--- making the camera drop.
+-- It is completely independent.
 --------------------------------------------------
 
-local function updateRunCamera(ball)
+local function updateCourseCamera(
+	ball,
+	deltaTime
+)
+
+	local ballPosition =
+		ball.Position
+
+
+	--------------------------------------------------
+	-- FIXED BEHIND-BALL POSITION
+	--
+	-- Course direction = +Z
+	-- Behind = -Z
+	--------------------------------------------------
+
+	local cameraPosition =
+		ballPosition
+		+
+		Vector3.new(
+			0,
+			COURSE_HEIGHT,
+			-COURSE_DISTANCE
+		)
+
+
+	--------------------------------------------------
+	-- SAFETY
+	--------------------------------------------------
+
+	local minimumCameraY =
+		ballPosition.Y + 3
+
+
+	if cameraPosition.Y <
+		minimumCameraY then
+
+		cameraPosition =
+			Vector3.new(
+				cameraPosition.X,
+				minimumCameraY,
+				cameraPosition.Z
+			)
+
+	end
+
+
+	--------------------------------------------------
+	-- LOOK AHEAD
+	--
+	-- ALWAYS WORLD +Z
+	--------------------------------------------------
+
+	local lookTarget =
+		ballPosition
+		+
+		Vector3.new(
+			0,
+			COURSE_LOOK_HEIGHT,
+			COURSE_LOOK_AHEAD
+		)
+
+
+	--------------------------------------------------
+	-- FIXED COURSE FOV
+	--------------------------------------------------
+
+	camera.FieldOfView =
+		COURSE_FOV
+
+
+	--------------------------------------------------
+	-- APPLY
+	--------------------------------------------------
+
+	smoothCamera(
+		cameraPosition,
+		lookTarget,
+		deltaTime
+	)
+
+end
+
+
+--------------------------------------------------
+-- CAMERA UPDATE
+--------------------------------------------------
+
+local function updateCamera(
+	deltaTime
+)
+
+	--------------------------------------------------
+	-- SCRIPTABLE
+	--------------------------------------------------
 
 	camera.CameraType =
 		Enum.CameraType.Scriptable
 
 
 	--------------------------------------------------
-	-- GET CURRENT RUN STATE
-	--------------------------------------------------
-
-	local runState =
-		player:GetAttribute(
-			"RunState"
-		)
-
-
-	--------------------------------------------------
-	-- ENTERING FINISHING
-	--
-	-- Capture the camera height BEFORE WinCourse
-	-- has a chance to move the ball.
-	--------------------------------------------------
-
-	if runState ==
-		"Finishing"
-		and previousRunState ~=
-			"Finishing" then
-
-		finishCameraY =
-			ball.Position.Y +
-			RUN_HEIGHT
-
-	end
-
-
-	--------------------------------------------------
-	-- REGULAR COURSE
-	--
-	-- Clear the finish lock.
-	--------------------------------------------------
-
-	if runState ~=
-		"Finishing" then
-
-		finishCameraY =
-			nil
-
-	end
-
-
-	--------------------------------------------------
-	-- CAMERA Y
-	--------------------------------------------------
-
-	local cameraY =
-		ball.Position.Y +
-		RUN_HEIGHT
-
-
-	--------------------------------------------------
-	-- FINISHING:
-	--
-	-- Keep the camera at the height captured when
-	-- FinishWall was reached.
-	--------------------------------------------------
-
-	if runState ==
-		"Finishing"
-		and finishCameraY ~= nil then
-
-		cameraY =
-			finishCameraY
-
-	end
-
-
-	--------------------------------------------------
-	-- CAMERA POSITION
-	--
-	-- X/Z continue following the ball.
-	--
-	-- Y stays locked during WinCourse.
-	--------------------------------------------------
-
-	local cameraPosition =
-		Vector3.new(
-			ball.Position.X,
-			cameraY,
-			ball.Position.Z - RUN_DISTANCE
-		)
-
-
-	--------------------------------------------------
-	-- LOOK TARGET
-	--
-	-- Keep the same vertical relationship for both
-	-- Regular Course and WinCourse.
-	--------------------------------------------------
-
-	local lookTargetY
-
-	if runState ==
-		"Finishing"
-		and finishCameraY ~= nil then
-
-		lookTargetY =
-			finishCameraY
-			-
-			RUN_HEIGHT
-			+
-			RUN_LOOK_HEIGHT
-
-	else
-
-		lookTargetY =
-			ball.Position.Y
-			+
-			RUN_LOOK_HEIGHT
-
-	end
-
-
-	local lookTarget =
-		Vector3.new(
-			ball.Position.X,
-			lookTargetY,
-			ball.Position.Z + RUN_LOOK_AHEAD
-		)
-
-
-	--------------------------------------------------
-	-- APPLY CAMERA
-	--------------------------------------------------
-
-	camera.CFrame =
-		CFrame.lookAt(
-			cameraPosition,
-			lookTarget,
-			Vector3.new(
-				0,
-				1,
-				0
-			)
-		)
-
-
-	--------------------------------------------------
-	-- REMEMBER STATE
-	--------------------------------------------------
-
-	previousRunState =
-		runState
-
-end
-
-
---------------------------------------------------
--- UPDATE CAMERA MODE
---------------------------------------------------
-
-local function updateCameraMode()
-
-	--------------------------------------------------
-	-- GET BALL
+	-- BALL
 	--------------------------------------------------
 
 	local ball =
 		getBall()
 
-	--------------------------------------------------
-	-- WIN COURSE HAS PRIORITY
-	--
-	-- This is checked FIRST.
-	--
-	-- Even if another script changes RunState to:
-	--
-	-- "Bonus"
-	-- "Finishing"
-	-- "Completed"
-	-- etc.
-	--
-	-- the WinCourse camera remains the Run camera.
-	--------------------------------------------------
-
-	if ball
-		and ball:GetAttribute(
-			"WinCourseActive"
-		) == true then
-
-		cameraMode =
-			"Run"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- NORMAL RUN STATE
-	--------------------------------------------------
-
-	local runState =
-		player:GetAttribute(
-			"RunState"
-		)
-
-
-	--------------------------------------------------
-	-- WAITING
-	--------------------------------------------------
-
-	if runState == "Waiting" then
-
-		cameraMode =
-			"Lobby"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- STARTING
-	--------------------------------------------------
-
-	if runState == "Starting" then
-
-		cameraMode =
-			"Lobby"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- RUNNING
-	--------------------------------------------------
-
-	if runState == "Running" then
-
-		cameraMode =
-			"Run"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- FINISHING
-	--------------------------------------------------
-
-	if runState == "Finishing" then
-
-		cameraMode =
-			"Run"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- BONUS
-	--------------------------------------------------
-
-	if runState == "Bonus" then
-
-		cameraMode =
-			"Run"
-
-		return
-
-	end
-
-
-	--------------------------------------------------
-	-- UNKNOWN
-	--------------------------------------------------
-
-	cameraMode =
-		"Lobby"
-
-end
-
---------------------------------------------------
--- UPDATE CAMERA
---------------------------------------------------
-
-local function updateCamera()
-
-	local ball =
-		getBall()
 
 	if not ball then
 		return
@@ -666,21 +899,22 @@ local function updateCamera()
 
 
 	--------------------------------------------------
-	-- UPDATE MODE
+	-- MODE
 	--------------------------------------------------
 
-	updateCameraMode()
+	local mode =
+		getCameraMode(ball)
 
 
 	--------------------------------------------------
 	-- LOBBY
 	--------------------------------------------------
 
-	if cameraMode ==
-		"Lobby" then
+	if mode == "Lobby" then
 
 		updateLobbyCamera(
-			ball
+			ball,
+			deltaTime
 		)
 
 		return
@@ -689,16 +923,25 @@ local function updateCamera()
 
 
 	--------------------------------------------------
-	-- RUN
-	--
-	-- BOTH REGULAR COURSE AND WINCOURSE USE THIS.
+	-- COURSE
 	--------------------------------------------------
 
-	if cameraMode ==
-		"Run" then
+	if mode == "Course" then
 
-		updateRunCamera(
-			ball
+		--------------------------------------------------
+		-- RELEASE ANY ACTIVE RIGHT-CLICK ROTATION
+		--------------------------------------------------
+
+		rotating =
+			false
+
+		lastMousePosition =
+			nil
+
+
+		updateCourseCamera(
+			ball,
+			deltaTime
 		)
 
 		return
@@ -706,6 +949,19 @@ local function updateCamera()
 	end
 
 end
+
+
+--------------------------------------------------
+-- INITIAL CAMERA
+--------------------------------------------------
+
+camera.CameraType =
+	Enum.CameraType.Scriptable
+
+camera.FieldOfView =
+	LOBBY_ZOOM_LEVELS[
+		currentLobbyZoom
+	].fov
 
 
 --------------------------------------------------
@@ -714,6 +970,43 @@ end
 
 RunService:BindToRenderStep(
 	CAMERA_BIND_NAME,
-	Enum.RenderPriority.Camera.Value + 1,
+	Enum.RenderPriority.Camera.Value + 100,
 	updateCamera
+)
+
+
+--------------------------------------------------
+-- DEBUG
+--------------------------------------------------
+
+print(
+	"[BallCamera] CLIENT READY"
+)
+
+print(
+	"[BallCamera] Lobby = FREE CAMERA"
+)
+
+print(
+	"[BallCamera] Lobby vertical orbit = CORRECTED"
+)
+
+print(
+	"[BallCamera] Lobby camera floor = DISABLED"
+)
+
+print(
+	"[BallCamera] Course = LOCKED CAMERA"
+)
+
+print(
+	"[BallCamera] Course mouse orbit = DISABLED"
+)
+
+print(
+	"[BallCamera] Course zoom = DISABLED"
+)
+
+print(
+	"[BallCamera] Lobby zoom = 3 levels"
 )

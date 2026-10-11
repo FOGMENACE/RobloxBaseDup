@@ -1,62 +1,235 @@
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ServerScriptService = game:GetService("ServerScriptService")
+--------------------------------------------------
+-- RUN CONTROLLER
+--
+-- SERVER ONLY
+--
+-- LOCATION:
+-- ServerScriptService
+--
+-- TYPE:
+-- Script
+--
+-- PURPOSE:
+--
+-- Controls:
+-- - Run start
+-- - Run state
+-- - Oil course generation
+-- - Run finish
+-- - Start/Finish wall detection
+-- - Launching WinCourse
+--
+-- IMPORTANT:
+--
+-- RunController DOES NOT:
+-- - Calculate oil rewards
+-- - Calculate WinCourse speed
+-- - Calculate acceleration
+-- - Move the ball
+-- - Control WinCourse physics
+--
+-- OilCollectionService is a NORMAL SERVER SCRIPT.
+-- It is NOT required with require().
+--
+-- BindableEvents are created automatically.
+--
+--------------------------------------------------
+
+
+--------------------------------------------------
+-- SERVICES
+--------------------------------------------------
+
+local Players =
+	game:GetService(
+		"Players"
+	)
+
+local RunService =
+	game:GetService(
+		"RunService"
+	)
+
+local ServerScriptService =
+	game:GetService(
+		"ServerScriptService"
+	)
+
 
 --------------------------------------------------
 -- REFERENCES
 --------------------------------------------------
 
 local playerBalls =
-	workspace:WaitForChild("PlayerBalls")
+	workspace:WaitForChild(
+		"PlayerBalls"
+	)
 
 local course =
-	workspace:WaitForChild("Course")
+	workspace:WaitForChild(
+		"Course"
+	)
 
 local startWall =
-	workspace:WaitForChild("StartWall")
+	workspace:WaitForChild(
+		"StartWall"
+	)
 
 local finishWall =
-	workspace:WaitForChild("FinishWall")
+	workspace:WaitForChild(
+		"FinishWall"
+	)
+
 
 --------------------------------------------------
--- EVENTS
+-- CREATE / GET BINDABLE EVENTS
 --------------------------------------------------
+
+local function getOrCreateBindableEvent(
+	name
+)
+
+	local existing =
+		ServerScriptService:FindFirstChild(
+			name
+		)
+
+
+	if existing then
+
+		if not existing:IsA(
+			"BindableEvent"
+		) then
+
+			error(
+				"[RunController] "
+					.. name
+					.. " already exists but is not a BindableEvent."
+			)
+
+		end
+
+
+		return existing
+
+	end
+
+
+	local event =
+		Instance.new(
+			"BindableEvent"
+		)
+
+
+	event.Name =
+		name
+
+
+	event.Parent =
+		ServerScriptService
+
+
+	print(
+		"[RunController] Created BindableEvent:",
+		name
+	)
+
+
+	return event
+
+end
+
 
 local startWinCourse =
-	ServerScriptService:WaitForChild(
+	getOrCreateBindableEvent(
 		"StartWinCourse"
 	)
 
+
 local generateOilCourse =
-	ServerScriptService:WaitForChild(
+	getOrCreateBindableEvent(
 		"GenerateOilCourse"
 	)
 
-assert(
-	startWinCourse:IsA("BindableEvent"),
-	"[RunController] StartWinCourse must be a BindableEvent"
+
+local resetCurrentOil =
+	getOrCreateBindableEvent(
+		"ResetCurrentOil"
+	)
+
+
+--------------------------------------------------
+-- SAFE NUMBER
+--------------------------------------------------
+
+local function isFiniteNumber(
+	value
 )
 
-assert(
-	generateOilCourse:IsA("BindableEvent"),
-	"[RunController] GenerateOilCourse must be a BindableEvent"
+	return typeof(value) == "number"
+		and value == value
+		and value ~= math.huge
+		and value ~= -math.huge
+
+end
+
+
+--------------------------------------------------
+-- READ CURRENT RUN OIL
+--------------------------------------------------
+
+local function getCurrentRunOil(
+	player
 )
+
+	if not player then
+
+		return 0
+
+	end
+
+
+	local currentOil =
+		player:GetAttribute(
+			"CurrentOil"
+		)
+
+
+	if not isFiniteNumber(
+		currentOil
+	) then
+
+		warn(
+			"[RunController]",
+			player.Name,
+			"CurrentOil is invalid:",
+			currentOil
+		)
+
+		return 0
+
+	end
+
+
+	return math.max(
+		0,
+		currentOil
+	)
+
+end
+
 
 --------------------------------------------------
 -- PLAYER SETUP
 --------------------------------------------------
 
-local function setupPlayer(player)
+local function setupPlayer(
+	player
+)
 
-	--------------------------------------------------
-	-- ONLY INITIALIZE IF THE ATTRIBUTES DO NOT
-	-- ALREADY EXIST.
-	--
-	-- IMPORTANT:
-	-- Do NOT blindly reset CurrentOil.
-	--------------------------------------------------
-
-	if player:GetAttribute("RunState") == nil then
+	if player:GetAttribute(
+		"RunState"
+	) == nil then
 
 		player:SetAttribute(
 			"RunState",
@@ -65,7 +238,10 @@ local function setupPlayer(player)
 
 	end
 
-	if player:GetAttribute("CurrentOil") == nil then
+
+	if player:GetAttribute(
+		"CurrentOil"
+	) == nil then
 
 		player:SetAttribute(
 			"CurrentOil",
@@ -74,84 +250,141 @@ local function setupPlayer(player)
 
 	end
 
+
+	if player:GetAttribute(
+		"CollectedOilCount"
+	) == nil then
+
+		player:SetAttribute(
+			"CollectedOilCount",
+			0
+		)
+
+	end
+
+
 	print(
 		"[RunController]",
 		player.Name,
 		"RunState =",
-		player:GetAttribute("RunState"),
+		player:GetAttribute(
+			"RunState"
+		),
 		"CurrentOil =",
-		player:GetAttribute("CurrentOil")
+		getCurrentRunOil(
+			player
+		)
 	)
 
 end
+
 
 --------------------------------------------------
 -- PLAYERS
 --------------------------------------------------
 
 Players.PlayerAdded:Connect(
-	function(player)
+	function(
+		player
+	)
 
-		setupPlayer(player)
+		setupPlayer(
+			player
+		)
 
 	end
 )
+
 
 for _, player in ipairs(
 	Players:GetPlayers()
 ) do
 
-	setupPlayer(player)
+	setupPlayer(
+		player
+	)
 
 end
+
 
 --------------------------------------------------
 -- GET PLAYER FROM BALL
 --------------------------------------------------
 
-local function getPlayerFromBall(ball)
+local function getPlayerFromBall(
+	ball
+)
 
 	if not ball then
+
 		return nil
+
 	end
 
-	if not ball:IsA("BasePart") then
+
+	if not ball:IsA(
+		"BasePart"
+	) then
+
 		return nil
+
 	end
+
 
 	if ball.Parent ~= playerBalls then
+
 		return nil
+
 	end
+
 
 	local ownerUserId =
 		ball:GetAttribute(
 			"OwnerUserId"
 		)
 
-	if typeof(ownerUserId) ~= "number" then
+
+	if not isFiniteNumber(
+		ownerUserId
+	) then
+
 		return nil
+
 	end
+
 
 	local player =
 		Players:GetPlayerByUserId(
 			ownerUserId
 		)
 
+
 	if not player then
+
 		return nil
+
 	end
+
 
 	local expectedName =
-		"PlayerBall_" ..
-		player.UserId
+		"PlayerBall_"
+		..
+		tostring(
+			player.UserId
+		)
+
 
 	if ball.Name ~= expectedName then
+
 		return nil
+
 	end
+
 
 	return player
 
 end
+
 
 --------------------------------------------------
 -- REMOVE LOBBY COURSE
@@ -164,47 +397,52 @@ local function removeLobbyCourse()
 			"LobbyCourse"
 		)
 
-	if not lobbyCourse then
 
-		print(
-			"[RunController] No LobbyCourse found to remove"
-		)
+	if not lobbyCourse then
 
 		return
 
 	end
 
+
 	print(
-		"[RunController] Removing LobbyCourse:",
+		"[RunController]",
+		"Removing LobbyCourse:",
 		lobbyCourse:GetFullName()
 	)
 
+
 	lobbyCourse:Destroy()
 
-	print(
-		"[RunController] LobbyCourse removed"
-	)
-
 end
+
 
 --------------------------------------------------
 -- REMOVE OLD PLAYER COURSE
 --------------------------------------------------
 
-local function removeOldPlayerCourse(player)
+local function removeOldPlayerCourse(
+	player
+)
 
 	local playerCourse =
 		course:FindFirstChild(
-			"PlayerCourse_" ..
-			player.UserId
+			"PlayerCourse_"
+			..
+			tostring(
+				player.UserId
+			)
 		)
+
 
 	if playerCourse then
 
 		print(
-			"[RunController] Removing old player course:",
+			"[RunController]",
+			"Removing old player course:",
 			playerCourse:GetFullName()
 		)
+
 
 		playerCourse:Destroy()
 
@@ -212,209 +450,146 @@ local function removeOldPlayerCourse(player)
 
 end
 
+
 --------------------------------------------------
 -- GET PLAYER COURSE
 --------------------------------------------------
 
-local function getPlayerCourse(player)
+local function getPlayerCourse(
+	player
+)
 
 	if not player then
+
 		return nil
+
 	end
+
 
 	return course:FindFirstChild(
-		"PlayerCourse_" ..
-		player.UserId
+		"PlayerCourse_"
+		..
+		tostring(
+			player.UserId
+		)
 	)
 
 end
 
+
 --------------------------------------------------
--- CALCULATE COLLECTED OIL
+-- RESET CURRENT RUN OIL
 --
--- THIS IS THE IMPORTANT FIX.
+-- OilCollectionService is a NORMAL SCRIPT.
 --
--- OilCollection marks the actual selected platform:
+-- Therefore RunController does NOT require it.
 --
---     Collected = true
+-- Instead we fire ResetCurrentOil.
 --
--- and the generator gives it:
+-- OilCollectionService should listen to:
 --
---     OilAmount
+-- ServerScriptService.ResetCurrentOil.Event
 --
--- Therefore the generated course itself is the
--- authoritative record of what was collected.
---
--- We do NOT depend exclusively on CurrentOil.
 --------------------------------------------------
 
-local function calculateCollectedOil(player)
+local function resetRunCollectionState(player)
+	if not player then
+		return false
+	end
 
-	local playerCourse =
-		getPlayerCourse(player)
+	-- Reset directly through the player's server attributes.
+	-- Do not depend on a BindableEvent listener to reset the oil.
+	player:SetAttribute("CurrentOil", 0)
+	player:SetAttribute("CollectedOilCount", 0)
 
-	if not playerCourse then
+	-- Verify the reset immediately.
+	local currentOil = player:GetAttribute("CurrentOil")
+	local collectedCount = player:GetAttribute("CollectedOilCount")
 
-		warn(
-			"[RunController]",
-			player.Name,
-			"cannot calculate collected oil:",
-			"PlayerCourse does not exist"
+	print(
+		"[RunController] RESET VERIFICATION:",
+		player.Name,
+		"| CurrentOil:", currentOil,
+		"| CollectedOilCount:", collectedCount
+	)
+
+	if currentOil ~= 0 or collectedCount ~= 0 then
+		warn("[RunController] Oil reset failed for", player.Name)
+		return false
+	end
+
+	return true
+end
+
+
+--------------------------------------------------
+-- PREPARE BALL FOR RUN
+--------------------------------------------------
+
+local function prepareBallForRun(
+	player,
+	ball
+)
+
+	if not ball
+		or not ball.Parent then
+
+		return false
+
+	end
+
+
+	if ball:GetAttribute(
+		"OwnerUserId"
+	) ~= player.UserId then
+
+		return false
+
+	end
+
+
+	--------------------------------------------------
+	-- CLEAR OLD WIN COURSE STATE
+	--------------------------------------------------
+
+	ball:SetAttribute(
+		"WinCourseActive",
+		false
+	)
+
+
+	--------------------------------------------------
+	-- CLEAR OLD WIN COURSE CONTROLLER
+	--------------------------------------------------
+
+	local oldController =
+		ball:FindFirstChild(
+			"WinCourseLinearVelocity"
 		)
 
-		return nil, 0
+
+	if oldController then
+
+		oldController:Destroy()
 
 	end
 
-	local totalOil = 0
-	local collectedCount = 0
 
 	--------------------------------------------------
-	-- SCAN EVERY OIL ROW
+	-- STOP OLD MOTION
 	--------------------------------------------------
 
-	for _, row in ipairs(
-		playerCourse:GetChildren()
-	) do
+	ball.AssemblyLinearVelocity =
+		Vector3.zero
 
-		if not row:IsA("Model") then
-			continue
-		end
+	ball.AssemblyAngularVelocity =
+		Vector3.zero
 
-		if not row.Name:match(
-			"^OilRow_"
-		) then
-			continue
-		end
 
-		--------------------------------------------------
-		-- CHECK BOTH PLATFORMS
-		--------------------------------------------------
-
-		for _, object in ipairs(
-			row:GetDescendants()
-		) do
-
-			if not object:IsA("BasePart") then
-				continue
-			end
-
-			if object.Name ~= "OilPlatformL"
-				and object.Name ~= "OilPlatformR" then
-
-				continue
-
-			end
-
-			--------------------------------------------------
-			-- ONLY COUNT ACTUALLY COLLECTED PLATFORMS
-			--------------------------------------------------
-
-			if object:GetAttribute(
-				"Collected"
-			) ~= true then
-
-				continue
-
-			end
-
-			local amount =
-				object:GetAttribute(
-					"OilAmount"
-				)
-
-			if typeof(amount) ~= "number" then
-
-				warn(
-					"[RunController]",
-					player.Name,
-					"Collected platform has invalid OilAmount:",
-					object:GetFullName()
-				)
-
-				continue
-
-			end
-
-			totalOil += amount
-			collectedCount += 1
-
-			print(
-				"[RunController] COLLECTED PLATFORM:",
-				object:GetFullName(),
-				"OilAmount:",
-				amount,
-				"RunningTotal:",
-				totalOil
-			)
-
-		end
-
-	end
-
-	return totalOil, collectedCount
+	return true
 
 end
 
---------------------------------------------------
--- SYNCHRONIZE CURRENT OIL
---
--- CurrentOil becomes a cached value.
---
--- The actual collected platforms are the source
--- of truth.
---------------------------------------------------
-
-local function synchronizeCurrentOil(player)
-
-	local totalOil, collectedCount =
-		calculateCollectedOil(player)
-
-	if totalOil == nil then
-
-		return nil
-
-	end
-
-	--------------------------------------------------
-	-- WRITE THE AUTHORITATIVE VALUE
-	--------------------------------------------------
-
-	player:SetAttribute(
-		"CurrentOil",
-		totalOil
-	)
-
-	--------------------------------------------------
-	-- OPTIONAL DEBUG ATTRIBUTE
-	--------------------------------------------------
-
-	player:SetAttribute(
-		"CollectedOilCount",
-		collectedCount
-	)
-
-	print("================================")
-	print(
-		"[RunController] OIL SYNCHRONIZED"
-	)
-	print(
-		"[RunController] Player:",
-		player.Name
-	)
-	print(
-		"[RunController] Collected platforms:",
-		collectedCount
-	)
-	print(
-		"[RunController] CurrentOil:",
-		totalOil
-	)
-	print("================================")
-
-	return totalOil
-
-end
 
 --------------------------------------------------
 -- START RUN
@@ -425,10 +600,6 @@ local function startRun(
 	ball
 )
 
-	--------------------------------------------------
-	-- MUST BE WAITING
-	--------------------------------------------------
-
 	if player:GetAttribute(
 		"RunState"
 	) ~= "Waiting" then
@@ -437,9 +608,16 @@ local function startRun(
 
 	end
 
-	--------------------------------------------------
-	-- VERIFY BALL OWNERSHIP
-	--------------------------------------------------
+
+	if not ball
+		or not ball:IsA(
+			"BasePart"
+		) then
+
+		return
+
+	end
+
 
 	if ball:GetAttribute(
 		"OwnerUserId"
@@ -455,8 +633,9 @@ local function startRun(
 
 	end
 
+
 	--------------------------------------------------
-	-- LOCK IMMEDIATELY
+	-- LOCK RUN
 	--------------------------------------------------
 
 	player:SetAttribute(
@@ -464,47 +643,69 @@ local function startRun(
 		"Starting"
 	)
 
+
 	print("================================")
+
+
 	print(
 		"[RunController]",
 		player.Name,
 		"START WALL REACHED"
 	)
 
-	--------------------------------------------------
-	-- RESET OIL FOR THE NEW RUN
-	--
-	-- THIS IS THE ONLY PLACE WE INTENTIONALLY
-	-- RESET CURRENT OIL.
-	--------------------------------------------------
-
-	player:SetAttribute(
-		"CurrentOil",
-		0
-	)
-
-	player:SetAttribute(
-		"CollectedOilCount",
-		0
-	)
-
-	print(
-		"[RunController]",
-		player.Name,
-		"CurrentOil RESET TO 0 FOR NEW RUN"
-	)
 
 	--------------------------------------------------
-	-- REMOVE LOBBY
+	-- PREPARE BALL
+	--------------------------------------------------
+
+	if not prepareBallForRun(
+		player,
+		ball
+	) then
+
+		player:SetAttribute(
+			"RunState",
+			"Waiting"
+		)
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- RESET RUN OIL
+	--------------------------------------------------
+
+	if not resetRunCollectionState(
+		player
+	) then
+
+		player:SetAttribute(
+			"RunState",
+			"Waiting"
+		)
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- REMOVE LOBBY COURSE
 	--------------------------------------------------
 
 	removeLobbyCourse()
 
+
 	--------------------------------------------------
-	-- REMOVE OLD PLAYER COURSE
+	-- REMOVE OLD COURSE
 	--------------------------------------------------
 
-	removeOldPlayerCourse(player)
+	removeOldPlayerCourse(
+		player
+	)
+
 
 	--------------------------------------------------
 	-- GENERATE NEW COURSE
@@ -516,28 +717,44 @@ local function startRun(
 		"FIRING GenerateOilCourse"
 	)
 
+
 	generateOilCourse:Fire(
 		player
 	)
 
+
 	--------------------------------------------------
-	-- VERIFY GENERATED COURSE
+	-- WAIT FOR COURSE
 	--------------------------------------------------
 
-	local playerCourse
+	local playerCourse = nil
+
 
 	for attempt = 1, 20 do
 
 		playerCourse =
-			getPlayerCourse(player)
+			getPlayerCourse(
+				player
+			)
+
 
 		if playerCourse then
+
 			break
+
 		end
 
-		task.wait(0.05)
+
+		task.wait(
+			0.05
+		)
 
 	end
+
+
+	--------------------------------------------------
+	-- GENERATION FAILED
+	--------------------------------------------------
 
 	if not playerCourse then
 
@@ -547,26 +764,33 @@ local function startRun(
 			"FAILED: PlayerCourse was not generated"
 		)
 
+
 		player:SetAttribute(
 			"RunState",
 			"Waiting"
 		)
 
+
 		return
 
 	end
 
+
 	--------------------------------------------------
-	-- VERIFY ROW COUNT
+	-- COUNT ROWS
 	--------------------------------------------------
 
-	local rowCount = 0
+	local rowCount =
+		0
+
 
 	for _, object in ipairs(
 		playerCourse:GetChildren()
 	) do
 
-		if object:IsA("Model")
+		if object:IsA(
+			"Model"
+		)
 			and object.Name:match(
 				"^OilRow_"
 			) then
@@ -577,12 +801,38 @@ local function startRun(
 
 	end
 
+
 	print(
 		"[RunController]",
 		player.Name,
 		"Generated rows:",
 		rowCount
 	)
+
+
+	--------------------------------------------------
+	-- VALIDATE COURSE
+	--------------------------------------------------
+
+	if rowCount <= 0 then
+
+		warn(
+			"[RunController]",
+			player.Name,
+			"Generated course contains no OilRow models."
+		)
+
+
+		player:SetAttribute(
+			"RunState",
+			"Waiting"
+		)
+
+
+		return
+
+	end
+
 
 	--------------------------------------------------
 	-- START RUN
@@ -593,27 +843,34 @@ local function startRun(
 		"Running"
 	)
 
+
 	print(
 		"[RunController]",
 		player.Name,
 		"STARTED RUN"
 	)
 
+
 	print(
-		"[RunController] Ball:",
+		"[RunController]",
+		"Ball:",
 		ball.Name
 	)
 
+
 	print(
-		"[RunController] RunState:",
-		player:GetAttribute(
-			"RunState"
+		"[RunController]",
+		"CurrentOil:",
+		getCurrentRunOil(
+			player
 		)
 	)
+
 
 	print("================================")
 
 end
+
 
 --------------------------------------------------
 -- FINISH RUN
@@ -624,10 +881,6 @@ local function finishRun(
 	ball
 )
 
-	--------------------------------------------------
-	-- MUST BE RUNNING
-	--------------------------------------------------
-
 	if player:GetAttribute(
 		"RunState"
 	) ~= "Running" then
@@ -636,9 +889,16 @@ local function finishRun(
 
 	end
 
-	--------------------------------------------------
-	-- VERIFY BALL OWNERSHIP
-	--------------------------------------------------
+
+	if not ball
+		or not ball:IsA(
+			"BasePart"
+		) then
+
+		return
+
+	end
+
 
 	if ball:GetAttribute(
 		"OwnerUserId"
@@ -654,6 +914,7 @@ local function finishRun(
 
 	end
 
+
 	--------------------------------------------------
 	-- LOCK FINISH
 	--------------------------------------------------
@@ -663,43 +924,53 @@ local function finishRun(
 		"Finishing"
 	)
 
+
 	--------------------------------------------------
-	-- IMPORTANT:
-	--
-	-- DO NOT TRUST THE EXISTING CurrentOil VALUE.
-	--
-	-- REBUILD IT FROM THE ACTUALLY COLLECTED
-	-- OIL PLATFORMS.
+-- READ FINAL CURRENT OIL
+--------------------------------------------------
+
+local currentOil =
+    getCurrentRunOil(player)
+
+local collectedOilCount =
+    player:GetAttribute("CollectedOilCount")
+
+if not isFiniteNumber(collectedOilCount) then
+    collectedOilCount = 0
+end
+
+print(
+    "[RunController] FINAL OIL AUDIT:",
+    player.Name,
+    "| CurrentOil:",
+    currentOil,
+    "| CollectedOilCount:",
+    collectedOilCount
+)
+
+
+	--------------------------------------------------
+	-- SAFETY REPAIR
 	--------------------------------------------------
 
-	local oil =
-		synchronizeCurrentOil(
-			player
+	local rawCurrentOil =
+		player:GetAttribute(
+			"CurrentOil"
 		)
 
-	if oil == nil then
 
-		warn(
-			"[RunController]",
-			player.Name,
-			"FAILED TO CALCULATE COLLECTED OIL"
-		)
-
-		--------------------------------------------------
-		-- Allow another attempt rather than sending
-		-- WinCourse an invalid zero.
-		--------------------------------------------------
+	if rawCurrentOil ~= currentOil then
 
 		player:SetAttribute(
-			"RunState",
-			"Running"
+			"CurrentOil",
+			currentOil
 		)
-
-		return
 
 	end
 
+
 	print("================================")
+
 
 	print(
 		"[RunController]",
@@ -707,53 +978,70 @@ local function finishRun(
 		"FINISH WALL REACHED"
 	)
 
-	print(
-		"[RunController] AUTHORITATIVE OIL:",
-		oil
-	)
 
 	print(
-		"[RunController] CurrentOil ATTRIBUTE:",
-		player:GetAttribute(
-			"CurrentOil"
-		)
+		"[RunController]",
+		"ACCUMULATED RUN OIL:",
+		currentOil
 	)
 
+
 	print(
-		"[RunController] CollectedOilCount:",
+		"[RunController]",
+		"CollectedOilCount:",
 		player:GetAttribute(
 			"CollectedOilCount"
 		)
 	)
 
-	print(
-		"[RunController] RunState:",
-		player:GetAttribute(
-			"RunState"
-		)
-	)
 
 	--------------------------------------------------
-	-- WIN
+	-- ACTIVATE WIN COURSE
+	--------------------------------------------------
+
+	ball:SetAttribute(
+		"WinCourseActive",
+		true
+	)
+
+
+	--------------------------------------------------
+	-- START WIN COURSE
 	--------------------------------------------------
 
 	print(
 		"[RunController]",
 		player.Name,
-		"FIRING StartWinCourse WITH OIL:",
-		player:GetAttribute(
-			"CurrentOil"
-		)
+		"FIRING StartWinCourse"
 	)
+
 
 	startWinCourse:Fire(
 		player,
 		ball
 	)
 
+
+	print(
+		"[RunController]",
+		"WinCourseActive:",
+		ball:GetAttribute(
+			"WinCourseActive"
+		)
+	)
+
+
+	print(
+		"[RunController]",
+		"WinCourse will use CurrentOil:",
+		currentOil
+	)
+
+
 	print("================================")
 
 end
+
 
 --------------------------------------------------
 -- OVERLAP SETTINGS
@@ -762,35 +1050,50 @@ end
 local overlapParams =
 	OverlapParams.new()
 
+
 overlapParams.FilterType =
 	Enum.RaycastFilterType.Include
+
 
 overlapParams.FilterDescendantsInstances = {
 	playerBalls
 }
 
-overlapParams.MaxParts = 100
+
+overlapParams.MaxParts =
+	100
+
 
 --------------------------------------------------
 -- GET BALLS INSIDE WALL
 --------------------------------------------------
 
-local function getBallsInWall(wall)
+local function getBallsInWall(
+	wall
+)
 
 	if not wall then
+
 		return {}
+
 	end
 
-	if not wall:IsA("BasePart") then
+
+	if not wall:IsA(
+		"BasePart"
+	) then
 
 		warn(
-			"[RunController] Wall is not a BasePart:",
+			"[RunController]",
+			"Wall is not a BasePart:",
 			wall:GetFullName()
 		)
 
+
 		return {}
 
 	end
+
 
 	return workspace:GetPartBoundsInBox(
 		wall.CFrame,
@@ -799,6 +1102,7 @@ local function getBallsInWall(wall)
 	)
 
 end
+
 
 --------------------------------------------------
 -- CHECK START WALL
@@ -811,6 +1115,7 @@ local function checkStartWall()
 			startWall
 		)
 
+
 	for _, ball in ipairs(
 		balls
 	) do
@@ -819,6 +1124,7 @@ local function checkStartWall()
 			getPlayerFromBall(
 				ball
 			)
+
 
 		if player then
 
@@ -833,6 +1139,7 @@ local function checkStartWall()
 
 end
 
+
 --------------------------------------------------
 -- CHECK FINISH WALL
 --------------------------------------------------
@@ -844,49 +1151,49 @@ local function checkFinishWall()
 			finishWall
 		)
 
+
 	for _, ball in ipairs(
 		balls
 	) do
-
-		print(
-			"[RunController DEBUG] Ball detected:",
-			ball.Name,
-			"Owner:",
-			ball:GetAttribute(
-				"OwnerUserId"
-			)
-		)
 
 		local player =
 			getPlayerFromBall(
 				ball
 			)
 
+
 		if player then
 
-			print(
-				"[RunController DEBUG] Player detected:",
-				player.Name,
-				"RunState:",
-				player:GetAttribute(
-					"RunState"
-				),
-				"CurrentOil:",
-				player:GetAttribute(
-					"CurrentOil"
-				)
-			)
+			if player:GetAttribute(
+				"RunState"
+			) == "Running" then
 
-			finishRun(
-				player,
-				ball
-			)
+				print(
+					"[RunController DEBUG]",
+					"Finish ball detected:",
+					ball.Name,
+					"Player:",
+					player.Name,
+					"CurrentOil:",
+					getCurrentRunOil(
+						player
+					)
+				)
+
+
+				finishRun(
+					player,
+					ball
+				)
+
+			end
 
 		end
 
 	end
 
 end
+
 
 --------------------------------------------------
 -- MAIN LOOP
@@ -902,12 +1209,15 @@ RunService.Heartbeat:Connect(
 	end
 )
 
+
 --------------------------------------------------
 -- PLAYER CLEANUP
 --------------------------------------------------
 
 Players.PlayerRemoving:Connect(
-	function(player)
+	function(
+		player
+	)
 
 		print(
 			"[RunController]",
@@ -918,31 +1228,95 @@ Players.PlayerRemoving:Connect(
 	end
 )
 
+
 --------------------------------------------------
 -- STARTUP
 --------------------------------------------------
 
 print("================================")
-print("[RunController] SERVER READY")
+
 
 print(
-	"[RunController] StartWall:",
+	"[RunController]",
+	"SERVER READY"
+)
+
+
+print(
+	"[RunController]",
+	"Script type:",
+	"NORMAL SERVER SCRIPT"
+)
+
+
+print(
+	"[RunController]",
+	"StartWall:",
 	startWall:GetFullName()
 )
 
+
 print(
-	"[RunController] FinishWall:",
+	"[RunController]",
+	"FinishWall:",
 	finishWall:GetFullName()
 )
 
+
 print(
-	"[RunController] StartWinCourse:",
+	"[RunController]",
+	"StartWinCourse:",
 	startWinCourse:GetFullName()
 )
 
+
 print(
-	"[RunController] GenerateOilCourse:",
+	"[RunController]",
+	"GenerateOilCourse:",
 	generateOilCourse:GetFullName()
 )
+
+
+print(
+	"[RunController]",
+	"ResetCurrentOil:",
+	resetCurrentOil:GetFullName()
+)
+
+
+print(
+	"[RunController]",
+	"OilCollectionService:",
+	"NORMAL SERVER SCRIPT - NO REQUIRE()"
+)
+
+
+print(
+	"[RunController]",
+	"Oil rewards:",
+	"CONTROLLED BY OilCollectionService"
+)
+
+
+print(
+	"[RunController]",
+	"CurrentOil:",
+	"ACCUMULATED POSITIVE OIL FOR CURRENT RUN"
+)
+
+
+print(
+	"[RunController]",
+	"WinCourse:",
+	"READS CurrentOil SERVER-SIDE"
+)
+
+
+print(
+	"[RunController]",
+	"WinCourseActive:",
+	"SET TRUE WHEN FINISH WALL IS REACHED"
+)
+
 
 print("================================")

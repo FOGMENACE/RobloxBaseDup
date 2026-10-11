@@ -3,26 +3,25 @@
 --
 -- SERVER ONLY
 --
--- LOCATION:
--- ServerScriptService
---     > WinCourseProgressService
+-- This service controls the WinCourse ball.
 --
--- OIL FLOW:
+-- ACCELERATION VERSION
 --
--- OilCollection
---      ↓
--- player.CurrentOil
---      ↓
--- FinishWall
---      ↓
--- WinCourse becomes active
---      ↓
--- WinCourseProgressService reads CurrentOil
---      ↓
--- CurrentOil becomes travel distance
---      ↓
--- Ball moves through generated WinTiles
+-- The ball:
+--   1. Starts anchored.
+--   2. Waits through the countdown.
+--   3. Server takes ownership.
+--   4. Ball is released.
+--   5. One LinearVelocity is created.
+--   6. Target speed increases according to
+--      the acceleration setting.
+--   7. Oil determines total travel distance.
 --
+-- IMPORTANT:
+--
+-- No per-frame CFrame movement.
+-- No per-frame AssemblyLinearVelocity forcing.
+-- No per-frame network ownership changes.
 --------------------------------------------------
 
 
@@ -30,61 +29,98 @@
 -- SERVICES
 --------------------------------------------------
 
-local Players =
-	game:GetService("Players")
-
-local RunService =
-	game:GetService("RunService")
-
-local Workspace =
-	game:GetService("Workspace")
-
-local ReplicatedStorage =
-	game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 
 --------------------------------------------------
 -- REFERENCES
 --------------------------------------------------
 
-local course =
-	Workspace:WaitForChild(
-		"Course"
-	)
-
-local playerBalls =
-	Workspace:WaitForChild(
-		"PlayerBalls"
-	)
-
-local remotes =
-	ReplicatedStorage:WaitForChild(
-		"Remotes"
-	)
+local course = Workspace:WaitForChild("Course")
+local playerBalls = Workspace:WaitForChild("PlayerBalls")
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local ballSpawn = Workspace:WaitForChild("BallSpawn")
 
 
 --------------------------------------------------
--- REMOTE
+-- GENERATOR
 --------------------------------------------------
 
-local winCourseRemote =
-	remotes:FindFirstChild(
-		"WinCourse"
+local generatorModule = ServerScriptService:WaitForChild(
+	"WinCourseGenerator"
+)
+
+if not generatorModule:IsA("ModuleScript") then
+	error(
+		"[WinCourseProgressService] "
+		.. "WinCourseGenerator must be a ModuleScript."
 	)
+end
+
+local requireSuccess, WinCourseGenerator = pcall(function()
+	return require(generatorModule)
+end)
+
+if not requireSuccess then
+	error(
+		"[WinCourseProgressService] "
+		.. "Failed to require WinCourseGenerator:\n"
+		.. tostring(WinCourseGenerator)
+	)
+end
+
+if type(WinCourseGenerator) ~= "table" then
+	error(
+		"[WinCourseProgressService] "
+		.. "WinCourseGenerator must return a table."
+	)
+end
+
+if type(WinCourseGenerator.GetStartPosition) ~= "function" then
+	error(
+		"[WinCourseProgressService] "
+		.. "WinCourseGenerator.GetStartPosition() is missing."
+	)
+end
+
+
+--------------------------------------------------
+-- REMOTES
+--------------------------------------------------
+
+local winCourseRemote = remotes:FindFirstChild("WinCourse")
 
 if not winCourseRemote then
+	winCourseRemote = Instance.new("RemoteEvent")
+	winCourseRemote.Name = "WinCourse"
+	winCourseRemote.Parent = remotes
+end
 
-	winCourseRemote =
-		Instance.new(
-			"RemoteEvent"
-		)
+if not winCourseRemote:IsA("RemoteEvent") then
+	error(
+		"[WinCourseProgressService] "
+		.. "Remotes.WinCourse must be a RemoteEvent."
+	)
+end
 
-	winCourseRemote.Name =
-		"WinCourse"
 
-	winCourseRemote.Parent =
-		remotes
+local SpawnAura = remotes:FindFirstChild("SpawnAura")
 
+if not SpawnAura then
+	SpawnAura = Instance.new("RemoteEvent")
+	SpawnAura.Name = "SpawnAura"
+	SpawnAura.Parent = remotes
+end
+
+if not SpawnAura:IsA("RemoteEvent") then
+	error(
+		"[WinCourseProgressService] "
+		.. "Remotes.SpawnAura must be a RemoteEvent."
+	)
 end
 
 
@@ -103,70 +139,135 @@ local START_DELAY = 5
 
 
 --------------------------------------------------
--- MOVEMENT SPEED
+-- RESULT DISPLAY
 --------------------------------------------------
 
-local WIN_COURSE_SPEED = 40
+local RESULT_DISPLAY_TIME = 4
 
 
 --------------------------------------------------
--- OIL DISTANCE
+-- STARTING SPEED
+--------------------------------------------------
+
+local BASE_WIN_COURSE_SPEED = 40
+
+
+--------------------------------------------------
+-- OIL SPEED BOOST
+--------------------------------------------------
+
+local OIL_SPEED_BOOST_PER_OIL = 0.10
+
+
+--------------------------------------------------
+-- MAXIMUM OIL SPEED BOOST
+--------------------------------------------------
+
+local MAX_OIL_SPEED_BOOST = 100
+
+
+--------------------------------------------------
+-- ACCELERATION
 --
--- 1 CurrentOil = 1 stud
+-- THIS IS THE IMPORTANT PART.
+--
+-- Example:
+--
+-- Starting speed = 50
+-- Acceleration = 8
+--
+-- 0 sec = 50
+-- 1 sec = 58
+-- 2 sec = 66
+-- 3 sec = 74
+-- etc.
+--------------------------------------------------
+
+local WIN_COURSE_ACCELERATION = 8
+
+
+--------------------------------------------------
+-- MAXIMUM SPEED
+--------------------------------------------------
+
+local MAX_WIN_COURSE_SPEED = 140
+
+
+--------------------------------------------------
+-- OIL TRAVEL
+--
+-- 1 oil = 1 stud of travel.
 --------------------------------------------------
 
 local OIL_PER_STUD = 1
 
 
 --------------------------------------------------
--- UPDATE RATE
---------------------------------------------------
-
-local UPDATE_INTERVAL = 0.016
-
-
---------------------------------------------------
 -- BALL HEIGHT
---
--- 0 = automatically use half the ball height.
 --------------------------------------------------
 
 local BALL_VERTICAL_OFFSET = 0
 
 
 --------------------------------------------------
--- TILE REACH TOLERANCE
+-- TILE REACH
 --------------------------------------------------
 
 local TILE_REACH_EPSILON = 0.25
 
 
 --------------------------------------------------
--- POSITION TOLERANCE
---------------------------------------------------
-
-local POSITION_EPSILON = 0.05
-
-
---------------------------------------------------
--- OIL SETTLE TIME
---
--- This gives OilCollection a tiny amount of time
--- to finish writing CurrentOil before we snapshot it.
---
--- This is NOT used to continuously modify oil.
---
--- It is only used when starting a WinCourse.
+-- OIL SETTLE
 --------------------------------------------------
 
 local OIL_SETTLE_TIME = 0.10
 
 
 --------------------------------------------------
--- ACTIVE RUNS
+-- FINISH
+--------------------------------------------------
+
+local FINISH_EPSILON = 0.15
+
+
+--------------------------------------------------
+-- RETURN
+--------------------------------------------------
+
+local RETURN_FADE_TIME = 0.35
+local RETURN_HOLD_TIME = 0.10
+
+
+--------------------------------------------------
+-- AURA
+--------------------------------------------------
+
+local AURA_DURATION = 2
+local AURA_STYLE = "WhiteBallAura"
+
+
+--------------------------------------------------
+-- SOUND
+--------------------------------------------------
+
+local GET_UP_SOUND_ID =
+	"rbxasset://sounds/action_get_up.mp3"
+
+
+--------------------------------------------------
+-- LINEAR VELOCITY
+--------------------------------------------------
+
+local LINEAR_VELOCITY_NAME =
+	"WinCourseLinearVelocity"
+
+
+--------------------------------------------------
+-- STATE
 --------------------------------------------------
 
 local activeRuns = {}
+local returningPlayers = {}
 
 
 --------------------------------------------------
@@ -175,14 +276,26 @@ local activeRuns = {}
 
 local function debugPrint(...)
 
-	if not DEBUG then
-		return
+	if DEBUG then
+		print(
+			"[WinCourseProgressService]",
+			...
+		)
 	end
 
-	print(
-		"[WinCourseProgressService]",
-		...
-	)
+end
+
+
+--------------------------------------------------
+-- SAFE NUMBER
+--------------------------------------------------
+
+local function isFiniteNumber(value)
+
+	return typeof(value) == "number"
+		and value == value
+		and value ~= math.huge
+		and value ~= -math.huge
 
 end
 
@@ -195,63 +308,29 @@ local function getPlayerBall(player)
 
 	if not player
 		or not player:IsA("Player") then
-
 		return nil
-
 	end
 
-
 	local expectedName =
-		"PlayerBall_" ..
-		tostring(player.UserId)
-
+		"PlayerBall_" .. tostring(player.UserId)
 
 	local ball =
-		playerBalls:FindFirstChild(
-			expectedName
-		)
-
+		playerBalls:FindFirstChild(expectedName)
 
 	if not ball then
 		return nil
 	end
 
-
 	if not ball:IsA("BasePart") then
-
-		warn(
-			"[WinCourseProgressService]",
-			"Player ball is not a BasePart:",
-			ball:GetFullName()
-		)
-
 		return nil
-
 	end
-
 
 	local ownerUserId =
-		ball:GetAttribute(
-			"OwnerUserId"
-		)
-
+		ball:GetAttribute("OwnerUserId")
 
 	if ownerUserId ~= player.UserId then
-
-		warn(
-			"[WinCourseProgressService]",
-			"Ball owner mismatch for",
-			player.Name,
-			"Expected:",
-			player.UserId,
-			"Found:",
-			ownerUserId
-		)
-
 		return nil
-
 	end
-
 
 	return ball
 
@@ -259,38 +338,67 @@ end
 
 
 --------------------------------------------------
--- GET GENERATED WIN COURSE
+-- OFFICIAL START POSITION
+--------------------------------------------------
+
+local function getOfficialStartPosition()
+
+	local success, position =
+		pcall(function()
+
+			return WinCourseGenerator.GetStartPosition()
+
+		end)
+
+	if not success then
+
+		warn(
+			"[WinCourseProgressService]",
+			"GetStartPosition failed:",
+			tostring(position)
+		)
+
+		return nil
+
+	end
+
+	if typeof(position) ~= "Vector3" then
+
+		warn(
+			"[WinCourseProgressService]",
+			"GetStartPosition must return Vector3."
+		)
+
+		return nil
+
+	end
+
+	return position
+
+end
+
+
+--------------------------------------------------
+-- GENERATED WIN COURSE
 --------------------------------------------------
 
 local function getGeneratedWinCourse()
 
 	local winCourse =
-		course:FindFirstChild(
-			"WinCourse"
-		)
-
+		course:FindFirstChild("WinCourse")
 
 	if not winCourse then
 		return nil
 	end
 
-
 	if not winCourse:IsA("Folder")
 		and not winCourse:IsA("Model") then
-
 		return nil
-
 	end
 
-
-	if winCourse:GetAttribute(
-		"IsWinCourse"
-	) ~= true then
-
+	if winCourse:GetAttribute("IsWinCourse") ~= true then
 		return nil
-
 	end
-
 
 	return winCourse
 
@@ -298,87 +406,57 @@ end
 
 
 --------------------------------------------------
--- GET TILE INDEX
+-- TILE INDEX
 --------------------------------------------------
 
 local function getTileIndex(tile)
-
-	if not tile
-		or not tile:IsA("Model") then
-
+	if not tile or not tile:IsA("Model") then
 		return nil
-
 	end
 
+	local index = tile:GetAttribute("TileIndex")
 
-	local index =
-		tile:GetAttribute(
-			"TileIndex"
-		)
-
-
+	-- Make sure the attribute exists and is a number.
 	if typeof(index) ~= "number" then
 		return nil
 	end
 
-
-	if index ~= math.floor(index) then
+	-- Reject NaN and infinity.
+	if index ~= index
+		or index == math.huge
+		or index == -math.huge then
 		return nil
 	end
 
-
-	if index < 1 then
+	-- Check for a positive whole number without math.floor.
+	if index < 1 or index % 1 ~= 0 then
 		return nil
 	end
-
 
 	return index
-
 end
 
-
 --------------------------------------------------
--- GET WIN AMOUNT
+-- WIN AMOUNT
 --------------------------------------------------
 
 local function getWinAmount(tile)
 
 	if not tile
 		or not tile:IsA("Model") then
-
 		return nil
-
 	end
-
 
 	local amount =
-		tile:GetAttribute(
-			"WinAmount"
-		)
+		tile:GetAttribute("WinAmount")
 
-
-	if typeof(amount) ~= "number" then
+	if not isFiniteNumber(amount) then
 		return nil
 	end
-
-
-	if amount ~= amount then
-		return nil
-	end
-
-
-	if amount == math.huge
-		or amount == -math.huge then
-
-		return nil
-
-	end
-
 
 	if amount < 0 then
 		return nil
 	end
-
 
 	return amount
 
@@ -386,36 +464,28 @@ end
 
 
 --------------------------------------------------
--- GET TILE POSITION
+-- TILE POSITION
 --------------------------------------------------
 
 local function getTilePosition(tile)
 
 	if not tile
 		or not tile:IsA("Model") then
-
 		return nil
-
 	end
-
 
 	local success, pivot =
 		pcall(function()
-
 			return tile:GetPivot()
-
 		end)
-
 
 	if not success then
 		return nil
 	end
 
-
 	if typeof(pivot) ~= "CFrame" then
 		return nil
 	end
-
 
 	return pivot.Position
 
@@ -423,77 +493,53 @@ end
 
 
 --------------------------------------------------
--- COLLECT WIN TILES
+-- COLLECT TILES
 --------------------------------------------------
 
-local function collectWinTiles(
-	winCourse
-)
+local function collectWinTiles(winCourse)
 
 	local tiles = {}
 
-
-	for _, child in ipairs(
-		winCourse:GetChildren()
-	) do
+	for _, child in ipairs(winCourse:GetChildren()) do
 
 		if not child:IsA("Model") then
 			continue
 		end
 
-
-		if not child.Name:match(
-			"^WinTile_"
-		) then
-
+		if not child.Name:match("^WinTile_") then
 			continue
-
 		end
 
-
 		local index =
-			getTileIndex(
-				child
-			)
-
+			getTileIndex(child)
 
 		local amount =
-			getWinAmount(
-				child
-			)
-
+			getWinAmount(child)
 
 		local position =
-			getTilePosition(
-				child
-			)
-
+			getTilePosition(child)
 
 		if not index then
 
 			warn(
 				"[WinCourseProgressService]",
-				"Missing TileIndex:",
+				"Invalid TileIndex:",
 				child:GetFullName()
 			)
 
 			continue
-
 		end
-
 
 		if amount == nil then
 
 			warn(
 				"[WinCourseProgressService]",
-				"Missing WinAmount:",
+				"Invalid WinAmount:",
 				child:GetFullName()
 			)
 
 			continue
-
 		end
-
 
 		if not position then
 
@@ -504,37 +550,26 @@ local function collectWinTiles(
 			)
 
 			continue
-
 		end
-
 
 		table.insert(
 			tiles,
 			{
-
 				Model = child,
-
 				Index = index,
-
 				Amount = amount,
-
 				Position = position,
-
 			}
 		)
 
 	end
 
-
 	table.sort(
 		tiles,
 		function(a, b)
-
 			return a.Index < b.Index
-
 		end
 	)
-
 
 	return tiles
 
@@ -545,25 +580,20 @@ end
 -- VALIDATE TILE ORDER
 --------------------------------------------------
 
-local function validateTileOrder(
-	tiles
-)
+local function validateTileOrder(tiles)
 
 	if #tiles < 1 then
 
 		warn(
 			"[WinCourseProgressService]",
-			"Generated WinCourse contains no WinTiles."
+			"No WinTiles found."
 		)
 
 		return false
 
 	end
 
-
-	for expectedIndex, tileData in ipairs(
-		tiles
-	) do
+	for expectedIndex, tileData in ipairs(tiles) do
 
 		if tileData.Index ~= expectedIndex then
 
@@ -582,14 +612,13 @@ local function validateTileOrder(
 
 	end
 
-
 	return true
 
 end
 
 
 --------------------------------------------------
--- CREATE COURSE DATA
+-- COURSE DATA
 --------------------------------------------------
 
 local function createCourseData()
@@ -597,66 +626,33 @@ local function createCourseData()
 	local winCourse =
 		getGeneratedWinCourse()
 
-
 	if not winCourse then
 		return nil
 	end
 
-
 	local tiles =
-		collectWinTiles(
-			winCourse
-		)
+		collectWinTiles(winCourse)
 
-
-	if not validateTileOrder(
-		tiles
-	) then
-
+	if not validateTileOrder(tiles) then
 		return nil
-
 	end
 
+	local startPosition =
+		getOfficialStartPosition()
 
-	debugPrint(
-		"GENERATED WIN COURSE FOUND:",
-		winCourse:GetFullName()
-	)
-
-	debugPrint(
-		"Generated WinTiles:",
-		#tiles
-	)
-
-
-	for _, tileData in ipairs(
-		tiles
-	) do
-
-		debugPrint(
-			"WinTile",
-			tileData.Index,
-			"|",
-			tileData.Model.Name,
-			"| Position:",
-			tileData.Position,
-			"| Win:",
-			tileData.Amount
-		)
-
+	if not startPosition then
+		return nil
 	end
-
 
 	return {
 
-		WinCourse =
-			winCourse,
+		WinCourse = winCourse,
 
-		Tiles =
-			tiles,
+		Tiles = tiles,
 
-		TileCount =
-			#tiles,
+		TileCount = #tiles,
+
+		StartPosition = startPosition,
 
 	}
 
@@ -665,195 +661,135 @@ end
 
 --------------------------------------------------
 -- READ CURRENT OIL
---
--- IMPORTANT:
---
--- CurrentOil is the authoritative oil value.
---
--- CollectedOilCount is NOT used for movement.
---
--- Example:
---
--- CurrentOil = 25
--- CollectedOilCount = 12
---
--- Travel budget = 25
---
--- NOT 12.
 --------------------------------------------------
 
 local function readCurrentOil(player)
 
 	local currentOil =
-		player:GetAttribute(
-			"CurrentOil"
-		)
+		player:GetAttribute("CurrentOil")
 
-
-	if typeof(currentOil) ~= "number" then
-
-		warn(
-			"[WinCourseProgressService]",
-			player.Name,
-			"CurrentOil is missing or invalid."
-		)
-
+	if not isFiniteNumber(currentOil) then
 		return nil
-
 	end
 
-
-	if currentOil ~= currentOil then
-
-		warn(
-			"[WinCourseProgressService]",
-			player.Name,
-			"CurrentOil is NaN."
-		)
-
-		return nil
-
-	end
-
-
-	if currentOil == math.huge
-		or currentOil == -math.huge then
-
-		warn(
-			"[WinCourseProgressService]",
-			player.Name,
-			"CurrentOil is infinite."
-		)
-
-		return nil
-
-	end
-
-
-	--------------------------------------------------
-	-- DO NOT CHANGE THE PLAYER ATTRIBUTE.
-	--
-	-- We only normalize the value locally.
-	--------------------------------------------------
-
-	local usableOil =
-		math.max(
-			0,
-			currentOil
-		)
-
-
-	local collectedOilCount =
-		player:GetAttribute(
-			"CollectedOilCount"
-		)
-
-
-	print(
-		"================================"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"OIL SNAPSHOT"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Player:",
-		player.Name
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"CurrentOil:",
-		currentOil
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"UsableOil:",
-		usableOil
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"CollectedOilCount:",
-		collectedOilCount
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"================================"
-	)
-
-
-	return usableOil
+	return math.max(0, currentOil)
 
 end
 
 
 --------------------------------------------------
--- READ OIL AFTER SETTLE
---
--- This is specifically here because the FinishWall
--- and OilCollection systems can execute very close
--- together.
---
--- We wait a tiny amount and then read CurrentOil.
---
--- We do NOT calculate oil ourselves.
--- We do NOT use CollectedOilCount.
+-- WAIT FOR OIL TO SETTLE
 --------------------------------------------------
 
 local function getCurrentOilAfterSettle(player)
 
-	local oil = nil
-
-
 	local deadline =
-		os.clock()
-		+
-		OIL_SETTLE_TIME
-
+		os.clock() + OIL_SETTLE_TIME
 
 	repeat
 
-		oil =
-			readCurrentOil(
-				player
-			)
-
+		local oil =
+			readCurrentOil(player)
 
 		if oil ~= nil then
-			break
+			return oil
 		end
-
 
 		task.wait()
 
 	until os.clock() >= deadline
 
-
-	return oil
+	return readCurrentOil(player)
 
 end
 
 
 --------------------------------------------------
--- GET BALL OFFSET
+-- OIL SPEED BOOST
 --------------------------------------------------
 
-local function getBallVerticalOffset(
-	ball
-)
+local function calculateOilSpeedBoost(oil)
 
-	if BALL_VERTICAL_OFFSET > 0 then
+	local rawBoost =
+		oil * OIL_SPEED_BOOST_PER_OIL
 
-		return BALL_VERTICAL_OFFSET
+	return math.clamp(
+		rawBoost,
+		0,
+		MAX_OIL_SPEED_BOOST
+	)
 
+end
+
+
+--------------------------------------------------
+-- STARTING SPEED
+--------------------------------------------------
+
+local function calculateStartingSpeed(oil)
+
+	local oilBoost =
+		calculateOilSpeedBoost(oil)
+
+	return math.clamp(
+		BASE_WIN_COURSE_SPEED + oilBoost,
+		0,
+		MAX_WIN_COURSE_SPEED
+	)
+
+end
+
+
+--------------------------------------------------
+-- ACCELERATED SPEED
+--
+-- THIS FUNCTION IS THE CORE OF THE
+-- ACCELERATION SYSTEM.
+--
+-- speed = startingSpeed + acceleration * time
+--
+-- Then the maximum speed is applied.
+--------------------------------------------------
+
+local function calculateRollSpeed(run)
+
+	if not run.RollStartTime then
+		return run.StartingSpeed
 	end
 
+	local elapsed =
+		math.max(
+			0,
+			os.clock() - run.RollStartTime
+		)
+
+	local speed =
+		run.StartingSpeed
+		+
+		(
+			WIN_COURSE_ACCELERATION
+			*
+			elapsed
+		)
+
+	return math.clamp(
+		speed,
+		0,
+		MAX_WIN_COURSE_SPEED
+	)
+
+end
+
+
+--------------------------------------------------
+-- BALL VERTICAL OFFSET
+--------------------------------------------------
+
+local function getBallVerticalOffset(ball)
+
+	if BALL_VERTICAL_OFFSET > 0 then
+		return BALL_VERTICAL_OFFSET
+	end
 
 	return ball.Size.Y / 2
 
@@ -861,181 +797,34 @@ end
 
 
 --------------------------------------------------
--- GET COURSE DIRECTION
+-- COURSE DIRECTION
 --------------------------------------------------
 
 local function getCourseDirection(
+	startPosition,
 	tiles
 )
 
-	if #tiles < 2 then
-
+	if typeof(startPosition) ~= "Vector3" then
 		return nil
-
 	end
 
-
-	local difference =
-		tiles[2].Position
-		-
-		tiles[1].Position
-
-
-	if difference.Magnitude <= 0.001 then
-
-		warn(
-			"[WinCourseProgressService]",
-			"WinTile_1 and WinTile_2 are too close."
-		)
-
+	if #tiles < 1 then
 		return nil
-
 	end
 
+	for _, tileData in ipairs(tiles) do
 
-	return difference.Unit
+		local difference =
+			tileData.Position - startPosition
 
-end
-
-
---------------------------------------------------
--- GET START POSITION
---------------------------------------------------
-
-local function getStartPosition(
-	ball
-)
-
-	if not ball
-		or not ball.Parent then
-
-		return nil
-
-	end
-
-
-	return ball.Position
-
-end
-
-
---------------------------------------------------
--- CALCULATE DISTANCE ALONG COURSE
---------------------------------------------------
-
-local function getForwardDistance(
-	startPosition,
-	position,
-	direction
-)
-
-	return math.max(
-		0,
-		(position - startPosition):Dot(
-			direction
-		)
-	)
-
-end
-
-
---------------------------------------------------
--- GET TILE DISTANCE
---------------------------------------------------
-
-local function getTileDistance(
-	startPosition,
-	tilePosition,
-	direction
-)
-
-	return getForwardDistance(
-		startPosition,
-		tilePosition,
-		direction
-	)
-
-end
-
-
---------------------------------------------------
--- FIND REACHABLE TILES
---------------------------------------------------
-
-local function findReachableTiles(
-	tiles,
-	startPosition,
-	direction,
-	travelBudget
-)
-
-	local finalTileIndex = 0
-
-	local finalTileDistance = 0
-
-
-	for _, tileData in ipairs(
-		tiles
-	) do
-
-		local distance =
-			getTileDistance(
-				startPosition,
-				tileData.Position,
-				direction
-			)
-
-
-		if distance <=
-			travelBudget
-			+
-			TILE_REACH_EPSILON then
-
-			finalTileIndex =
-				tileData.Index
-
-			finalTileDistance =
-				distance
-
-		else
-
-			break
-
+		if difference.Magnitude > 0.001 then
+			return difference.Unit
 		end
 
 	end
 
-
-	return finalTileIndex,
-		finalTileDistance
-
-end
-
-
---------------------------------------------------
--- TAKE SERVER CONTROL
---------------------------------------------------
-
-local function takeServerControl(
-	ball
-)
-
-	if not ball
-		or not ball.Parent then
-
-		return false
-
-	end
-
-
-	pcall(function()
-
-		ball:SetNetworkOwner(nil)
-
-	end)
-
-
-	return true
+	return nil
 
 end
 
@@ -1044,17 +833,12 @@ end
 -- STOP BALL
 --------------------------------------------------
 
-local function stopBall(
-	ball
-)
+local function stopBall(ball)
 
 	if not ball
 		or not ball.Parent then
-
 		return
-
 	end
-
 
 	ball.AssemblyLinearVelocity =
 		Vector3.zero
@@ -1062,38 +846,76 @@ local function stopBall(
 	ball.AssemblyAngularVelocity =
 		Vector3.zero
 
+end
+
+
+--------------------------------------------------
+-- REMOVE LINEAR VELOCITY
+--------------------------------------------------
+
+local function removePhysicsController(run)
+
+	local controller =
+		run.LinearVelocity
+
+	if controller
+		and controller.Parent then
+
+		controller.Enabled = false
+		controller:Destroy()
+
+	end
+
+	run.LinearVelocity = nil
+
+end
+
+
+--------------------------------------------------
+-- FREEZE BALL
+--------------------------------------------------
+
+local function freezeFinishedBall(
+	ball,
+	run
+)
+
+	if not ball
+		or not ball.Parent then
+		return
+	end
+
+	if run then
+		removePhysicsController(run)
+	end
+
+	stopBall(ball)
+
+	ball.Anchored = true
 
 	pcall(function()
-
 		ball:SetNetworkOwner(nil)
-
 	end)
 
 end
 
 
 --------------------------------------------------
--- POSITION BALL EXACTLY
+-- PLACE BALL AT START
 --------------------------------------------------
 
-local function positionBallExact(
+local function placeBallAtStart(
 	ball,
 	position
 )
 
 	if not ball
 		or not ball.Parent then
-
 		return false
-
 	end
 
-
 	local offset =
-		getBallVerticalOffset(
-			ball
-		)
-
+		getBallVerticalOffset(ball)
 
 	local finalPosition =
 		Vector3.new(
@@ -1102,19 +924,12 @@ local function positionBallExact(
 			position.Z
 		)
 
+	ball.Anchored = true
+
+	stopBall(ball)
 
 	ball.CFrame =
-		CFrame.new(
-			finalPosition
-		)
-
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
+		CFrame.new(finalPosition)
 
 	return true
 
@@ -1122,138 +937,664 @@ end
 
 
 --------------------------------------------------
--- GET COURSE POSITION
+-- BALL SPAWN CFRAME
 --------------------------------------------------
 
-local function getPositionAtDistance(
-	run,
-	distance
-)
+local function getBallSpawnCFrame()
 
-	return run.RollStartPosition
-		+
-		run.CourseDirection
-		*
-		distance
+	if ballSpawn:IsA("BasePart") then
+		return ballSpawn.CFrame
+	end
+
+	if ballSpawn:IsA("Model") then
+		return ballSpawn:GetPivot()
+	end
+
+	warn(
+		"[WinCourseProgressService]",
+		"BallSpawn must be a BasePart or Model."
+	)
+
+	return nil
 
 end
 
 
 --------------------------------------------------
--- COLLECT TILES THROUGH INDEX
+-- GET UP SOUND
 --------------------------------------------------
 
-local function collectThroughTile(
-	run,
-	targetIndex
+local function createGetUpSound(ball)
+
+	if not ball
+		or not ball.Parent then
+		return nil
+	end
+
+	local existing =
+		ball:FindFirstChild(
+			"WinCourseGetUpSound"
+		)
+
+	if existing
+		and existing:IsA("Sound") then
+
+		return existing
+
+	end
+
+	local sound =
+		Instance.new("Sound")
+
+	sound.Name =
+		"WinCourseGetUpSound"
+
+	sound.SoundId =
+		GET_UP_SOUND_ID
+
+	sound.Volume = 1
+
+	sound.RollOffMode =
+		Enum.RollOffMode.InverseTapered
+
+	sound.RollOffMaxDistance = 80
+
+	sound.Parent = ball
+
+	return sound
+
+end
+
+
+--------------------------------------------------
+-- PLAY SOUND
+--------------------------------------------------
+
+local function playGetUpSound(
+	player,
+	ball
 )
 
-	if targetIndex <=
-		run.FurthestTileIndex then
+	local sound =
+		createGetUpSound(ball)
 
+	if not sound then
 		return
+	end
+
+	pcall(function()
+
+		sound:Stop()
+		sound:Play()
+
+	end)
+
+	debugPrint(
+		player.Name,
+		"RETURN SOUND PLAYED"
+	)
+
+end
+
+
+--------------------------------------------------
+-- FADE BALL
+--------------------------------------------------
+
+local function fadeBallOut(ball)
+
+	if not ball
+		or not ball.Parent then
+		return
+	end
+
+	local originalTransparency =
+		ball.Transparency
+
+	local steps = 12
+
+	for step = 1, steps do
+
+		if not ball.Parent then
+			return
+		end
+
+		local alpha =
+			step / steps
+
+		ball.Transparency =
+			originalTransparency
+			+
+			(
+				1 - originalTransparency
+			)
+			*
+			alpha
+
+		task.wait(
+			RETURN_FADE_TIME / steps
+		)
+
+	end
+
+end
+
+
+--------------------------------------------------
+-- RESTORE TRANSPARENCY
+--------------------------------------------------
+
+local function restoreBallTransparency(
+	ball,
+	transparency
+)
+
+	if not ball
+		or not ball.Parent then
+		return
+	end
+
+	ball.Transparency =
+		transparency
+
+end
+
+
+--------------------------------------------------
+-- SPAWN AURA
+--------------------------------------------------
+
+local function fireSpawnAura(
+	player,
+	ball
+)
+
+	if not player
+		or not player.Parent then
+		return
+	end
+
+	if not ball
+		or not ball.Parent then
+		return
+	end
+
+	SpawnAura:FireClient(
+		player,
+		{
+			Duration = AURA_DURATION,
+
+			Ball = ball,
+
+			Style = AURA_STYLE,
+		}
+	)
+
+	debugPrint(
+		player.Name,
+		"SPAWN AURA FIRED"
+	)
+
+end
+
+--------------------------------------------------
+-- RETURN BALL TO LOBBY
+--------------------------------------------------
+
+local function returnBallToLobby(player, run)
+
+	if not run or run.Returned then
+		return
+	end
+
+	run.Returned = true
+	returningPlayers[player] = true
+
+	local ball = run.Ball
+
+	if not ball or not ball.Parent then
+		returningPlayers[player] = nil
+		return
+	end
+
+	--------------------------------------------------
+	-- STOP WIN COURSE PHYSICS
+	--------------------------------------------------
+
+	removePhysicsController(run)
+
+	stopBall(ball)
+
+	-- Clear the release flag used by the lobby controller.
+	ball:SetAttribute("WinCourseActive", false)
+
+	winCourseRemote:FireClient(
+		player,
+		"ReturnToLobbyStart"
+	)
+
+	--------------------------------------------------
+	-- FADE OUT
+	--------------------------------------------------
+
+	fadeBallOut(ball)
+
+	if not ball.Parent then
+		returningPlayers[player] = nil
+		return
+	end
+
+	task.wait(RETURN_HOLD_TIME)
+
+	if not ball.Parent then
+		returningPlayers[player] = nil
+		return
+	end
+
+	--------------------------------------------------
+	-- MOVE TO LOBBY SPAWN
+	--------------------------------------------------
+
+	local spawnCFrame = getBallSpawnCFrame()
+
+	if not spawnCFrame then
+		warn(
+			"[WinCourseProgressService] "
+				.. "Cannot return ball: invalid BallSpawn."
+		)
+
+		restoreBallTransparency(
+			ball,
+			run.OriginalTransparency
+		)
+
+		returningPlayers[player] = nil
+		return
+	end
+
+	local offset = getBallVerticalOffset(ball)
+
+	local finalCFrame =
+		spawnCFrame * CFrame.new(0, offset, 0)
+
+	-- Keep the ball anchored while repositioning it.
+	ball.Anchored = true
+
+	stopBall(ball)
+
+	ball.CFrame = finalCFrame
+
+	--------------------------------------------------
+	-- RESET WIN COURSE STATE
+	--------------------------------------------------
+
+	ball:SetAttribute("WinCourseActive", false)
+
+	-- Remove stale WinCourse velocity objects.
+	local winVelocity =
+		ball:FindFirstChild(LINEAR_VELOCITY_NAME)
+
+	if winVelocity then
+		winVelocity:Destroy()
+	end
+
+	local winAttachment =
+		ball:FindFirstChild("WinCourseAttachment")
+
+	if winAttachment then
+		winAttachment:Destroy()
+	end
+
+	--------------------------------------------------
+	-- RESTORE APPEARANCE
+	--------------------------------------------------
+
+	restoreBallTransparency(
+		ball,
+		run.OriginalTransparency
+	)
+
+	--------------------------------------------------
+	-- RESET PHYSICS BEFORE UNANCHORING
+	--------------------------------------------------
+
+	-- Keep the ball anchored while resetting its velocity.
+	ball.Anchored = true
+
+	ball.AssemblyLinearVelocity = Vector3.zero
+	ball.AssemblyAngularVelocity = Vector3.zero
+
+	--------------------------------------------------
+	-- RELEASE BALL TO LOBBY PHYSICS
+	--------------------------------------------------
+
+	-- IMPORTANT:
+	-- Unanchor FIRST. Network ownership cannot be
+	-- assigned while the ball is anchored.
+	ball.Anchored = false
+
+	-- Wait for Roblox to update the physics assembly.
+	RunService.Heartbeat:Wait()
+
+	if not ball.Parent then
+		returningPlayers[player] = nil
+		return
+	end
+
+	-- Reset velocity again after release.
+	ball.AssemblyLinearVelocity = Vector3.zero
+	ball.AssemblyAngularVelocity = Vector3.zero
+
+	-- Release the ball before setting network ownership.
+ball.Anchored = false
+
+-- Wait for Roblox to update the physics assembly.
+RunService.Heartbeat:Wait()
+
+if not ball.Parent then
+    returningPlayers[player] = nil
+    return
+end
+
+-- Only set ownership if the entire assembly is unanchored.
+local ownershipSuccess, ownershipError = pcall(function()
+    if not ball.Anchored then
+        ball:SetNetworkOwner(nil)
+    end
+end)
+
+if not ownershipSuccess then
+    warn(
+        "[WinCourseProgressService] "
+            .. "Server ownership reset failed:",
+        ownershipError
+    )
+end
+
+stopBall(ball)
+	
+-- Restore normal lobby movement.
+player:SetAttribute("RunState", "Waiting")
+	--------------------------------------------------
+	-- COMPLETE RETURN
+	--------------------------------------------------
+
+	playGetUpSound(player, ball)
+
+	winCourseRemote:FireClient(
+		player,
+		"ReturnedToLobby"
+	)
+
+	returningPlayers[player] = nil
+
+	debugPrint(
+		player.Name,
+		"BALL RETURNED TO LOBBY",
+		"| Anchored:",
+		ball.Anchored,
+		"| WinCourseActive:",
+		ball:GetAttribute("WinCourseActive")
+	)
+end
+
+--------------------------------------------------
+-- AWARD WINNINGS
+--------------------------------------------------
+
+local function awardWinnings(
+	player,
+	amount
+)
+
+	amount =
+		math.max(
+			0,
+			math.floor(
+				tonumber(amount) or 0
+			)
+		)
+
+	player:SetAttribute(
+		"LastWinCourseWinnings",
+		amount
+	)
+
+	if amount <= 0 then
+
+		debugPrint(
+			player.Name,
+			"received 0 WinCourse winnings."
+		)
+
+		return true
 
 	end
 
 
-	for index =
-		run.FurthestTileIndex + 1,
-		targetIndex do
+	--------------------------------------------------
+	-- LEADERSTATS
+	--------------------------------------------------
 
-		local tileData =
-			run.Tiles[index]
+	local leaderstats =
+		player:FindFirstChild("leaderstats")
 
+	if leaderstats then
+
+		local wins =
+			leaderstats:FindFirstChild("Wins")
+
+		if wins
+			and (
+				wins:IsA("IntValue")
+				or wins:IsA("NumberValue")
+			) then
+
+			wins.Value += amount
+
+			debugPrint(
+				"WINNINGS AWARDED:",
+				player.Name,
+				"| Amount:",
+				amount,
+				"| New Wins:",
+				wins.Value
+			)
+
+			return true
+
+		end
+
+	end
+
+
+	--------------------------------------------------
+	-- ATTRIBUTE ECONOMY
+	--------------------------------------------------
+
+	local existingWins =
+		player:GetAttribute("Wins")
+
+	if isFiniteNumber(existingWins) then
+
+		player:SetAttribute(
+			"Wins",
+			existingWins + amount
+		)
+
+		debugPrint(
+			"WINNINGS AWARDED:",
+			player.Name,
+			"| Amount:",
+			amount,
+			"| New Wins:",
+			existingWins + amount
+		)
+
+		return true
+
+	end
+
+	warn(
+		"[WinCourseProgressService]",
+		"Could not award winnings for",
+		player.Name,
+		"| Amount:",
+		amount
+	)
+
+	return false
+
+end
+--------------------------------------------------
+-- UPDATE TILE PROGRESS
+--
+-- Awards each tile immediately when passed.
+-- The ball continues rolling after the reward.
+--------------------------------------------------
+
+local function updateProgress(run)
+
+	if run.Finished or not run.Rolling then
+		return
+	end
+
+	local ball = run.Ball
+
+	if not ball or not ball.Parent then
+		return
+	end
+
+	local currentPosition = ball.Position
+
+	-- Measure forward progress along the course.
+	local forwardProgress =
+		(currentPosition - run.RollStartPosition)
+		:Dot(run.CourseDirection)
+
+	forwardProgress = math.max(0, forwardProgress)
+
+	-- Progress must never move backwards.
+	run.CourseProgress = math.max(
+		run.CourseProgress,
+		forwardProgress
+	)
+
+	-- Process every tile crossed, in order.
+	while run.FurthestTileIndex < run.TileCount do
+
+		local nextIndex = run.FurthestTileIndex + 1
+		local tileData = run.Tiles[nextIndex]
 
 		if not tileData then
 			break
 		end
 
+		local tileDistance =
+			(tileData.Position - run.RollStartPosition)
+			:Dot(run.CourseDirection)
 
-		run.FurthestTileIndex =
-			index
+		tileDistance = math.max(0, tileDistance)
 
+		-- The server confirms that the ball has passed
+		-- the tile's forward position.
+		if run.CourseProgress + TILE_REACH_EPSILON
+			< tileDistance then
+			break
+		end
 
-		table.insert(
-			run.CollectedTiles,
-			tileData
+		-- Advance first to prevent duplicate awards.
+		run.FurthestTileIndex = nextIndex
+
+		table.insert(run.CollectedTiles, tileData)
+
+		-- Record the reward in the run total.
+		run.TotalWinAmount += tileData.Amount
+
+		-- Award this tile immediately.
+		local awarded = awardWinnings(
+			run.Player,
+			tileData.Amount
 		)
 
-
-		run.TotalWinAmount +=
-			tileData.Amount
-
+		if awarded then
+			run.WinningsAwarded = true
+			run.WinningsCredited =
+				(run.WinningsCredited or 0)
+				+ math.floor(tileData.Amount)
+		else
+			warn(
+				"[WinCourseProgressService]",
+				"Failed to award tile:",
+				tileData.Model.Name,
+				"to",
+				run.Player.Name
+			)
+		end
 
 		debugPrint(
 			run.Player.Name,
-			"COLLECTED",
+			"PASSED TILE:",
 			tileData.Model.Name,
-			"| INDEX:",
-			tileData.Index,
-			"| WIN:",
+			"| TILE WIN:",
 			tileData.Amount,
-			"| TOTAL:",
-			run.TotalWinAmount
+			"| TOTAL WIN:",
+			run.TotalWinAmount,
+			"| BALL CONTINUES ROLLING"
 		)
 
+		-- Optional client notification for UI updates.
+		winCourseRemote:FireClient(
+			run.Player,
+			"WinCourseTileCollected",
+			{
+				TileName = tileData.Model.Name,
+				TileIndex = tileData.Index,
+				TileWin = tileData.Amount,
+				TotalWin = run.TotalWinAmount,
+				DistanceTravelled = run.DistanceTravelled,
+			}
+		)
 	end
-
 end
 
 
 --------------------------------------------------
--- UPDATE TILE PROGRESS
+-- FINALIZE WINNINGS
+--
+-- Rewards were credited when each tile was passed.
+-- This function only finalizes the result.
 --------------------------------------------------
 
-local function updateProgress(
-	run,
-	distanceTravelled
-)
+local function finalizeWinnings(player, run)
 
-	if run.Finished then
-		return
+	if run.WinningsFinalized then
+		return run.FinalizedWinAmount
 	end
 
+	run.WinningsFinalized = true
 
-	for index =
-		run.FurthestTileIndex + 1,
-		run.TileCount do
+	local amount = math.max(
+		0,
+		math.floor(run.TotalWinAmount)
+	)
 
-		local tileData =
-			run.Tiles[index]
+	run.FinalizedWinAmount = amount
 
+	-- Do not call awardWinnings here.
+	-- Every tile reward was already processed
+	-- by updateProgress.
 
-		if not tileData then
-			break
-		end
+	debugPrint(
+		"WINNINGS FINALIZED:",
+		player.Name,
+		"| Total:",
+		amount,
+		"| Already Credited:",
+		run.WinningsCredited or 0
+	)
 
-
-		local tileDistance =
-			getTileDistance(
-				run.RollStartPosition,
-				tileData.Position,
-				run.CourseDirection
-			)
-
-
-		if distanceTravelled
-			+
-			TILE_REACH_EPSILON
-			>=
-			tileDistance then
-
-			collectThroughTile(
-				run,
-				index
-			)
-
-		else
-
-			break
-
-		end
-
-	end
-
+	return amount
 end
 
 
@@ -1269,21 +1610,32 @@ local function finishRun(
 
 	if not run
 		or run.Finished then
-
 		return
-
 	end
 
 
-	run.Finished =
-		true
+	--------------------------------------------------
+	-- FINAL PROGRESS SAMPLE
+	--------------------------------------------------
 
-	run.Rolling =
-		false
+	if run.Ball
+		and run.Ball.Parent then
+
+		updateProgress(run)
+
+	end
+
+	run.Finished = true
+	run.Rolling = false
 
 
-	stopBall(
-		run.Ball
+	--------------------------------------------------
+	-- STOP PHYSICS
+	--------------------------------------------------
+
+	freezeFinishedBall(
+		run.Ball,
+		run
 	)
 
 
@@ -1291,8 +1643,7 @@ local function finishRun(
 	-- FINAL TILE
 	--------------------------------------------------
 
-	local finalTile
-
+	local finalTile = nil
 
 	if run.FurthestTileIndex > 0 then
 
@@ -1305,31 +1656,18 @@ local function finishRun(
 
 
 	--------------------------------------------------
-	-- ALL TILES REACHED
+	-- WINNINGS
 	--------------------------------------------------
 
-	if run.FurthestTileIndex >=
-		run.TileCount then
-
-		finalTile =
-			run.Tiles[
-				run.TileCount
-			]
-
-		if finalTile then
-
-			positionBallExact(
-				run.Ball,
-				finalTile.Position
-			)
-
-		end
-
-	end
+	local finalizedWin =
+		finalizeWinnings(
+			player,
+			run
+		)
 
 
 	--------------------------------------------------
-	-- ACTIVE OFF
+	-- INACTIVE
 	--------------------------------------------------
 
 	if run.Ball
@@ -1344,89 +1682,7 @@ local function finishRun(
 
 
 	--------------------------------------------------
-	-- DEBUG
-	--------------------------------------------------
-
-	print(
-		"================================"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"WIN COURSE FINISHED"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Player:",
-		player.Name
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Reason:",
-		reason
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Oil At Start:",
-		run.CurrentOil
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Travel Budget:",
-		run.TravelBudget
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Distance Travelled:",
-		run.DistanceTravelled
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Furthest Tile:",
-		run.FurthestTileIndex
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Final Tile:",
-		finalTile
-			and finalTile.Model.Name
-			or "NONE"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Final Index:",
-		finalTile
-			and finalTile.Index
-			or 0
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Total Win:",
-		run.TotalWinAmount
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Collected Tiles:",
-		#run.CollectedTiles
-	)
-
-	print(
-		"================================"
-	)
-
-
-	--------------------------------------------------
-	-- CLIENT
+	-- RESULT
 	--------------------------------------------------
 
 	winCourseRemote:FireClient(
@@ -1436,21 +1692,21 @@ local function finishRun(
 
 			FinalTile =
 				finalTile
-					and finalTile.Model.Name
-					or nil,
+				and finalTile.Model.Name
+				or nil,
 
 			FinalTileIndex =
 				finalTile
-					and finalTile.Index
-					or 0,
+				and finalTile.Index
+				or 0,
 
 			FinalTileWin =
 				finalTile
-					and finalTile.Amount
-					or 0,
+				and finalTile.Amount
+				or 0,
 
 			TotalWin =
-				run.TotalWinAmount,
+				finalizedWin,
 
 			DistanceTravelled =
 				run.DistanceTravelled,
@@ -1458,288 +1714,93 @@ local function finishRun(
 			CurrentOil =
 				run.CurrentOil,
 
+			StartingSpeed =
+				run.StartingSpeed,
+
+			OilSpeedBoost =
+				run.OilSpeedBoost,
+
+			MaxSpeed =
+				run.MaxSpeed,
+
+			Acceleration =
+				WIN_COURSE_ACCELERATION,
+
 			Reason =
 				reason,
 
+			ResultDisplayTime =
+				RESULT_DISPLAY_TIME,
+
+			WinningsAwarded =
+				run.WinningsAwarded == true,
 		}
 	)
 
 
-	activeRuns[player] =
-		nil
+	debugPrint(
+		"FINISHED:",
+		player.Name,
+		"| Reason:",
+		reason,
+		"| Distance:",
+		run.DistanceTravelled,
+		"| CourseProgress:",
+		run.CourseProgress,
+		"| Tiles:",
+		run.FurthestTileIndex,
+		"| Win:",
+		run.TotalWinAmount,
+		"| StartingSpeed:",
+		run.StartingSpeed,
+		"| OilBoost:",
+		run.OilSpeedBoost
+	)
+
+
+	--------------------------------------------------
+	-- RETURN
+	--------------------------------------------------
+
+	task.spawn(function()
+
+		task.wait(
+			RESULT_DISPLAY_TIME
+		)
+
+		if player.Parent then
+
+			returnBallToLobby(
+				player,
+				run
+			)
+
+		else
+
+			stopBall(run.Ball)
+
+		end
+
+		if activeRuns[player] == run then
+			activeRuns[player] = nil
+		end
+
+	end)
 
 end
 
 
 --------------------------------------------------
--- START ROLL
+-- UPDATE ROLLING RUN
 --------------------------------------------------
 
-local function startRoll(
+local function updateRollingRun(
+	player,
 	run
 )
 
-	if run.Finished
-		or run.Rolling then
-
-		return false
-
-	end
-
-
 	local ball =
 		run.Ball
-
-
-	if not ball
-		or not ball.Parent then
-
-		return false
-
-	end
-
-
-	if not takeServerControl(
-		ball
-	) then
-
-		return false
-
-	end
-
-
-	ball.Anchored =
-		true
-
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	run.Rolling =
-		true
-
-	run.Started =
-		true
-
-	run.DistanceTravelled =
-		0
-
-
-	winCourseRemote:FireClient(
-		run.Player,
-		"RollStarted"
-	)
-
-
-	print(
-		"================================"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"ROLL STARTED"
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Player:",
-		run.Player.Name
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Ball:",
-		ball:GetFullName()
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Start Position:",
-		run.RollStartPosition
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Oil At Start:",
-		run.CurrentOil
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Travel Budget:",
-		run.TravelBudget
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Course Direction:",
-		run.CourseDirection
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Speed:",
-		WIN_COURSE_SPEED
-	)
-
-	print(
-		"================================"
-	)
-
-
-	return true
-
-end
-
-
---------------------------------------------------
--- MOVE BALL
---------------------------------------------------
-
-local function moveBall(
-	run,
-	deltaTime
-)
-
-	local ball =
-		run.Ball
-
-
-	if not ball
-		or not ball.Parent then
-
-		return false,
-			"BALL_DISAPPEARED"
-
-	end
-
-
-	local remainingDistance =
-		run.TravelBudget
-		-
-		run.DistanceTravelled
-
-
-	if remainingDistance <=
-		POSITION_EPSILON then
-
-		return true,
-			"OIL_EXHAUSTED"
-
-	end
-
-
-	local movement =
-		WIN_COURSE_SPEED
-		*
-		deltaTime
-
-
-	movement =
-		math.min(
-			movement,
-			remainingDistance
-		)
-
-
-	local newDistance =
-		run.DistanceTravelled
-		+
-		movement
-
-
-	local nextPosition =
-		getPositionAtDistance(
-			run,
-			newDistance
-		)
-
-
-	local offset =
-		getBallVerticalOffset(
-			ball
-		)
-
-
-	local ballPosition =
-		Vector3.new(
-			nextPosition.X,
-			nextPosition.Y + offset,
-			nextPosition.Z
-		)
-
-
-	ball.CFrame =
-		CFrame.new(
-			ballPosition
-		)
-
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	run.DistanceTravelled =
-		newDistance
-
-
-	updateProgress(
-		run,
-		run.DistanceTravelled
-	)
-
-
-	if run.FurthestTileIndex >=
-		run.TileCount then
-
-		return true,
-			"ALL_TILES_REACHED"
-
-	end
-
-
-	if run.DistanceTravelled >=
-		run.TravelBudget
-		-
-		POSITION_EPSILON then
-
-		return true,
-			"OIL_EXHAUSTED"
-
-	end
-
-
-	return false,
-		nil
-
-end
-
-
---------------------------------------------------
--- UPDATE RUN
---------------------------------------------------
-
-local function updateRun(
-	player,
-	run,
-	deltaTime
-)
-
-	if run.Finished then
-		return
-	end
-
-
-	local ball =
-		run.Ball
-
 
 	if not ball
 		or not ball.Parent then
@@ -1756,12 +1817,460 @@ local function updateRun(
 
 
 	--------------------------------------------------
-	-- BALL IDENTITY
+	-- CURRENT POSITION
 	--------------------------------------------------
 
-	if ball.Name ~=
-		("PlayerBall_" ..
-		tostring(player.UserId)) then
+	local currentPosition =
+		ball.Position
+
+
+	--------------------------------------------------
+	-- DISTANCE TRAVELLED
+	--------------------------------------------------
+
+	local previousPosition =
+		run.LastPosition
+
+	if previousPosition then
+
+		local frameDistance =
+			(
+				currentPosition
+				-
+				previousPosition
+			).Magnitude
+
+		if frameDistance >= 0
+			and frameDistance <= run.MaxFrameDistance then
+
+			run.DistanceTravelled +=
+				frameDistance
+
+			run.LastGoodPosition =
+				currentPosition
+
+		end
+
+	end
+
+	run.LastPosition =
+		currentPosition
+
+
+	--------------------------------------------------
+	-- ACCELERATION
+	--
+	-- Calculate the desired speed from elapsed
+	-- roll time.
+	--------------------------------------------------
+
+	local currentSpeed =
+		calculateRollSpeed(run)
+
+	run.CurrentSpeed =
+		currentSpeed
+
+
+	--------------------------------------------------
+	-- UPDATE THE EXISTING CONTROLLER
+	--
+	-- We do NOT create a new LinearVelocity.
+	--------------------------------------------------
+
+	local controller =
+		run.LinearVelocity
+
+	if controller
+		and controller.Parent then
+
+		controller.VectorVelocity =
+			run.CourseDirection
+			*
+			currentSpeed
+
+	end
+
+
+	--------------------------------------------------
+	-- TILE PROGRESS
+	--------------------------------------------------
+
+	updateProgress(run)
+
+
+	--------------------------------------------------
+	-- ALL TILES REACHED
+	--------------------------------------------------
+
+	if run.FurthestTileIndex
+		>= run.TileCount then
+
+		finishRun(
+			player,
+			run,
+			"ALL_TILES_REACHED"
+		)
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- OIL EXHAUSTED
+	--------------------------------------------------
+
+	if run.DistanceTravelled
+		>= run.TravelBudget
+		-
+		FINISH_EPSILON then
+
+		finishRun(
+			player,
+			run,
+			"OIL_EXHAUSTED"
+		)
+
+		return
+
+	end
+
+end
+
+
+--------------------------------------------------
+-- CREATE PHYSICS CONTROLLER
+--------------------------------------------------
+
+local function createPhysicsController(run)
+
+	local ball =
+		run.Ball
+
+	if not ball
+		or not ball.Parent then
+		return nil
+	end
+
+
+	--------------------------------------------------
+	-- REMOVE OLD CONTROLLER
+	--------------------------------------------------
+
+	local old =
+		ball:FindFirstChild(
+			LINEAR_VELOCITY_NAME
+		)
+
+	if old then
+		old:Destroy()
+	end
+
+
+	--------------------------------------------------
+	-- ATTACHMENT
+	--------------------------------------------------
+
+	local attachment =
+		ball:FindFirstChild(
+			"WinCourseAttachment"
+		)
+
+	if attachment
+		and not attachment:IsA("Attachment") then
+
+		attachment:Destroy()
+		attachment = nil
+
+	end
+
+	if not attachment then
+
+		attachment =
+			Instance.new("Attachment")
+
+		attachment.Name =
+			"WinCourseAttachment"
+
+		attachment.Parent =
+			ball
+
+	end
+
+
+	--------------------------------------------------
+	-- LINEAR VELOCITY
+	--------------------------------------------------
+
+	local linearVelocity =
+		Instance.new("LinearVelocity")
+
+	linearVelocity.Name =
+		LINEAR_VELOCITY_NAME
+
+	linearVelocity.Attachment0 =
+		attachment
+
+	linearVelocity.RelativeTo =
+		Enum.ActuatorRelativeTo.World
+
+	linearVelocity.VelocityConstraintMode =
+		Enum.VelocityConstraintMode.Vector
+
+	linearVelocity.VectorVelocity =
+		run.CourseDirection
+		*
+		run.StartingSpeed
+
+
+	--------------------------------------------------
+	-- IMPORTANT
+	--
+	-- The target velocity is controlled by this
+	-- service.
+	--
+	-- We do NOT directly force
+	-- AssemblyLinearVelocity.
+	--------------------------------------------------
+
+	linearVelocity.ForceLimitsEnabled =
+		false
+
+	linearVelocity.Enabled =
+		true
+
+	linearVelocity.Parent =
+		ball
+
+	return linearVelocity
+
+end
+
+
+--------------------------------------------------
+-- START PHYSICS ROLL
+--------------------------------------------------
+
+local function startPhysicsRoll(run)
+
+	if run.Finished
+		or run.Rolling then
+		return false
+	end
+
+	local ball =
+		run.Ball
+
+	if not ball
+		or not ball.Parent then
+		return false
+	end
+
+
+	--------------------------------------------------
+-- RELEASE BALL
+--
+-- Unanchor before setting network ownership.
+--------------------------------------------------
+
+ball.Anchored = false
+
+-- Give Roblox a moment to update the physics assembly.
+RunService.Heartbeat:Wait()
+
+if not ball.Parent then
+	return false
+end
+
+--------------------------------------------------
+-- SERVER NETWORK OWNERSHIP
+--------------------------------------------------
+
+local success, err = pcall(function()
+	ball:SetNetworkOwner(nil)
+end)
+
+if not success then
+	warn(
+		"[WinCourseProgressService]",
+		"Could not set server network ownership:",
+		tostring(err)
+	)
+end
+
+
+	--------------------------------------------------
+	-- CALCULATE SPEED
+	--------------------------------------------------
+
+	run.OilSpeedBoost =
+		calculateOilSpeedBoost(
+			run.CurrentOil
+		)
+
+	run.StartingSpeed =
+		calculateStartingSpeed(
+			run.CurrentOil
+		)
+
+	run.MaxSpeed =
+		MAX_WIN_COURSE_SPEED
+
+	run.CurrentSpeed =
+		run.StartingSpeed
+
+	--------------------------------------------------
+	-- CREATE ONE CONTROLLER
+	--------------------------------------------------
+
+	local controller =
+		createPhysicsController(run)
+
+	if not controller then
+
+		ball.Anchored =
+			true
+
+		return false
+
+	end
+
+	run.LinearVelocity =
+		controller
+
+
+	--------------------------------------------------
+	-- START ROLL TIMER
+	--
+	-- Acceleration begins HERE.
+	--------------------------------------------------
+
+	run.RollStartTime =
+		os.clock()
+
+	run.Rolling =
+		true
+
+	run.Started =
+		true
+
+
+	--------------------------------------------------
+	-- POSITION TRACKING
+	--------------------------------------------------
+
+	run.LastPosition =
+		ball.Position
+
+	run.LastGoodPosition =
+		ball.Position
+
+	run.DistanceTravelled =
+		0
+
+	run.CourseProgress =
+		0
+
+
+	--------------------------------------------------
+	-- AURA
+	--------------------------------------------------
+
+	fireSpawnAura(
+		run.Player,
+		ball
+	)
+
+
+	--------------------------------------------------
+	-- CLIENT
+	--------------------------------------------------
+
+	winCourseRemote:FireClient(
+		run.Player,
+		"RollStarted",
+		{
+
+			StartingSpeed =
+				run.StartingSpeed,
+
+			OilSpeedBoost =
+				run.OilSpeedBoost,
+
+			Acceleration =
+				WIN_COURSE_ACCELERATION,
+
+			MaxSpeed =
+				run.MaxSpeed,
+
+			CurrentOil =
+				run.CurrentOil,
+
+		}
+	)
+
+
+	debugPrint(
+		"PHYSICS ROLL STARTED:",
+		run.Player.Name,
+		"| Oil:",
+		run.CurrentOil,
+		"| Oil Speed Boost:",
+		run.OilSpeedBoost,
+		"| Starting Speed:",
+		run.StartingSpeed,
+		"| Acceleration:",
+		WIN_COURSE_ACCELERATION,
+		"| Max Speed:",
+		run.MaxSpeed,
+		"| Direction:",
+		run.CourseDirection
+	)
+
+	return true
+
+end
+
+
+--------------------------------------------------
+-- UPDATE RUN
+--------------------------------------------------
+
+local function updateRun(
+	player,
+	run
+)
+
+	if run.Finished then
+		return
+	end
+
+	local ball =
+		run.Ball
+
+	if not ball
+		or not ball.Parent then
+
+		finishRun(
+			player,
+			run,
+			"BALL_DISAPPEARED"
+		)
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- BALL NAME
+	--------------------------------------------------
+
+	local expectedName =
+		"PlayerBall_"
+		.. tostring(player.UserId)
+
+	if ball.Name ~= expectedName then
 
 		finishRun(
 			player,
@@ -1818,20 +2327,19 @@ local function updateRun(
 
 	if not run.Rolling then
 
+		if not ball.Anchored then
+			ball.Anchored = true
+		end
+
 		local elapsed =
 			os.clock()
 			-
 			run.CountdownStarted
 
-
-		if elapsed >=
-			START_DELAY then
+		if elapsed >= START_DELAY then
 
 			local started =
-				startRoll(
-					run
-				)
-
+				startPhysicsRoll(run)
 
 			if not started then
 
@@ -1845,54 +2353,19 @@ local function updateRun(
 
 		end
 
-
 		return
 
 	end
 
 
 	--------------------------------------------------
-	-- KEEP BALL ANCHORED
+	-- PHYSICS ROLL
 	--------------------------------------------------
 
-	if not ball.Anchored then
-
-		ball.Anchored =
-			true
-
-	end
-
-
-	--------------------------------------------------
-	-- SERVER CONTROL
-	--------------------------------------------------
-
-	takeServerControl(
-		ball
+	updateRollingRun(
+		player,
+		run
 	)
-
-
-	--------------------------------------------------
-	-- MOVE
-	--------------------------------------------------
-
-	local finished,
-		reason =
-		moveBall(
-			run,
-			deltaTime
-		)
-
-
-	if finished then
-
-		finishRun(
-			player,
-			run,
-			reason
-		)
-
-	end
 
 end
 
@@ -1910,44 +2383,40 @@ local function startTracking(
 		return
 	end
 
+	if returningPlayers[player] then
+		return
+	end
+
 
 	--------------------------------------------------
-	-- GENERATED COURSE
+	-- COURSE
 	--------------------------------------------------
 
 	local courseData =
 		createCourseData()
 
-
 	if not courseData then
-
-		warn(
-			"[WinCourseProgressService]",
-			"WinCourseActive detected, but generated WinCourse was not found."
-		)
-
 		return
-
 	end
 
 
 	--------------------------------------------------
 	-- OIL
-	--
-	-- IMPORTANT:
-	--
-	-- Read CurrentOil AFTER the WinCourse has become
-	-- active, with a tiny settle period.
 	--------------------------------------------------
 
 	local currentOil =
-		getCurrentOilAfterSettle(
-			player
-		)
-
+		getCurrentOilAfterSettle(player)
 
 	if currentOil == nil then
+
+		warn(
+			"[WinCourseProgressService]",
+			"CurrentOil missing for",
+			player.Name
+		)
+
 		return
+
 	end
 
 
@@ -1956,21 +2425,9 @@ local function startTracking(
 	--------------------------------------------------
 
 	local travelBudget =
-		currentOil *
-		OIL_PER_STUD
-
-
-	--------------------------------------------------
-	-- NO OIL
-	--------------------------------------------------
+		currentOil * OIL_PER_STUD
 
 	if travelBudget <= 0 then
-
-		warn(
-			"[WinCourseProgressService]",
-			player.Name,
-			"HAS NO COLLECTED OIL."
-		)
 
 		ball:SetAttribute(
 			"WinCourseActive",
@@ -1983,35 +2440,28 @@ local function startTracking(
 
 
 	--------------------------------------------------
-	-- START POSITION
+	-- START
 	--------------------------------------------------
 
 	local startPosition =
-		getStartPosition(
-			ball
-		)
-
-
-	if not startPosition then
-		return
-	end
+		courseData.StartPosition
 
 
 	--------------------------------------------------
-	-- COURSE DIRECTION
+	-- DIRECTION
 	--------------------------------------------------
 
 	local direction =
 		getCourseDirection(
+			startPosition,
 			courseData.Tiles
 		)
-
 
 	if not direction then
 
 		warn(
 			"[WinCourseProgressService]",
-			"Could not determine generated WinCourse direction."
+			"Could not determine course direction."
 		)
 
 		return
@@ -2020,21 +2470,33 @@ local function startTracking(
 
 
 	--------------------------------------------------
-	-- REACHABLE TILES
+	-- SPEED PREVIEW
 	--------------------------------------------------
 
-	local finalTileIndex,
-		finalTileDistance =
-		findReachableTiles(
-			courseData.Tiles,
-			startPosition,
-			direction,
-			travelBudget
+	local oilSpeedBoost =
+		calculateOilSpeedBoost(
+			currentOil
+		)
+
+	local startingSpeed =
+		calculateStartingSpeed(
+			currentOil
 		)
 
 
 	--------------------------------------------------
-	-- RUN DATA
+	-- MAX FRAME DISTANCE
+	--------------------------------------------------
+
+	local maxFrameDistance =
+		math.max(
+			25,
+			MAX_WIN_COURSE_SPEED * 0.25
+		)
+
+
+	--------------------------------------------------
+	-- CREATE RUN
 	--------------------------------------------------
 
 	local run = {
@@ -2057,18 +2519,34 @@ local function startTracking(
 		CourseDirection =
 			direction,
 
-		--------------------------------------------------
-		-- THIS IS THE IMPORTANT VALUE
-		--------------------------------------------------
-
 		CurrentOil =
 			currentOil,
 
 		TravelBudget =
 			travelBudget,
 
+		WinningsCredited = 0,
+
+
 		--------------------------------------------------
-		-- TIMING
+		-- SPEED
+		--------------------------------------------------
+
+		OilSpeedBoost =
+			oilSpeedBoost,
+
+		StartingSpeed =
+			startingSpeed,
+
+		CurrentSpeed =
+			startingSpeed,
+
+		MaxSpeed =
+			MAX_WIN_COURSE_SPEED,
+
+
+		--------------------------------------------------
+		-- COUNTDOWN
 		--------------------------------------------------
 
 		CountdownStarted =
@@ -2080,6 +2558,10 @@ local function startTracking(
 		Started =
 			false,
 
+		RollStartTime =
+			nil,
+
+
 		--------------------------------------------------
 		-- POSITION
 		--------------------------------------------------
@@ -2087,18 +2569,25 @@ local function startTracking(
 		RollStartPosition =
 			startPosition,
 
+		LastPosition =
+			nil,
+
+		LastGoodPosition =
+			nil,
+
 		DistanceTravelled =
 			0,
 
-		--------------------------------------------------
-		-- REACHABLE TILES
-		--------------------------------------------------
+		CourseProgress =
+			0,
 
-		FinalTileIndex =
-			finalTileIndex,
+		MaxFrameDistance =
+			maxFrameDistance,
 
-		FinalTileDistance =
-			finalTileDistance,
+
+		--------------------------------------------------
+		-- TILES
+		--------------------------------------------------
 
 		FurthestTileIndex =
 			0,
@@ -2109,8 +2598,46 @@ local function startTracking(
 		TotalWinAmount =
 			0,
 
+
+		--------------------------------------------------
+		-- STATE
+		--------------------------------------------------
+
 		Finished =
 			false,
+
+		Returned =
+			false,
+
+
+		--------------------------------------------------
+		-- WINNINGS
+		--------------------------------------------------
+
+		WinningsFinalized =
+			false,
+
+		WinningsAwarded =
+			false,
+
+		FinalizedWinAmount =
+			0,
+
+
+		--------------------------------------------------
+		-- PHYSICS
+		--------------------------------------------------
+
+		LinearVelocity =
+			nil,
+
+
+		--------------------------------------------------
+		-- APPEARANCE
+		--------------------------------------------------
+
+		OriginalTransparency =
+			ball.Transparency,
 
 	}
 
@@ -2120,12 +2647,41 @@ local function startTracking(
 
 
 	--------------------------------------------------
+	-- PLACE BALL
+	--------------------------------------------------
+
+	local positioned =
+		placeBallAtStart(
+			ball,
+			startPosition
+		)
+
+	if not positioned then
+
+		activeRuns[player] =
+			nil
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- COUNTDOWN
+	--------------------------------------------------
+
+	winCourseRemote:FireClient(
+		player,
+		"CountdownStart",
+		START_DELAY
+	)
+
+
+	--------------------------------------------------
 	-- DEBUG
 	--------------------------------------------------
 
-	print(
-		"================================"
-	)
+	print("================================")
 
 	print(
 		"[WinCourseProgressService]",
@@ -2140,81 +2696,71 @@ local function startTracking(
 
 	print(
 		"[WinCourseProgressService]",
-		"GENERATED COURSE:",
-		courseData.WinCourse:GetFullName()
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Ball:",
-		ball:GetFullName()
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Ball Start:",
-		startPosition
-	)
-
-	print(
-		"[WinCourseProgressService]",
 		"CurrentOil:",
 		currentOil
 	)
 
 	print(
 		"[WinCourseProgressService]",
-		"Travel Budget:",
+		"TravelBudget:",
 		travelBudget
 	)
 
 	print(
 		"[WinCourseProgressService]",
-		"Course Direction:",
+		"OilSpeedBoost:",
+		oilSpeedBoost
+	)
+
+	print(
+		"[WinCourseProgressService]",
+		"StartingSpeed:",
+		startingSpeed
+	)
+
+	print(
+		"[WinCourseProgressService]",
+		"Acceleration:",
+		WIN_COURSE_ACCELERATION
+	)
+
+	print(
+		"[WinCourseProgressService]",
+		"MaxSpeed:",
+		MAX_WIN_COURSE_SPEED
+	)
+
+	print(
+		"[WinCourseProgressService]",
+		"Official Start:",
+		startPosition
+	)
+
+	print(
+		"[WinCourseProgressService]",
+		"Direction:",
 		direction
 	)
 
 	print(
 		"[WinCourseProgressService]",
-		"Reachable Tile Index:",
-		finalTileIndex
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"Reachable Tile Distance:",
-		finalTileDistance
-	)
-
-	print(
-		"[WinCourseProgressService]",
-		"RunState:",
-		player:GetAttribute(
-			"RunState"
-		),
-		"(ignored)"
-	)
-
-	print(
-		"================================"
-	)
-
-
-	--------------------------------------------------
-	-- COUNTDOWN
-	--------------------------------------------------
-
-	winCourseRemote:FireClient(
-		player,
-		"CountdownStart",
+		"Countdown:",
 		START_DELAY
 	)
+
+	print(
+		"[WinCourseProgressService]",
+		"Aura:",
+		AURA_STYLE
+	)
+
+	print("================================")
 
 end
 
 
 --------------------------------------------------
--- DISCOVER ACTIVE GENERATED WIN COURSES
+-- DISCOVER ACTIVE RUNS
 --------------------------------------------------
 
 local function discoverActiveRuns()
@@ -2227,25 +2773,16 @@ local function discoverActiveRuns()
 			continue
 		end
 
-
-		--------------------------------------------------
-		-- BALL
-		--------------------------------------------------
+		if returningPlayers[player] then
+			continue
+		end
 
 		local ball =
-			getPlayerBall(
-				player
-			)
-
+			getPlayerBall(player)
 
 		if not ball then
 			continue
 		end
-
-
-		--------------------------------------------------
-		-- WIN COURSE ACTIVE
-		--------------------------------------------------
 
 		if ball:GetAttribute(
 			"WinCourseActive"
@@ -2255,23 +2792,9 @@ local function discoverActiveRuns()
 
 		end
 
-
-		--------------------------------------------------
-		-- GENERATED COURSE
-		--------------------------------------------------
-
-		local generatedCourse =
-			getGeneratedWinCourse()
-
-
-		if not generatedCourse then
+		if not getGeneratedWinCourse() then
 			continue
 		end
-
-
-		--------------------------------------------------
-		-- START
-		--------------------------------------------------
 
 		startTracking(
 			player,
@@ -2287,43 +2810,10 @@ end
 -- HEARTBEAT
 --------------------------------------------------
 
-local accumulator =
-	0
-
-
 RunService.Heartbeat:Connect(
-	function(deltaTime)
-
-		accumulator +=
-			deltaTime
-
-
-		if accumulator <
-			UPDATE_INTERVAL then
-
-			return
-
-		end
-
-
-		local step =
-			accumulator
-
-
-		accumulator =
-			0
-
-
-		--------------------------------------------------
-		-- DISCOVER
-		--------------------------------------------------
+	function()
 
 		discoverActiveRuns()
-
-
-		--------------------------------------------------
-		-- UPDATE
-		--------------------------------------------------
 
 		for player, run in pairs(
 			activeRuns
@@ -2331,9 +2821,9 @@ RunService.Heartbeat:Connect(
 
 			if not player.Parent then
 
-				stopBall(
-					run.Ball
-				)
+				removePhysicsController(run)
+
+				stopBall(run.Ball)
 
 				activeRuns[player] =
 					nil
@@ -2342,11 +2832,9 @@ RunService.Heartbeat:Connect(
 
 			end
 
-
 			updateRun(
 				player,
-				run,
-				step
+				run
 			)
 
 		end
@@ -2365,8 +2853,14 @@ Players.PlayerRemoving:Connect(
 		local run =
 			activeRuns[player]
 
-
 		if run then
+
+			run.Finished =
+				true
+
+			removePhysicsController(
+				run
+			)
 
 			stopBall(
 				run.Ball
@@ -2374,20 +2868,21 @@ Players.PlayerRemoving:Connect(
 
 		end
 
-
 		activeRuns[player] =
 			nil
 
-	end)
+		returningPlayers[player] =
+			nil
+
+	end
+)
 
 
 --------------------------------------------------
 -- STARTUP
 --------------------------------------------------
 
-print(
-	"================================"
-)
+print("================================")
 
 print(
 	"[WinCourseProgressService]",
@@ -2396,67 +2891,137 @@ print(
 
 print(
 	"[WinCourseProgressService]",
-	"Preview:",
-	"IGNORED"
+	"MODE:",
+	"SERVER PHYSICS"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Generated Course:",
-	"Course.WinCourse"
+	"MOVEMENT:",
+	"LinearVelocity"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Required Attribute:",
-	"IsWinCourse = true"
+	"BALL OWNERSHIP:",
+	"SERVER"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Oil Source:",
-	"Player.CurrentOil"
+	"COUNTDOWN BALL:",
+	"ANCHORED"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Collection Count:",
-	"Player.CollectedOilCount"
+	"ROLL RELEASE:",
+	"SERVER CONTROLLED"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Movement:",
-	"DIRECT SERVER MOVEMENT"
+	"PER-FRAME CFRAME:",
+	"DISABLED"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Speed:",
-	WIN_COURSE_SPEED,
+	"PER-FRAME ASSEMBLY VELOCITY:",
+	"DISABLED"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"PER-FRAME NETWORK OWNERSHIP:",
+	"DISABLED"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"START POSITION:",
+	"WinCourseGenerator.GetStartPosition()"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"RETURN POSITION:",
+	"Workspace.BallSpawn"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"SPAWN AURA REMOTE:",
+	"Remotes.SpawnAura"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"AURA STYLE:",
+	AURA_STYLE
+)
+
+print(
+	"[WinCourseProgressService]",
+	"BASE SPEED:",
+	BASE_WIN_COURSE_SPEED,
 	"studs/sec"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Countdown:",
+	"OIL SPEED BOOST:",
+	OIL_SPEED_BOOST_PER_OIL,
+	"studs/sec per oil"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"MAX OIL BOOST:",
+	MAX_OIL_SPEED_BOOST,
+	"studs/sec"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"ACCELERATION:",
+	WIN_COURSE_ACCELERATION,
+	"studs/sec²"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"MAX SPEED:",
+	MAX_WIN_COURSE_SPEED,
+	"studs/sec"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"OIL TRAVEL:",
+	OIL_PER_STUD,
+	"oil/stud"
+)
+
+print(
+	"[WinCourseProgressService]",
+	"COUNTDOWN:",
 	START_DELAY,
 	"seconds"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"Oil Settle Time:",
-	OIL_SETTLE_TIME,
+	"RESULT DISPLAY:",
+	RESULT_DISPLAY_TIME,
 	"seconds"
 )
 
 print(
 	"[WinCourseProgressService]",
-	"RunState:",
-	"NOT USED AS WIN COURSE BLOCKER"
+	"RETURN FADE:",
+	RETURN_FADE_TIME,
+	"seconds"
 )
 
-print(
-	"================================"
-)
+print("================================")

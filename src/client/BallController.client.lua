@@ -1,16 +1,90 @@
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+--------------------------------------------------
+-- BALL CONTROLLER
+--
+-- CLIENT ONLY
+--
+-- LOCATION:
+-- StarterPlayer
+--   > StarterPlayerScripts
+--
+-- PURPOSE:
+--
+-- Reads player movement intent and sends it to the
+-- server.
+--
+-- THIS SCRIPT NEVER:
+--
+-- - Moves the ball
+-- - Sets velocity
+-- - Changes physics
+-- - Changes network ownership
+--
+-- SERVER OWNS ACTUAL BALL MOVEMENT.
+--
+-- LOBBY:
+--     Camera-relative X/Z movement.
+--
+-- COURSE:
+--     Left/right only.
+--     Forward movement is server-controlled.
+--
+-- FINISHING / WIN COURSE:
+--     No normal movement input.
+--
+-- INPUT:
+--
+--     Immediate packet on input change.
+--     60 Hz synchronization while active.
+--------------------------------------------------
 
-local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+
+--------------------------------------------------
+-- SERVICES
+--------------------------------------------------
+
+local Players =
+	game:GetService("Players")
+
+local UserInputService =
+	game:GetService("UserInputService")
+
+local ReplicatedStorage =
+	game:GetService("ReplicatedStorage")
+
+local RunService =
+	game:GetService("RunService")
+
+
+--------------------------------------------------
+-- PLAYER
+--------------------------------------------------
+
+local player =
+	Players.LocalPlayer
+
+
+--------------------------------------------------
+-- CAMERA
+--------------------------------------------------
+
+local camera =
+	workspace.CurrentCamera
+
+
+--------------------------------------------------
+-- REMOTES
+--------------------------------------------------
 
 local remotes =
-	ReplicatedStorage:WaitForChild("Remotes")
+	ReplicatedStorage:WaitForChild(
+		"Remotes"
+	)
 
 local ballMovement =
-	remotes:WaitForChild("BallMovement")
+	remotes:WaitForChild(
+		"BallMovement"
+	)
+
 
 --------------------------------------------------
 -- INPUT STATE
@@ -19,113 +93,160 @@ local ballMovement =
 local inputX = 0
 local inputZ = 0
 
+
 --------------------------------------------------
--- KEY STATE
+-- SEND RATE
+--
+-- 60 Hz keeps the server supplied with very
+-- current input without going back to an
+-- unrestricted every-frame RemoteEvent loop.
+--------------------------------------------------
+
+local SEND_INTERVAL =
+	1 / 60
+
+local sendAccumulator =
+	0
+
+
+--------------------------------------------------
+-- MOVEMENT KEY CHECK
+--------------------------------------------------
+
+local function isMovementKey(
+	keyCode
+)
+
+	return keyCode == Enum.KeyCode.W
+		or keyCode == Enum.KeyCode.A
+		or keyCode == Enum.KeyCode.S
+		or keyCode == Enum.KeyCode.D
+		or keyCode == Enum.KeyCode.Up
+		or keyCode == Enum.KeyCode.Left
+		or keyCode == Enum.KeyCode.Down
+		or keyCode == Enum.KeyCode.Right
+
+end
+
+
+--------------------------------------------------
+-- UPDATE KEY STATE
 --------------------------------------------------
 
 local function updateKeys()
 
-	inputX = 0
-	inputZ = 0
+	local x = 0
+	local z = 0
+
 
 	--------------------------------------------------
 	-- LEFT
 	--------------------------------------------------
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.A)
-		or UserInputService:IsKeyDown(Enum.KeyCode.Left) then
+	if UserInputService:IsKeyDown(
+		Enum.KeyCode.A
+	)
+	or UserInputService:IsKeyDown(
+		Enum.KeyCode.Left
+	) then
 
-		inputX -= 1
+		x -= 1
 
 	end
+
 
 	--------------------------------------------------
 	-- RIGHT
 	--------------------------------------------------
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.D)
-		or UserInputService:IsKeyDown(Enum.KeyCode.Right) then
+	if UserInputService:IsKeyDown(
+		Enum.KeyCode.D
+	)
+	or UserInputService:IsKeyDown(
+		Enum.KeyCode.Right
+	) then
 
-		inputX += 1
+		x += 1
 
 	end
+
 
 	--------------------------------------------------
 	-- FORWARD
 	--------------------------------------------------
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.W)
-		or UserInputService:IsKeyDown(Enum.KeyCode.Up) then
+	if UserInputService:IsKeyDown(
+		Enum.KeyCode.W
+	)
+	or UserInputService:IsKeyDown(
+		Enum.KeyCode.Up
+	) then
 
-		inputZ += 1
+		z += 1
 
 	end
+
 
 	--------------------------------------------------
 	-- BACKWARD
 	--------------------------------------------------
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.S)
-		or UserInputService:IsKeyDown(Enum.KeyCode.Down) then
+	if UserInputService:IsKeyDown(
+		Enum.KeyCode.S
+	)
+	or UserInputService:IsKeyDown(
+		Enum.KeyCode.Down
+	) then
 
-		inputZ -= 1
+		z -= 1
 
 	end
+
+
+	inputX = x
+	inputZ = z
 
 end
 
+
 --------------------------------------------------
--- CAMERA RELATIVE MOVEMENT
+-- GET RUN STATE
 --------------------------------------------------
 
-local function getMovement()
+local function getRunState()
 
-	updateKeys()
+	return player:GetAttribute(
+		"RunState"
+	)
 
-	--------------------------------------------------
-	-- COURSE CONTROLS
-	--
-	-- Running AND Finishing use the exact same
-	-- controls.
-	--
-	-- This prevents WinCourse from switching back
-	-- to lobby/camera-relative movement when the
-	-- FinishWall is reached.
-	--------------------------------------------------
+end
 
-	local runState =
-		player:GetAttribute("RunState")
+local function debugRunState()
+    print(
+        "[BallController] Current RunState:",
+        player:GetAttribute("RunState")
+    )
+end
 
-	if runState == "Running"
-		or runState == "Finishing" then
+--------------------------------------------------
+-- GET LOBBY MOVEMENT
+--
+-- Camera-relative movement.
+--
+-- W = camera forward
+-- S = camera backward
+-- A = camera left
+-- D = camera right
+--------------------------------------------------
 
-		--------------------------------------------------
-		-- COURSE CONTROLS ONLY
-		--
-		-- A = LEFT
-		-- D = RIGHT
-		--
-		-- Keep the existing inversion.
-		--------------------------------------------------
-
-		return Vector2.new(
-			-inputX,
-			0
-		)
-
-	end
-
-
-	--------------------------------------------------
-	-- LOBBY
-	--------------------------------------------------
+local function getLobbyMovement()
 
 	local cameraCFrame =
 		camera.CFrame
 
 
 	--------------------------------------------------
-	-- FLATTEN CAMERA
+	-- CAMERA FORWARD
 	--------------------------------------------------
 
 	local forward =
@@ -135,6 +256,11 @@ local function getMovement()
 			cameraCFrame.LookVector.Z
 		)
 
+
+	--------------------------------------------------
+	-- CAMERA RIGHT
+	--------------------------------------------------
+
 	local right =
 		Vector3.new(
 			cameraCFrame.RightVector.X,
@@ -143,7 +269,12 @@ local function getMovement()
 		)
 
 
-	if forward.Magnitude > 0.001 then
+	--------------------------------------------------
+	-- SAFETY
+	--------------------------------------------------
+
+	if forward.Magnitude >
+		0.001 then
 
 		forward =
 			forward.Unit
@@ -160,7 +291,8 @@ local function getMovement()
 	end
 
 
-	if right.Magnitude > 0.001 then
+	if right.Magnitude >
+		0.001 then
 
 		right =
 			right.Unit
@@ -178,16 +310,25 @@ local function getMovement()
 
 
 	--------------------------------------------------
-	-- CAMERA RELATIVE MOVEMENT
+	-- COMBINE
 	--------------------------------------------------
 
 	local movement =
-		(right * inputX)
+		(
+			right * inputX
+		)
 		+
-		(forward * inputZ)
+		(
+			forward * inputZ
+		)
 
 
-	if movement.Magnitude > 1 then
+	--------------------------------------------------
+	-- NORMALIZE
+	--------------------------------------------------
+
+	if movement.Magnitude >
+		1 then
 
 		movement =
 			movement.Unit
@@ -202,44 +343,315 @@ local function getMovement()
 
 end
 
+
 --------------------------------------------------
--- CONTINUOUS INPUT SEND
---------------------------------------------------
+-- GET COURSE MOVEMENT
 --
--- This is the important change.
+-- Course only uses left/right.
 --
--- While W/A/S/D is held, we continually recalculate
--- the direction from the CURRENT camera orientation.
---
+-- Forward movement is server-owned.
 --------------------------------------------------
 
-RunService.RenderStepped:Connect(function()
+local function getCourseMovement()
+
+	return Vector2.new(
+		math.clamp(
+			inputX,
+			-1,
+			1
+		),
+		0
+	)
+
+end
+
+
+--------------------------------------------------
+-- GET CURRENT MOVEMENT
+--------------------------------------------------
+
+local function getCurrentMovement()
+
+	local runState =
+		getRunState()
+
+
+	--------------------------------------------------
+	-- LOBBY / STARTING
+	--
+	-- Both states use normal camera-relative
+	-- movement.
+	--------------------------------------------------
+
+	if runState == "Waiting"
+		or runState == "Starting" then
+
+		return getLobbyMovement()
+
+	end
+
+
+	--------------------------------------------------
+	-- RUNNING
+	--
+	-- Course movement is left/right only.
+	--------------------------------------------------
+
+	if runState == "Running" then
+
+		return getCourseMovement()
+
+	end
+
+
+	--------------------------------------------------
+	-- FINISHING / WIN COURSE
+	--
+	-- Server owns the ball from this point.
+	--------------------------------------------------
+
+	if runState == "Finishing" then
+
+		return nil
+
+	end
+
+
+	--------------------------------------------------
+	-- UNKNOWN STATE
+	--------------------------------------------------
+
+	warn(
+		"[BallController]",
+		"Movement blocked because RunState is:",
+		runState
+	)
+
+	return nil
+
+end
+
+
+--------------------------------------------------
+-- SEND MOVEMENT
+--------------------------------------------------
+
+local function sendMovement()
 
 	local movement =
-		getMovement()
+		getCurrentMovement()
 
-	--------------------------------------------------
-	-- Don't spam the server when completely idle.
-	--------------------------------------------------
-
-	if inputX == 0 and inputZ == 0 then
-
-		ballMovement:FireServer(
-			Vector2.zero
-		)
+	if movement == nil then
 
 		return
 
 	end
 
+	print(
+		"[BallController]",
+		"Sending movement:",
+		movement,
+		"RunState:",
+		getRunState()
+	)
+
 	ballMovement:FireServer(
 		movement
 	)
 
-end)
+end
+
 
 --------------------------------------------------
--- WINDOW FOCUS
+-- INPUT CHANGED
+--
+-- Immediate update.
+--
+-- There is NO intentional delay here.
+--------------------------------------------------
+
+local function processInputChange()
+
+	updateKeys()
+
+	sendMovement()
+
+	debugRunState()
+
+end
+
+
+--------------------------------------------------
+-- INPUT BEGAN
+--------------------------------------------------
+
+UserInputService.InputBegan:Connect(
+	function(
+		input,
+		gameProcessed
+	)
+
+	--------------------------------------------------
+	-- Ignore chat / UI / Roblox controls.
+	--------------------------------------------------
+
+	if gameProcessed then
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- Keyboard only.
+	--------------------------------------------------
+
+	if input.UserInputType
+		~= Enum.UserInputType.Keyboard then
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- Ignore unrelated keys.
+	--------------------------------------------------
+
+	if not isMovementKey(
+		input.KeyCode
+	) then
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- SEND IMMEDIATELY.
+	--------------------------------------------------
+
+	processInputChange()
+
+end)
+
+
+--------------------------------------------------
+-- INPUT ENDED
+--------------------------------------------------
+
+UserInputService.InputEnded:Connect(
+	function(
+		input
+	)
+
+	--------------------------------------------------
+	-- Keyboard only.
+	--------------------------------------------------
+
+	if input.UserInputType
+		~= Enum.UserInputType.Keyboard then
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- Ignore unrelated keys.
+	--------------------------------------------------
+
+	if not isMovementKey(
+		input.KeyCode
+	) then
+
+		return
+
+	end
+
+
+	--------------------------------------------------
+	-- SEND IMMEDIATELY.
+	--------------------------------------------------
+
+	processInputChange()
+
+end)
+
+
+--------------------------------------------------
+-- CONTINUOUS SYNCHRONIZATION
+--
+-- 60 Hz.
+--
+-- This is only synchronization.
+-- It does NOT control physics locally.
+--------------------------------------------------
+
+RunService.RenderStepped:Connect(
+	function(deltaTime)
+
+		if typeof(deltaTime) ~= "number"
+			or deltaTime <= 0 then
+
+			return
+
+		end
+
+
+		sendAccumulator +=
+			deltaTime
+
+
+		if sendAccumulator <
+			SEND_INTERVAL then
+
+			return
+
+		end
+
+
+		--------------------------------------------------
+		-- Consume one interval.
+		--------------------------------------------------
+
+		sendAccumulator -=
+			SEND_INTERVAL
+
+
+		--------------------------------------------------
+		-- Prevent accumulator runaway after a
+		-- frame hitch.
+		--------------------------------------------------
+
+		if sendAccumulator >
+			SEND_INTERVAL then
+
+			sendAccumulator =
+				0
+
+		end
+
+
+		--------------------------------------------------
+		-- Refresh actual keyboard state.
+		--------------------------------------------------
+
+		updateKeys()
+
+
+		--------------------------------------------------
+		-- Send latest intent.
+		--------------------------------------------------
+
+		sendMovement()
+
+	end
+)
+
+
+--------------------------------------------------
+-- WINDOW FOCUS LOST
 --------------------------------------------------
 
 UserInputService.WindowFocusReleased:Connect(
@@ -248,11 +660,67 @@ UserInputService.WindowFocusReleased:Connect(
 		inputX = 0
 		inputZ = 0
 
-		ballMovement:FireServer(
-			Vector2.zero
-		)
+
+		local runState =
+			getRunState()
+
+
+		--------------------------------------------------
+		-- Explicitly stop normal movement.
+		--------------------------------------------------
+
+		if runState == "Waiting"
+			or runState == "Running" then
+
+			ballMovement:FireServer(
+				Vector2.zero
+			)
+
+		end
 
 	end
 )
 
-print("[BallController] CLIENT READY")
+
+--------------------------------------------------
+-- STARTUP
+--------------------------------------------------
+
+print(
+	"[BallController] CLIENT READY"
+)
+
+print(
+	"[BallController] Input:",
+	"Immediate + 60 Hz"
+)
+
+print(
+	"[BallController] Waiting:",
+	"Camera-relative X/Z"
+)
+
+print(
+	"[BallController] Running:",
+	"Left/right only"
+)
+
+print(
+	"[BallController] Starting:",
+	"No normal movement"
+)
+
+print(
+	"[BallController] Finishing:",
+	"No normal movement"
+)
+
+print(
+	"[BallController] WinCourse:",
+	"No normal movement"
+)
+
+print(
+	"[BallController] Client physics:",
+	"DISABLED"
+)

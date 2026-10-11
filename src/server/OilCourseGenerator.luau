@@ -1,32 +1,87 @@
+--------------------------------------------------
+-- OIL COURSE GENERATOR
+--
+-- SERVER ONLY
+--
+-- LOCATION:
+-- ServerScriptService
+--     > OilCourseGenerator
+--
+-- PURPOSE:
+--
+-- Generates the authoritative oil course for each
+-- player.
+--
+-- COMPATIBLE WITH:
+--
+-- Normal definitions:
+--     MinOil
+--     MaxOil
+--     Weight
+--
+-- Special definitions:
+--     Multiplier
+--     Divider
+--
+-- Optional:
+--     Kind
+--     Display
+--
+-- SUPPORTED SPECIAL EFFECTS:
+--
+--     X2
+--     X4
+--     /2
+--     /4
+--
+-- IMPORTANT:
+--
+-- This generator NEVER awards Oil.
+-- OilCollectionService owns collection/rewards.
+--
+-- Special platforms have OilAmount = 0.
+-- OilCollectionService must apply the effect to
+-- the player's CURRENT collectedOil total.
+--------------------------------------------------
+
+
+--------------------------------------------------
+-- SERVICES
+--------------------------------------------------
+
 local ServerStorage = game:GetService("ServerStorage")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Players = game:GetService("Players")
+
+
+--------------------------------------------------
+-- MODULE
+--------------------------------------------------
 
 local OilCourseGenerator = {}
+
 
 --------------------------------------------------
 -- REFERENCES
 --------------------------------------------------
 
-local templates =
-	ServerStorage:WaitForChild("Templates")
+local templates = ServerStorage:WaitForChild("Templates")
+local oilRowTemplate = templates:WaitForChild("OilRow")
 
-local oilRowTemplate =
-	templates:WaitForChild("OilRow")
+local oilSystem = ServerScriptService:WaitForChild("OilSystem")
+local oilDefinitionsModule = oilSystem:WaitForChild("OilDefinitions")
+local OilDefinitions = require(oilDefinitionsModule)
 
-local OilDefinitions =
-	require(
-		ReplicatedStorage:WaitForChild("OilDefinitions")
-	)
+local course = workspace:WaitForChild("Course")
 
-local course =
-	workspace:WaitForChild("Course")
 
 --------------------------------------------------
 -- SETTINGS
 --------------------------------------------------
 
 local NUMBER_OF_ROWS = 12
-local ROW_SPACING = 20
+local ROW_SPACING = 27
+local PLATFORM_SEPARATION = 5
 
 local START_POSITION = Vector3.new(
 	-64.718,
@@ -34,86 +89,384 @@ local START_POSITION = Vector3.new(
 	-174.612
 )
 
-local oilTypes = {
-	"Small",
-	"Medium",
-	"Large",
-	"Mega",
-}
+
+--------------------------------------------------
+-- POLARITY
+--------------------------------------------------
+
+local POSITIVE_CHANCE = 0.45
+local NEGATIVE_CHANCE = 0.55
+
+
+--------------------------------------------------
+-- RNG
+--------------------------------------------------
 
 local rng = Random.new()
+
 
 --------------------------------------------------
 -- COLORS
 --------------------------------------------------
 
-local POSITIVE_COLOR =
-	Color3.fromRGB(
-		60,
-		220,
-		90
-	)
+local POSITIVE_COLOR = Color3.fromRGB(60, 220, 90)
+local NEGATIVE_COLOR = Color3.fromRGB(220, 50, 50)
 
-local NEGATIVE_COLOR =
-	Color3.fromRGB(
-		220,
-		50,
-		50
-	)
+
+--------------------------------------------------
+-- OIL TYPES
+--------------------------------------------------
+
+local OIL_TYPES = {}
+
+
+--------------------------------------------------
+-- FINITE NUMBER
+--------------------------------------------------
+
+local function isFiniteNumber(value)
+	return typeof(value) == "number"
+		and value == value
+		and value ~= math.huge
+		and value ~= -math.huge
+end
+
+
+--------------------------------------------------
+-- BUILD OIL TYPE LIST
+--------------------------------------------------
+
+local function buildOilTypeList()
+	table.clear(OIL_TYPES)
+
+	for oilType, definition in pairs(OilDefinitions) do
+		if typeof(oilType) == "string" and typeof(definition) == "table" then
+			table.insert(OIL_TYPES, oilType)
+		end
+	end
+
+	table.sort(OIL_TYPES, function(a, b)
+		return a < b
+	end)
+
+	if #OIL_TYPES == 0 then
+		error("[OilCourseGenerator] OilDefinitions contains no valid oil types.")
+	end
+end
+
+
+--------------------------------------------------
+-- GET DEFINITION KIND
+--
+-- Supports:
+--
+-- NEW:
+--     Kind = "Normal"
+--     Kind = "Multiplier"
+--     Kind = "Divider"
+--
+-- LEGACY:
+--     MinOil / MaxOil = Normal
+--     Multiplier = Multiplier
+--     Divider = Divider
+--------------------------------------------------
+
+local function getDefinitionKind(definition)
+	if typeof(definition) ~= "table" then
+		return nil
+	end
+
+	if definition.Kind ~= nil then
+		if definition.Kind == "Normal"
+			or definition.Kind == "Multiplier"
+			or definition.Kind == "Divider" then
+			return definition.Kind
+		end
+
+		return nil
+	end
+
+	if definition.Multiplier ~= nil then
+		return "Multiplier"
+	end
+
+	if definition.Divider ~= nil then
+		return "Divider"
+	end
+
+	if definition.MinOil ~= nil or definition.MaxOil ~= nil then
+		return "Normal"
+	end
+
+	return nil
+end
+
+
+--------------------------------------------------
+-- GET DISPLAY
+--------------------------------------------------
+
+local function getDisplay(oilType, definition, kind)
+	if typeof(definition.Display) == "string" and definition.Display ~= "" then
+		return definition.Display
+	end
+
+	if kind == "Multiplier" then
+		if definition.Multiplier == 2 then
+			return "X2"
+		end
+
+		if definition.Multiplier == 4 then
+			return "X4"
+		end
+
+		if isFiniteNumber(definition.Multiplier) then
+			return "X" .. tostring(definition.Multiplier)
+		end
+	end
+
+	if kind == "Divider" then
+		if definition.Divider == 2 then
+			return "/2"
+		end
+
+		if definition.Divider == 4 then
+			return "/4"
+		end
+
+		if isFiniteNumber(definition.Divider) then
+			return "/" .. tostring(definition.Divider)
+		end
+	end
+
+	return oilType
+end
+
+
+--------------------------------------------------
+-- GET EFFECT VALUE
+--------------------------------------------------
+
+local function getEffectValue(definition, kind)
+	if kind == "Multiplier" then
+		return definition.Multiplier
+	end
+
+	if kind == "Divider" then
+		return definition.Divider
+	end
+
+	return 1
+end
+
+
+--------------------------------------------------
+-- GET COMPATIBILITY MULTIPLIER
+--
+-- Normal:
+--     1
+--
+-- X2:
+--     2
+--
+-- X4:
+--     4
+--
+-- /2:
+--     0.5
+--
+-- /4:
+--     0.25
+--------------------------------------------------
+
+local function getCompatibilityMultiplier(definition, kind)
+	if kind == "Multiplier" then
+		return definition.Multiplier
+	end
+
+	if kind == "Divider" then
+		return 1 / definition.Divider
+	end
+
+	return 1
+end
+
+
+--------------------------------------------------
+-- VALIDATE ONE OIL DEFINITION
+--------------------------------------------------
+
+local function validateOilDefinition(oilType, definition)
+	if typeof(definition) ~= "table" then
+		warn("[OilCourseGenerator] Invalid OilDefinition:", oilType)
+		return false
+	end
+
+	if not isFiniteNumber(definition.Weight) then
+		warn("[OilCourseGenerator] Invalid Weight:", oilType)
+		return false
+	end
+
+	if definition.Weight <= 0 then
+		warn("[OilCourseGenerator] Weight must be greater than 0:", oilType)
+		return false
+	end
+
+	local kind = getDefinitionKind(definition)
+
+if not kind then
+    warn(
+        "[OilCourseGenerator] Could not determine definition kind:",
+        oilType
+    )
+    return false
+end
+
+	if kind == "Normal" then
+		if not isFiniteNumber(definition.MinOil) then
+			warn("[OilCourseGenerator] Normal oil missing MinOil:", oilType)
+			return false
+		end
+
+		if not isFiniteNumber(definition.MaxOil) then
+			warn("[OilCourseGenerator] Normal oil missing MaxOil:", oilType)
+			return false
+		end
+
+		if definition.MinOil <= 0 then
+			warn("[OilCourseGenerator] MinOil must be greater than 0:", oilType)
+			return false
+		end
+
+		if definition.MaxOil < definition.MinOil then
+			warn("[OilCourseGenerator] MaxOil cannot be less than MinOil:", oilType)
+			return false
+		end
+	end
+
+	if kind == "Multiplier" then
+		if not isFiniteNumber(definition.Multiplier) then
+			warn("[OilCourseGenerator] Invalid Multiplier:", oilType)
+			return false
+		end
+
+		if definition.Multiplier <= 0 then
+			warn("[OilCourseGenerator] Multiplier must be greater than 0:", oilType)
+			return false
+		end
+	end
+
+	if kind == "Divider" then
+		if not isFiniteNumber(definition.Divider) then
+			warn("[OilCourseGenerator] Invalid Divider:", oilType)
+			return false
+		end
+
+		if definition.Divider <= 0 then
+			warn("[OilCourseGenerator] Divider must be greater than 0:", oilType)
+			return false
+		end
+	end
+
+	if definition.Display ~= nil and typeof(definition.Display) ~= "string" then
+		warn("[OilCourseGenerator] Invalid Display:", oilType)
+		return false
+	end
+
+	return true
+end
+
+
+--------------------------------------------------
+-- VALIDATE ALL DEFINITIONS
+--------------------------------------------------
+
+local function validateOilDefinitions()
+	if typeof(OilDefinitions) ~= "table" then
+		error("[OilCourseGenerator] OilDefinitions must return a table.")
+	end
+
+	local totalWeight = 0
+
+	for _, oilType in ipairs(OIL_TYPES) do
+		local definition = OilDefinitions[oilType]
+
+		if not validateOilDefinition(oilType, definition) then
+			error("[OilCourseGenerator] Missing or invalid oil type: " .. tostring(oilType))
+		end
+
+		totalWeight += definition.Weight
+	end
+
+	if totalWeight <= 0 then
+		error("[OilCourseGenerator] Total oil rarity weight must be greater than 0.")
+	end
+
+	return totalWeight
+end
+
+
+--------------------------------------------------
+-- VALIDATE PLAYER
+--------------------------------------------------
+
+local function isValidPlayer(player)
+	return player ~= nil
+		and player:IsA("Player")
+		and player:IsDescendantOf(Players)
+end
+
+
+--------------------------------------------------
+-- COURSE NAME
+--------------------------------------------------
+
+local function getCourseName(player)
+	return "PlayerCourse_" .. tostring(player.UserId)
+end
+
 
 --------------------------------------------------
 -- FIND PLATFORM
 --------------------------------------------------
 
-local function findPlatform(
-	oilRow,
-	name
-)
+local function findPlatform(oilRow, name)
+	if not oilRow then
+		return nil
+	end
 
-	local platform =
-		oilRow:FindFirstChild(
-			name,
-			true
-		)
+	local platform = oilRow:FindFirstChild(name, true)
 
 	if not platform then
-
 		warn(
-			"[OilCourseGenerator] MISSING PLATFORM:",
+			"[OilCourseGenerator] Missing platform:",
 			name,
 			"inside",
 			oilRow:GetFullName()
 		)
 
 		return nil
-
 	end
 
-	if not platform:IsA("BasePart")
-		and not platform:IsA("Model") then
-
+	if not platform:IsA("BasePart") and not platform:IsA("Model") then
 		warn(
-			"[OilCourseGenerator] INVALID PLATFORM TYPE:",
+			"[OilCourseGenerator] Invalid platform type:",
 			platform:GetFullName(),
 			platform.ClassName
 		)
 
 		return nil
-
 	end
 
 	return platform
-
 end
 
+
 --------------------------------------------------
--- GET ALL BASEPARTS IN PLATFORM
+-- GET PLATFORM PARTS
 --------------------------------------------------
 
-local function getPlatformParts(
-	platform
-)
-
+local function getPlatformParts(platform)
 	local parts = {}
 
 	if not platform then
@@ -121,658 +474,912 @@ local function getPlatformParts(
 	end
 
 	if platform:IsA("BasePart") then
+		table.insert(parts, platform)
+		return parts
+	end
 
-		table.insert(
-			parts,
-			platform
-		)
-
-	elseif platform:IsA("Model") then
-
-		for _, object in ipairs(
-			platform:GetDescendants()
-		) do
-
+	if platform:IsA("Model") then
+		for _, object in ipairs(platform:GetDescendants()) do
 			if object:IsA("BasePart") then
-
-				table.insert(
-					parts,
-					object
-				)
-
+				table.insert(parts, object)
 			end
-
 		end
-
 	end
 
 	return parts
-
 end
+
+
+--------------------------------------------------
+-- GET PLATFORM CFRAME
+--------------------------------------------------
+
+local function getPlatformCFrame(platform)
+	if platform:IsA("BasePart") then
+		return platform.CFrame
+	end
+
+	if platform:IsA("Model") then
+		return platform:GetPivot()
+	end
+
+	return nil
+end
+
+
+--------------------------------------------------
+-- OFFSET PLATFORM X
+--------------------------------------------------
+
+local function offsetPlatformX(platform, offsetX)
+	local currentCFrame = getPlatformCFrame(platform)
+
+	if not currentCFrame then
+		return false
+	end
+
+	local targetCFrame = currentCFrame + Vector3.new(offsetX, 0, 0)
+
+	if platform:IsA("BasePart") then
+		platform.CFrame = targetCFrame
+	elseif platform:IsA("Model") then
+		platform:PivotTo(targetCFrame)
+	else
+		return false
+	end
+
+	return true
+end
+
+
+--------------------------------------------------
+-- SPACE PLATFORMS
+--------------------------------------------------
+
+local function spacePlatforms(left, right)
+	local leftCFrame = getPlatformCFrame(left)
+	local rightCFrame = getPlatformCFrame(right)
+
+	if not leftCFrame or not rightCFrame then
+		return false
+	end
+
+	local leftX = leftCFrame.Position.X
+	local rightX = rightCFrame.Position.X
+
+	local currentDistance = math.abs(rightX - leftX)
+
+	if currentDistance >= PLATFORM_SEPARATION then
+		return true
+	end
+
+	local midpointX = (leftX + rightX) / 2
+	local halfSeparation = PLATFORM_SEPARATION / 2
+
+	local leftTargetX = midpointX - halfSeparation
+	local rightTargetX = midpointX + halfSeparation
+
+	local leftOffset = leftTargetX - leftX
+	local rightOffset = rightTargetX - rightX
+
+	if not offsetPlatformX(left, leftOffset) then
+		return false
+	end
+
+	if not offsetPlatformX(right, rightOffset) then
+		return false
+	end
+
+	return true
+end
+
 
 --------------------------------------------------
 -- FIND EXISTING OIL LABEL
---
--- IMPORTANT:
---
--- We DO NOT create a label.
--- We DO NOT change its properties.
--- We ONLY change Text.
 --------------------------------------------------
 
-local function findOilLabel(
-	platform
-)
-
+local function findOilLabel(platform)
 	if not platform then
 		return nil
 	end
 
-	--------------------------------------------------
-	-- FIRST: exact OilAmount name
-	--------------------------------------------------
+	local namedLabel = platform:FindFirstChild("OilAmount", true)
 
-	local namedLabel =
-		platform:FindFirstChild(
-			"OilAmount",
-			true
-		)
-
-	if namedLabel
-		and namedLabel:IsA("TextLabel") then
-
+	if namedLabel and namedLabel:IsA("TextLabel") then
 		return namedLabel
-
 	end
 
-	--------------------------------------------------
-	-- SECOND: find existing TextLabel
-	-- inside an existing SurfaceGui
-	--------------------------------------------------
-
-	for _, object in ipairs(
-		platform:GetDescendants()
-	) do
-
+	for _, object in ipairs(platform:GetDescendants()) do
 		if object:IsA("TextLabel") then
-
-			local surfaceGui =
-				object:FindFirstAncestorOfClass(
-					"SurfaceGui"
-				)
+			local surfaceGui = object:FindFirstAncestorOfClass("SurfaceGui")
 
 			if surfaceGui then
-
 				return object
-
 			end
-
 		end
-
 	end
 
 	return nil
-
 end
 
+
 --------------------------------------------------
--- CONFIGURE NUMBER
---
--- ONLY THE TEXT IS CHANGED.
---
--- ALL EXISTING LABEL PROPERTIES ARE PRESERVED.
+-- CONFIGURE OIL LABEL
 --------------------------------------------------
 
-local function configureOilNumber(
-	platform,
-	amount,
-	isPositive
-)
-
-	local label =
-		findOilLabel(
-			platform
-		)
+local function configureOilLabel(platform, oilType, definition, amount)
+	local label = findOilLabel(platform)
 
 	if not label then
-
 		warn(
-			"[OilCourseGenerator] NO EXISTING OIL LABEL:",
+			"[OilCourseGenerator] No existing oil label:",
 			platform:GetFullName()
 		)
 
 		return false
-
 	end
 
-	--------------------------------------------------
-	-- ONLY CHANGE TEXT
-	--------------------------------------------------
+	local kind = getDefinitionKind(definition)
 
-	local displayAmount =
-		math.abs(amount)
+	if kind == "Multiplier" or kind == "Divider" then
+		label.Text = getDisplay(oilType, definition, kind)
+		return true
+	end
 
-	if isPositive then
+	local displayAmount = math.floor(math.abs(amount))
 
-		label.Text =
-			"+" .. tostring(displayAmount)
-
+	if amount >= 0 then
+		label.Text = "+" .. tostring(displayAmount)
 	else
-
-		label.Text =
-			"-" .. tostring(displayAmount)
-
+		label.Text = "-" .. tostring(displayAmount)
 	end
-
-	print(
-		"[OilCourseGenerator] LABEL:",
-		label:GetFullName(),
-		"TEXT:",
-		label.Text
-	)
 
 	return true
-
 end
 
+
 --------------------------------------------------
--- CONFIGURE PLATFORM COLOR
+-- CONFIGURE PLATFORM VISUALS
 --------------------------------------------------
 
-local function configurePlatformVisuals(
-	platform,
-	isPositive
-)
-
-	local color
-
-	if isPositive then
-
-		color =
-			POSITIVE_COLOR
-
-	else
-
-		color =
-			NEGATIVE_COLOR
-
-	end
-
-	local parts =
-		getPlatformParts(
-			platform
-		)
+local function configurePlatformVisuals(platform, isPositive)
+	local color = if isPositive then POSITIVE_COLOR else NEGATIVE_COLOR
+	local parts = getPlatformParts(platform)
 
 	if #parts == 0 then
-
 		warn(
-			"[OilCourseGenerator] PLATFORM HAS NO BASEPARTS:",
+			"[OilCourseGenerator] Platform has no BaseParts:",
 			platform:GetFullName()
 		)
 
 		return false
-
 	end
 
-	--------------------------------------------------
-	-- COLOR EVERY PART
-	--------------------------------------------------
-
-	for _, part in ipairs(
-		parts
-	) do
-
-		part.Color =
-			color
-
-		part.Transparency =
-			0.15
-
-		part.Anchored =
-			true
-
-		part.CanCollide =
-			false
-
-		part.CanTouch =
-			false
-
-		part.CanQuery =
-			true
-
+	for _, part in ipairs(parts) do
+		part.Color = color
+		part.Transparency = 0.15
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = true
+		part.CanQuery = true
 	end
 
 	return true
-
 end
 
+
 --------------------------------------------------
--- CONFIGURE ONE PLATFORM
+-- CHOOSE OIL TYPE BASED ON PLATFORM POLARITY
 --------------------------------------------------
 
-local function setupPlatform(
-	platform,
-	isPositive
-)
+local function chooseOilType(isPositive)
+	local eligibleTypes = {}
+	local totalWeight = 0
 
+	for _, oilType in ipairs(OIL_TYPES) do
+		local definition = OilDefinitions[oilType]
+
+		if definition then
+			local kind = getDefinitionKind(definition)
+
+			local eligible = false
+
+			if kind == "Normal" then
+				eligible = true
+
+			elseif kind == "Multiplier" then
+				eligible = isPositive == true
+
+			elseif kind == "Divider" then
+				eligible = isPositive == false
+			end
+
+			if eligible
+				and isFiniteNumber(definition.Weight)
+				and definition.Weight > 0 then
+
+				table.insert(eligibleTypes, {
+					Name = oilType,
+					Weight = definition.Weight,
+				})
+
+				totalWeight += definition.Weight
+			end
+		end
+	end
+
+	if totalWeight <= 0 then
+		warn(
+			"[OilCourseGenerator] No eligible oil types for polarity:",
+			isPositive and "POSITIVE" or "NEGATIVE"
+		)
+
+		return nil
+	end
+
+	local roll = rng:NextNumber(0, totalWeight)
+	local accumulated = 0
+
+	for _, entry in ipairs(eligibleTypes) do
+		accumulated += entry.Weight
+
+		if roll <= accumulated then
+			return entry.Name
+		end
+	end
+
+	return eligibleTypes[#eligibleTypes].Name
+end
+
+
+--------------------------------------------------
+-- ROLL NORMAL OIL
+--------------------------------------------------
+
+local function rollOilAmount(definition)
+	local kind = getDefinitionKind(definition)
+
+	if kind ~= "Normal" then
+		return 0
+	end
+
+	local minimum = math.floor(definition.MinOil)
+	local maximum = math.floor(definition.MaxOil)
+
+	return rng:NextInteger(minimum, maximum)
+end
+
+
+--------------------------------------------------
+-- BUILD POLARITY PLAN
+--
+-- Uses a randomized course-wide budget.
+--
+-- This keeps the complete course close to:
+--
+--     45% positive
+--     55% negative
+--
+-- while still allowing:
+--
+--     + / +
+--     + / -
+--     - / +
+--     - / -
+--------------------------------------------------
+
+local function buildPolarityPlan(platformCount)
+	local plan = {}
+
+	if platformCount <= 0 then
+		return plan
+	end
+
+	local rowCount = math.floor(platformCount / 2)
+
+	-- Row types:
+	-- 1 = green / green
+	-- 2 = green / red
+	-- 3 = red / red
+
+	local doubleGreenRows = math.floor(rowCount * 0.20)
+	local doubleRedRows = math.floor(rowCount * 0.10)
+
+	local mixedRows = rowCount - doubleGreenRows - doubleRedRows
+
+	-- Build paired outcomes.
+	for _ = 1, doubleGreenRows do
+		table.insert(plan, true)
+		table.insert(plan, true)
+	end
+
+	for _ = 1, mixedRows do
+		table.insert(plan, true)
+		table.insert(plan, false)
+	end
+
+	for _ = 1, doubleRedRows do
+		table.insert(plan, false)
+		table.insert(plan, false)
+	end
+
+	-- Shuffle the order of individual platforms.
+	for index = #plan, 2, -1 do
+		local swapIndex = rng:NextInteger(1, index)
+		plan[index], plan[swapIndex] =
+			plan[swapIndex], plan[index]
+	end
+
+	return plan
+end
+
+
+--------------------------------------------------
+-- SETUP ONE PLATFORM
+--------------------------------------------------
+
+local function setupPlatform(platform, isPositive)
 	if not platform then
 		return false
 	end
 
-	--------------------------------------------------
-	-- RANDOM OIL TYPE
-	--------------------------------------------------
+	-- Select a type compatible with the intended polarity.
+	local oilType = chooseOilType(isPositive)
 
-	local oilType =
-		oilTypes[
-			rng:NextInteger(
-				1,
-				#oilTypes
-			)
-		]
-
-	local definition =
-		OilDefinitions[oilType]
-
-	if not definition then
-
-		warn(
-			"[OilCourseGenerator] MISSING OIL DEFINITION:",
-			oilType
-		)
-
+	if not oilType then
 		return false
-
 	end
 
-	--------------------------------------------------
-	-- AMOUNT
-	--------------------------------------------------
+	local definition = OilDefinitions[oilType]
 
-	local amount =
-		tonumber(
-			definition.Oil
-		)
-
-	if not amount then
-
-		warn(
-			"[OilCourseGenerator] INVALID OIL AMOUNT:",
-			oilType,
-			definition.Oil
-		)
-
+	if not validateOilDefinition(oilType, definition) then
 		return false
-
 	end
 
-	if not isPositive then
+	local kind = getDefinitionKind(definition)
 
-		amount =
-			-amount
+	--------------------------------------------------
+	-- ENFORCE SPECIAL PLATFORM POLARITY
+	--------------------------------------------------
 
+	if kind == "Multiplier" then
+		isPositive = true
+
+	elseif kind == "Divider" then
+		isPositive = false
 	end
 
 	--------------------------------------------------
-	-- ATTRIBUTES
+	-- ROLL NORMAL OIL
+	--------------------------------------------------
+
+	local oilAmount = rollOilAmount(definition)
+
+	if kind == "Normal" and not isPositive then
+		oilAmount = -oilAmount
+	end
+
+	--------------------------------------------------
+	-- SPECIAL EFFECTS DO NOT USE A RANDOM AMOUNT
+	--------------------------------------------------
+
+	if kind == "Multiplier" or kind == "Divider" then
+		oilAmount = 0
+	end
+
+	--------------------------------------------------
+	-- AUTHORITATIVE ATTRIBUTES
+	--------------------------------------------------
+
+	platform:SetAttribute("OilType", oilType)
+	platform:SetAttribute("OilAmount", oilAmount)
+	platform:SetAttribute("Positive", isPositive)
+	platform:SetAttribute("Collected", false)
+
+	platform:SetAttribute("OilEffectType", kind)
+	platform:SetAttribute("Kind", kind)
+
+	--------------------------------------------------
+	-- DISPLAY
+	--------------------------------------------------
+
+	local display = getDisplay(oilType, definition, kind)
+
+	platform:SetAttribute("Display", display)
+
+	--------------------------------------------------
+	-- EFFECT VALUE
 	--------------------------------------------------
 
 	platform:SetAttribute(
-		"OilType",
-		oilType
+		"EffectValue",
+		getEffectValue(definition, kind)
 	)
 
 	platform:SetAttribute(
-		"OilAmount",
-		amount
-	)
-
-	platform:SetAttribute(
-		"Positive",
-		isPositive
-	)
-
-	platform:SetAttribute(
-		"Collected",
-		false
+		"Multiplier",
+		getCompatibilityMultiplier(definition, kind)
 	)
 
 	--------------------------------------------------
-	-- COLOR
+	-- SPECIAL FLAGS
 	--------------------------------------------------
 
-	if not configurePlatformVisuals(
+	local isSpecial = kind == "Multiplier"
+		or kind == "Divider"
+
+	platform:SetAttribute("IsSpecial", isSpecial)
+	platform:SetAttribute("IsMultiplier", kind == "Multiplier")
+	platform:SetAttribute("IsDivider", kind == "Divider")
+
+	--------------------------------------------------
+	-- VISUALS
+	--------------------------------------------------
+
+	if not configurePlatformVisuals(platform, isPositive) then
+		return false
+	end
+
+	--------------------------------------------------
+	-- LABEL
+	--------------------------------------------------
+
+	if not configureOilLabel(
 		platform,
-		isPositive
+		oilType,
+		definition,
+		oilAmount
 	) then
-
 		return false
-
 	end
 
 	--------------------------------------------------
-	-- NUMBER
+	-- DEBUG
 	--------------------------------------------------
 
-	if not configureOilNumber(
-		platform,
-		amount,
-		isPositive
-	) then
-
-		return false
-
-	end
+	print(
+		"[OilCourseGenerator] Platform configured:",
+		platform:GetFullName(),
+		"| Type:", oilType,
+		"| Kind:", kind,
+		"| Polarity:", isPositive and "POSITIVE/GREEN" or "NEGATIVE/RED",
+		"| Amount:", oilAmount,
+		"| Display:", display
+	)
 
 	return true
-
 end
+
+
+--------------------------------------------------
+-- RESET ROW PHYSICS
+--------------------------------------------------
+
+local function resetRowPhysics(oilRow)
+	for _, object in ipairs(oilRow:GetDescendants()) do
+		if object:IsA("BasePart") then
+			object.Anchored = true
+			object.CanCollide = false
+			object.CanTouch = true
+			object.CanQuery = true
+		end
+	end
+end
+
+
+--------------------------------------------------
+-- CONFIGURE ROW
+--------------------------------------------------
+
+local function configureRow(
+	oilRow,
+	rowNumber,
+	leftPositive,
+	rightPositive
+)
+	local left = findPlatform(oilRow, "OilPlatformL")
+	local right = findPlatform(oilRow, "OilPlatformR")
+
+	if not left or not right then
+		return false
+	end
+
+	--------------------------------------------------
+	-- SPACE PLATFORMS
+	--------------------------------------------------
+
+	if not spacePlatforms(left, right) then
+		warn(
+			"[OilCourseGenerator] Failed to space platforms in row:",
+			rowNumber
+		)
+
+		return false
+	end
+
+	--------------------------------------------------
+	-- CONFIGURE LEFT
+	--------------------------------------------------
+
+	local leftOK = setupPlatform(left, leftPositive)
+
+	--------------------------------------------------
+	-- CONFIGURE RIGHT
+	--------------------------------------------------
+
+	local rightOK = setupPlatform(right, rightPositive)
+
+	if not leftOK or not rightOK then
+		return false
+	end
+
+	--------------------------------------------------
+-- ROW ATTRIBUTES: STORE ACTUAL PLATFORM POLARITY
+--------------------------------------------------
+
+oilRow:SetAttribute("RowNumber", rowNumber)
+oilRow:SetAttribute("OilCollected", false)
+oilRow:SetAttribute("CollectedPlatform", "")
+
+oilRow:SetAttribute(
+	"LeftPositive",
+	left:GetAttribute("Positive") == true
+)
+
+oilRow:SetAttribute(
+	"RightPositive",
+	right:GetAttribute("Positive") == true
+)
+
+return true
+end
+
+
+--------------------------------------------------
+-- POSITION ROW
+--------------------------------------------------
+
+local function positionRow(oilRow, rowNumber)
+	local rowZ = START_POSITION.Z + ((rowNumber - 1) * ROW_SPACING)
+
+	local currentPivot = oilRow:GetPivot()
+	local rotation = currentPivot - currentPivot.Position
+
+	local targetCFrame = CFrame.new(
+		START_POSITION.X,
+		START_POSITION.Y,
+		rowZ
+	) * rotation
+
+	oilRow:PivotTo(targetCFrame)
+end
+
+
+--------------------------------------------------
+-- REMOVE PLAYER COURSE
+--------------------------------------------------
+
+local function removePlayerCourse(player)
+	local courseName = getCourseName(player)
+	local oldCourse = course:FindFirstChild(courseName)
+
+	if oldCourse then
+		oldCourse:Destroy()
+	end
+end
+
+
+--------------------------------------------------
+-- COUNT COURSE POLARITIES
+--------------------------------------------------
+
+local function countCoursePolarities(playerCourse)
+	local positiveCount = 0
+	local negativeCount = 0
+
+	for _, oilRow in ipairs(playerCourse:GetChildren()) do
+		local left = findPlatform(oilRow, "OilPlatformL")
+		local right = findPlatform(oilRow, "OilPlatformR")
+
+		if left then
+			if left:GetAttribute("Positive") == true then
+				positiveCount += 1
+			else
+				negativeCount += 1
+			end
+		end
+
+		if right then
+			if right:GetAttribute("Positive") == true then
+				positiveCount += 1
+			else
+				negativeCount += 1
+			end
+		end
+	end
+
+	return positiveCount, negativeCount
+end
+
 
 --------------------------------------------------
 -- GENERATE
 --------------------------------------------------
 
-function OilCourseGenerator.Generate(
-	player
-)
-
-	if not player then
-
-		warn(
-			"[OilCourseGenerator] Generate() received nil player"
-		)
-
+function OilCourseGenerator.Generate(player)
+	if not isValidPlayer(player) then
+		warn("[OilCourseGenerator] Generate() received invalid player.")
 		return nil
-
-	end
-
-	print("================================")
-	print(
-		"[OilCourseGenerator] GENERATING FOR:",
-		player.Name,
-		player.UserId
-	)
-
-	--------------------------------------------------
-	-- COURSE NAME
-	--------------------------------------------------
-
-	local courseName =
-		"PlayerCourse_" ..
-		player.UserId
-
-	--------------------------------------------------
-	-- REMOVE OLD PLAYER COURSE ONLY
-	--
-	-- DO NOT TOUCH LobbyCourse HERE.
-	--------------------------------------------------
-
-	local oldCourse =
-		course:FindFirstChild(
-			courseName
-		)
-
-	if oldCourse then
-
-		print(
-			"[OilCourseGenerator] Removing old:",
-			oldCourse:GetFullName()
-		)
-
-		oldCourse:Destroy()
-
 	end
 
 	--------------------------------------------------
-	-- CREATE PLAYER COURSE
+	-- REMOVE OLD COURSE
 	--------------------------------------------------
 
-	local playerCourse =
-		Instance.new("Folder")
-
-	playerCourse.Name =
-		courseName
-
-	playerCourse.Parent =
-		course
+	removePlayerCourse(player)
 
 	--------------------------------------------------
-	-- ROWS
+	-- CREATE COURSE
 	--------------------------------------------------
 
+	local playerCourse = Instance.new("Folder")
+	playerCourse.Name = getCourseName(player)
+
+	--------------------------------------------------
+	-- COURSE ATTRIBUTES
+	--------------------------------------------------
+
+	playerCourse:SetAttribute("PlayerUserId", player.UserId)
+	playerCourse:SetAttribute("Generated", true)
+	playerCourse:SetAttribute("RowCount", NUMBER_OF_ROWS)
+	playerCourse:SetAttribute("SuccessfulRows", 0)
+	playerCourse:SetAttribute("OilCollected", false)
+	playerCourse:SetAttribute("RowSpacing", ROW_SPACING)
+	playerCourse:SetAttribute("PlatformSeparation", PLATFORM_SEPARATION)
+	playerCourse:SetAttribute("PositiveChance", POSITIVE_CHANCE)
+	playerCourse:SetAttribute("NegativeChance", NEGATIVE_CHANCE)
+	playerCourse:SetAttribute("PositivePlatforms", 0)
+	playerCourse:SetAttribute("NegativePlatforms", 0)
+
+	--------------------------------------------------
+	-- TOTAL PLATFORM COUNT
+	--------------------------------------------------
+
+	local totalPlatforms = NUMBER_OF_ROWS * 2
+
+	--------------------------------------------------
+	-- BUILD COURSE-WIDE POLARITY PLAN
+	--------------------------------------------------
+
+	local polarityPlan = buildPolarityPlan(totalPlatforms)
+	local polarityIndex = 1
 	local successfulRows = 0
 
+	--------------------------------------------------
+	-- GENERATE ROWS
+	--------------------------------------------------
+
 	for rowNumber = 1, NUMBER_OF_ROWS do
+		local oilRow = oilRowTemplate:Clone()
 
-		--------------------------------------------------
-		-- CLONE ONE ROW
-		--------------------------------------------------
-
-		local oilRow =
-			oilRowTemplate:Clone()
-
-		oilRow.Name =
-			"OilRow_" ..
-			rowNumber
+		oilRow.Name = "OilRow_" .. tostring(rowNumber)
 
 		--------------------------------------------------
 		-- POSITION
 		--------------------------------------------------
 
-		local rowZ =
-			START_POSITION.Z
-			+
-			(
-				(rowNumber - 1)
-				* ROW_SPACING
-			)
-
-		local currentPivot =
-			oilRow:GetPivot()
-
-		local rotation =
-			currentPivot
-			- currentPivot.Position
-
-		oilRow:PivotTo(
-			CFrame.new(
-				START_POSITION.X,
-				START_POSITION.Y,
-				rowZ
-			)
-			* rotation
-		)
+		positionRow(oilRow, rowNumber)
 
 		--------------------------------------------------
-		-- RESET PHYSICS
+		-- PHYSICS
 		--------------------------------------------------
 
-		for _, object in ipairs(
-			oilRow:GetDescendants()
-		) do
+		resetRowPhysics(oilRow)
 
-			if object:IsA("BasePart") then
+		--------------------------------------------------
+		-- POLARITY
+		--------------------------------------------------
 
-				object.Anchored =
-					true
+		local leftPositive = polarityPlan[polarityIndex]
+		local rightPositive = polarityPlan[polarityIndex + 1]
 
-				object.CanCollide =
-					false
+		polarityIndex += 2
 
-				object.CanTouch =
-					false
+		--------------------------------------------------
+		-- SAFETY FALLBACK
+		--------------------------------------------------
 
-				object.CanQuery =
-					false
+		if leftPositive == nil then
+			leftPositive = false
+		end
 
-			end
-
+		if rightPositive == nil then
+			rightPositive = false
 		end
 
 		--------------------------------------------------
-		-- FIND PLATFORMS
+		-- CONFIGURE
 		--------------------------------------------------
 
-		local left =
-			findPlatform(
-				oilRow,
-				"OilPlatformL"
-			)
-
-		local right =
-			findPlatform(
-				oilRow,
-				"OilPlatformR"
-			)
-
-		if not left or not right then
-
-			warn(
-				"[OilCourseGenerator] ROW",
-				rowNumber,
-				"FAILED: missing platform"
-			)
-
-			oilRow:Destroy()
-
-			continue
-
-		end
-
-		--------------------------------------------------
-		-- RANDOM POSITIVE / NEGATIVE
-		--
-		-- At least one is ALWAYS green.
-		--------------------------------------------------
-
-		local leftPositive =
-			rng:NextInteger(
-				0,
-				1
-			) == 1
-
-		local rightPositive =
-			rng:NextInteger(
-				0,
-				1
-			) == 1
-
-		if not leftPositive
-			and not rightPositive then
-
-			if rng:NextInteger(
-				0,
-				1
-			) == 1 then
-
-				leftPositive =
-					true
-
-			else
-
-				rightPositive =
-					true
-
-			end
-
-		end
-
-		--------------------------------------------------
-		-- LEFT
-		--------------------------------------------------
-
-		local leftOK =
-			setupPlatform(
-				left,
-				leftPositive
-			)
-
-		--------------------------------------------------
-		-- RIGHT
-		--------------------------------------------------
-
-		local rightOK =
-			setupPlatform(
-				right,
-				rightPositive
-			)
-
-		--------------------------------------------------
-		-- ROW FAILED
-		--------------------------------------------------
-
-		if not leftOK
-			or not rightOK then
-
-			warn(
-				"[OilCourseGenerator] ROW",
-				rowNumber,
-				"FAILED DURING CONFIGURATION"
-			)
-
-			oilRow:Destroy()
-
-			continue
-
-		end
-
-		--------------------------------------------------
-		-- ROW ATTRIBUTES
-		--------------------------------------------------
-
-		oilRow:SetAttribute(
-			"RowNumber",
-			rowNumber
-		)
-
-		oilRow:SetAttribute(
-			"OilCollected",
-			false
-		)
-
-		oilRow:SetAttribute(
-			"CollectedPlatform",
-			""
-		)
-
-		--------------------------------------------------
-		-- PARENT
-		--------------------------------------------------
-
-		oilRow.Parent =
-			playerCourse
-
-		successfulRows += 1
-
-		print(
-			"[OilCourseGenerator] ROW",
+		local success = configureRow(
+			oilRow,
 			rowNumber,
-			"SUCCESS"
+			leftPositive,
+			rightPositive
 		)
 
+		if not success then
+			warn(
+				"[OilCourseGenerator] Row failed:",
+				rowNumber
+			)
+
+			oilRow:Destroy()
+			continue
+		end
+
+		--------------------------------------------------
+		-- PARENT AFTER SUCCESS
+		--------------------------------------------------
+
+		oilRow.Parent = playerCourse
+		successfulRows += 1
 	end
 
 	--------------------------------------------------
-	-- FINAL
+	-- FINALIZE COURSE
+	--------------------------------------------------
+
+	playerCourse:SetAttribute(
+		"SuccessfulRows",
+		successfulRows
+	)
+
+	--------------------------------------------------
+	-- PARENT COURSE
+	--------------------------------------------------
+
+	playerCourse.Parent = course
+
+	--------------------------------------------------
+	-- COUNT POLARITIES
+	--------------------------------------------------
+
+	local positiveCount, negativeCount = countCoursePolarities(playerCourse)
+
+	playerCourse:SetAttribute(
+		"PositivePlatforms",
+		positiveCount
+	)
+
+	playerCourse:SetAttribute(
+		"NegativePlatforms",
+		negativeCount
+	)
+
+	--------------------------------------------------
+	-- VALIDATION
+	--------------------------------------------------
+
+	if successfulRows <= 0 then
+		warn(
+			"[OilCourseGenerator] Course generated with ZERO valid rows:",
+			player.Name
+		)
+	end
+
+	--------------------------------------------------
+	-- DEBUG OUTPUT
 	--------------------------------------------------
 
 	print(
-		"[OilCourseGenerator] FINISHED:",
+		"[OilCourseGenerator]",
+		"Generated course:",
+		player.Name,
+		"| Rows:",
 		successfulRows,
 		"/",
 		NUMBER_OF_ROWS,
-		"rows"
+		"| Positive:",
+		positiveCount,
+		"| Negative:",
+		negativeCount
 	)
-
-	print(
-		"[OilCourseGenerator] COURSE:",
-		playerCourse:GetFullName()
-	)
-
-	print("================================")
 
 	return playerCourse
-
 end
+
+
+--------------------------------------------------
+-- REMOVE COURSE
+--
+-- Optional public helper.
+--------------------------------------------------
+
+function OilCourseGenerator.Remove(player)
+	if not isValidPlayer(player) then
+		return false
+	end
+
+	removePlayerCourse(player)
+	return true
+end
+
+
+--------------------------------------------------
+-- GET PLAYER COURSE
+--
+-- Optional public helper.
+--------------------------------------------------
+
+function OilCourseGenerator.GetCourse(player)
+	if not isValidPlayer(player) then
+		return nil
+	end
+
+	return course:FindFirstChild(getCourseName(player))
+end
+
+
+--------------------------------------------------
+-- STARTUP VALIDATION
+--------------------------------------------------
+
+buildOilTypeList()
+validateOilDefinitions()
+
+
+--------------------------------------------------
+-- READY
+--------------------------------------------------
+
+print("[OilCourseGenerator] SERVER READY")
+
+print(
+	"[OilCourseGenerator]",
+	"OilDefinitions:",
+	"ServerScriptService.OilSystem.OilDefinitions"
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Rows:",
+	NUMBER_OF_ROWS
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Row spacing:",
+	ROW_SPACING
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Platform separation:",
+	PLATFORM_SEPARATION
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Positive chance:",
+	POSITIVE_CHANCE
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Negative chance:",
+	NEGATIVE_CHANCE
+)
+
+print(
+	"[OilCourseGenerator]",
+	"Oil rarities:",
+	table.concat(OIL_TYPES, ", ")
+)
+
+
+--------------------------------------------------
+-- REQUIRED MODULE RETURN
+--------------------------------------------------
 
 return OilCourseGenerator

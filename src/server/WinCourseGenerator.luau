@@ -7,9 +7,10 @@
 --
 -- 1. Win Course layout
 -- 2. Win Course starting position
--- 3. Tile spacing
--- 4. Win amounts
--- 5. Win tile colors
+-- 3. Win Course direction
+-- 4. Tile spacing
+-- 5. Win amounts
+-- 6. Win tile colors
 --
 -- TEMPLATE:
 --
@@ -43,11 +44,13 @@
 local ServerStorage =
 	game:GetService("ServerStorage")
 
+
 --------------------------------------------------
 -- MODULE
 --------------------------------------------------
 
 local WinCourseGenerator = {}
+
 
 --------------------------------------------------
 -- REFERENCES
@@ -68,18 +71,58 @@ local course =
 		"Course"
 	)
 
+
 --------------------------------------------------
 -- SETTINGS
 --------------------------------------------------
 
 local START_POSITION =
 	Vector3.new(
-		-64.726,
-		63.444,
-		60.539
+		-64.726, 63.444, 135.584
 	)
 
-local TILE_SPACING = 43
+
+--------------------------------------------------
+-- TILE SPACING
+--------------------------------------------------
+
+local TILE_SPACING =
+	43
+
+
+--------------------------------------------------
+-- COURSE DIRECTION
+--
+-- IMPORTANT:
+--
+-- This is now the OFFICIAL direction of the
+-- generated Win Course.
+--
+-- The tiles are currently generated forward
+-- along +Z.
+--
+-- Tile 1:
+--     StartPosition
+--
+-- Tile 2:
+--     StartPosition + (0, 0, 43)
+--
+-- Tile 3:
+--     StartPosition + (0, 0, 86)
+--
+-- etc.
+--
+-- WinCourseProgressService uses this exact
+-- direction when moving the ball.
+--------------------------------------------------
+
+local COURSE_DIRECTION =
+	Vector3.new(
+		0,
+		0,
+		1
+	)
+
 
 --------------------------------------------------
 -- WIN AMOUNTS
@@ -101,6 +144,7 @@ local WIN_AMOUNTS = {
 	40,
 
 }
+
 
 --------------------------------------------------
 -- WIN COLORS
@@ -194,6 +238,7 @@ local WIN_COLORS = {
 
 }
 
+
 --------------------------------------------------
 -- RAINBOW COLORS
 --------------------------------------------------
@@ -250,6 +295,7 @@ local RAINBOW_COLORS = {
 
 }
 
+
 --------------------------------------------------
 -- FIND REQUIRED CHILD
 --------------------------------------------------
@@ -277,6 +323,7 @@ local function findRequiredChild(
 
 	end
 
+
 	if className
 		and not object:IsA(className) then
 
@@ -289,9 +336,11 @@ local function findRequiredChild(
 
 	end
 
+
 	return object
 
 end
+
 
 --------------------------------------------------
 -- VALIDATE TEMPLATE
@@ -317,6 +366,7 @@ local function validateTemplate()
 
 	end
 
+
 	--------------------------------------------------
 	-- FLOOR
 	--------------------------------------------------
@@ -327,6 +377,7 @@ local function validateTemplate()
 			"Floor",
 			"BasePart"
 		)
+
 
 	--------------------------------------------------
 	-- TROPHY DISPLAY
@@ -339,6 +390,7 @@ local function validateTemplate()
 			"BasePart"
 		)
 
+
 	--------------------------------------------------
 	-- SURFACE GUI
 	--------------------------------------------------
@@ -350,10 +402,9 @@ local function validateTemplate()
 			"SurfaceGui"
 		)
 
+
 	--------------------------------------------------
 	-- IMAGE LABEL
-	--
-	-- DIRECT CHILD OF SURFACEGUI
 	--------------------------------------------------
 
 	local imageLabel =
@@ -363,10 +414,9 @@ local function validateTemplate()
 			"ImageLabel"
 		)
 
+
 	--------------------------------------------------
 	-- WIN AMOUNT
-	--
-	-- DIRECT CHILD OF SURFACEGUI
 	--------------------------------------------------
 
 	local winAmount =
@@ -376,14 +426,17 @@ local function validateTemplate()
 			"TextLabel"
 		)
 
+
 	--------------------------------------------------
 	-- DEBUG
 	--------------------------------------------------
 
 	print("================================")
+
 	print(
 		"[WinCourseGenerator] TEMPLATE VALID"
 	)
+
 	print("================================")
 
 	print(
@@ -452,6 +505,7 @@ local function validateTemplate()
 
 end
 
+
 --------------------------------------------------
 -- GET TILE OBJECTS
 --
@@ -465,7 +519,9 @@ end
 --         └── WinAmount
 --------------------------------------------------
 
-local function getTileObjects(tile)
+local function getTileObjects(
+	tile
+)
 
 	--------------------------------------------------
 	-- FLOOR
@@ -482,6 +538,7 @@ local function getTileObjects(tile)
 		return nil
 
 	end
+
 
 	--------------------------------------------------
 	-- TROPHY DISPLAY
@@ -500,6 +557,7 @@ local function getTileObjects(tile)
 
 	end
 
+
 	--------------------------------------------------
 	-- SURFACE GUI
 	--------------------------------------------------
@@ -516,10 +574,9 @@ local function getTileObjects(tile)
 
 	end
 
+
 	--------------------------------------------------
 	-- IMAGE LABEL
-	--
-	-- DIRECT CHILD
 	--------------------------------------------------
 
 	local imageLabel =
@@ -534,10 +591,9 @@ local function getTileObjects(tile)
 
 	end
 
+
 	--------------------------------------------------
 	-- WIN AMOUNT
-	--
-	-- DIRECT CHILD
 	--------------------------------------------------
 
 	local winAmount =
@@ -551,6 +607,7 @@ local function getTileObjects(tile)
 		return nil
 
 	end
+
 
 	--------------------------------------------------
 	-- RETURN
@@ -577,6 +634,7 @@ local function getTileObjects(tile)
 
 end
 
+
 --------------------------------------------------
 -- CONFIGURE WIN AMOUNT
 --------------------------------------------------
@@ -593,17 +651,22 @@ local function configureWinAmount(
 
 	end
 
+
 	winAmount.Text =
-		"+" .. tostring(
+		"+" ..
+		tostring(
 			winAmountValue
 		)
+
 
 	winAmount.Visible =
 		true
 
+
 	return true
 
 end
+
 
 --------------------------------------------------
 -- APPLY RAINBOW
@@ -634,10 +697,16 @@ local function applyRainbow(
 
 end
 
+
 --------------------------------------------------
 -- POSITION COMPLETE TILE
 --
 -- ONLY THE COMPLETE MODEL MOVES.
+--
+-- IMPORTANT:
+--
+-- This uses the SAME COURSE_DIRECTION that
+-- WinCourseProgressService will use for the ball.
 --------------------------------------------------
 
 local function positionTile(
@@ -648,19 +717,24 @@ local function positionTile(
 	local templatePivot =
 		tile:GetPivot()
 
+
 	local rotationOnly =
 		templatePivot
-		- templatePivot.Position
+		-
+		templatePivot.Position
+
 
 	local targetPosition =
 		START_POSITION
 		+
-		Vector3.new(
-			0,
-			0,
+		COURSE_DIRECTION
+		*
+		(
 			(index - 1)
-				* TILE_SPACING
+			*
+			TILE_SPACING
 		)
+
 
 	tile:PivotTo(
 		CFrame.new(
@@ -669,6 +743,7 @@ local function positionTile(
 		*
 		rotationOnly
 	)
+
 
 	print(
 		"[WinCourseGenerator] Positioned:",
@@ -680,6 +755,7 @@ local function positionTile(
 	)
 
 end
+
 
 --------------------------------------------------
 -- CONFIGURE TILE
@@ -698,6 +774,7 @@ local function configureTile(
 		winAmount
 	)
 
+
 	--------------------------------------------------
 	-- GET OBJECTS
 	--------------------------------------------------
@@ -706,6 +783,7 @@ local function configureTile(
 		getTileObjects(
 			tile
 		)
+
 
 	if not objects then
 
@@ -717,6 +795,7 @@ local function configureTile(
 		return false
 
 	end
+
 
 	--------------------------------------------------
 	-- WIN TEXT
@@ -736,6 +815,7 @@ local function configureTile(
 
 	end
 
+
 	--------------------------------------------------
 	-- FLOOR COLOR
 	--------------------------------------------------
@@ -743,12 +823,14 @@ local function configureTile(
 	local color =
 		WIN_COLORS[winAmount]
 
+
 	if color then
 
 		objects.Floor.Color =
 			color
 
 	end
+
 
 	--------------------------------------------------
 	-- RAINBOW 40
@@ -761,6 +843,7 @@ local function configureTile(
 		)
 
 	end
+
 
 	--------------------------------------------------
 	-- SURFACE GUI
@@ -778,6 +861,7 @@ local function configureTile(
 
 	objects.WinAmount.Visible =
 		true
+
 
 	--------------------------------------------------
 	-- ATTRIBUTES
@@ -807,6 +891,7 @@ local function configureTile(
 		"IsWinCourseTile",
 		true
 	)
+
 
 	--------------------------------------------------
 	-- DEBUG
@@ -859,9 +944,11 @@ local function configureTile(
 		objects.WinAmount.Text
 	)
 
+
 	return true
 
 end
+
 
 --------------------------------------------------
 -- VERIFY TILE UI
@@ -874,7 +961,8 @@ local function verifyTileUI(
 	local objects =
 		getTileObjects(
 			tile
-		)
+	)
+
 
 	if not objects then
 
@@ -886,6 +974,7 @@ local function verifyTileUI(
 		return false
 
 	end
+
 
 	print(
 		"[WinCourseGenerator] FINAL UI VERIFIED:",
@@ -952,9 +1041,11 @@ local function verifyTileUI(
 		objects.WinAmount.Visible
 	)
 
+
 	return true
 
 end
+
 
 --------------------------------------------------
 -- GENERATE
@@ -963,16 +1054,20 @@ end
 function WinCourseGenerator.Generate()
 
 	print("================================")
+
 	print(
 		"[WinCourseGenerator] START GENERATE"
 	)
+
 	print("================================")
+
 
 	--------------------------------------------------
 	-- VALIDATE TEMPLATE
 	--------------------------------------------------
 
 	validateTemplate()
+
 
 	--------------------------------------------------
 	-- REMOVE OLD WIN COURSE
@@ -982,6 +1077,7 @@ function WinCourseGenerator.Generate()
 		course:FindFirstChild(
 			"WinCourse"
 		)
+
 
 	if oldCourse then
 
@@ -994,6 +1090,7 @@ function WinCourseGenerator.Generate()
 
 	end
 
+
 	--------------------------------------------------
 	-- REMOVE LEFTOVER PREVIEW
 	--------------------------------------------------
@@ -1002,6 +1099,7 @@ function WinCourseGenerator.Generate()
 		course:FindFirstChild(
 			"WinCoursePreview"
 		)
+
 
 	if oldPreview then
 
@@ -1014,33 +1112,65 @@ function WinCourseGenerator.Generate()
 
 	end
 
+
 	--------------------------------------------------
 	-- CREATE WIN COURSE FOLDER
 	--------------------------------------------------
 
 	local winCourse =
-		Instance.new("Folder")
+		Instance.new(
+			"Folder"
+		)
+
 
 	winCourse.Name =
 		"WinCourse"
+
 
 	winCourse:SetAttribute(
 		"IsWinCourse",
 		true
 	)
 
+
 	winCourse:SetAttribute(
 		"TileCount",
 		#WIN_AMOUNTS
 	)
+
 
 	winCourse:SetAttribute(
 		"TileSpacing",
 		TILE_SPACING
 	)
 
+
+	--------------------------------------------------
+	-- STORE OFFICIAL DIRECTION ON COURSE
+	--
+	-- This is useful for debugging and allows other
+	-- server systems to inspect the generated course.
+	--------------------------------------------------
+
+	winCourse:SetAttribute(
+		"CourseDirectionX",
+		COURSE_DIRECTION.X
+	)
+
+	winCourse:SetAttribute(
+		"CourseDirectionY",
+		COURSE_DIRECTION.Y
+	)
+
+	winCourse:SetAttribute(
+		"CourseDirectionZ",
+		COURSE_DIRECTION.Z
+	)
+
+
 	winCourse.Parent =
 		course
+
 
 	--------------------------------------------------
 	-- GENERATE TILES
@@ -1051,6 +1181,7 @@ function WinCourseGenerator.Generate()
 	) do
 
 		print("--------------------------------")
+
 		print(
 			"[WinCourseGenerator] TILE",
 			index,
@@ -1060,6 +1191,7 @@ function WinCourseGenerator.Generate()
 			winAmount
 		)
 
+
 		--------------------------------------------------
 		-- CLONE COMPLETE TILE
 		--------------------------------------------------
@@ -1067,9 +1199,14 @@ function WinCourseGenerator.Generate()
 		local tile =
 			winTileTemplate:Clone()
 
+
 		tile.Name =
 			"WinTile_"
-			.. tostring(winAmount)
+			..
+			tostring(
+				winAmount
+			)
+
 
 		--------------------------------------------------
 		-- CONFIGURE
@@ -1081,6 +1218,7 @@ function WinCourseGenerator.Generate()
 				winAmount,
 				index
 			)
+
 
 		if not configured then
 
@@ -1095,6 +1233,7 @@ function WinCourseGenerator.Generate()
 
 		end
 
+
 		--------------------------------------------------
 		-- POSITION COMPLETE TILE
 		--------------------------------------------------
@@ -1104,12 +1243,14 @@ function WinCourseGenerator.Generate()
 			index
 		)
 
+
 		--------------------------------------------------
 		-- PARENT
 		--------------------------------------------------
 
 		tile.Parent =
 			winCourse
+
 
 		--------------------------------------------------
 		-- VERIFY
@@ -1119,6 +1260,7 @@ function WinCourseGenerator.Generate()
 			tile
 		)
 
+
 		print(
 			"[WinCourseGenerator] SPAWNED:",
 			tile:GetFullName()
@@ -1126,11 +1268,13 @@ function WinCourseGenerator.Generate()
 
 	end
 
+
 	--------------------------------------------------
 	-- FINAL
 	--------------------------------------------------
 
 	print("================================")
+
 	print(
 		"[WinCourseGenerator] COMPLETE"
 	)
@@ -1145,6 +1289,11 @@ function WinCourseGenerator.Generate()
 	print(
 		"[WinCourseGenerator] Start:",
 		START_POSITION
+	)
+
+	print(
+		"[WinCourseGenerator] Direction:",
+		COURSE_DIRECTION
 	)
 
 	print(
@@ -1187,9 +1336,11 @@ function WinCourseGenerator.Generate()
 
 	print("================================")
 
+
 	return winCourse
 
 end
+
 
 --------------------------------------------------
 -- PUBLIC CONFIG
@@ -1198,6 +1349,7 @@ end
 function WinCourseGenerator.GetWinAmounts()
 
 	local result = {}
+
 
 	for index, amount in ipairs(
 		WIN_AMOUNTS
@@ -1208,9 +1360,11 @@ function WinCourseGenerator.GetWinAmounts()
 
 	end
 
+
 	return result
 
 end
+
 
 --------------------------------------------------
 
@@ -1220,6 +1374,7 @@ function WinCourseGenerator.GetStartPosition()
 
 end
 
+
 --------------------------------------------------
 
 function WinCourseGenerator.GetTileSpacing()
@@ -1227,6 +1382,23 @@ function WinCourseGenerator.GetTileSpacing()
 	return TILE_SPACING
 
 end
+
+
+--------------------------------------------------
+-- OFFICIAL COURSE DIRECTION
+--
+-- IMPORTANT:
+--
+-- WinCourseProgressService MUST use this instead
+-- of calculating direction from the tiles.
+--------------------------------------------------
+
+function WinCourseGenerator.GetCourseDirection()
+
+	return COURSE_DIRECTION
+
+end
+
 
 --------------------------------------------------
 -- RETURN
