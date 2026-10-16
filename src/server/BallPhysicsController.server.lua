@@ -206,6 +206,23 @@ if not ballMovement:IsA("RemoteEvent") then
 
 end
 
+--------------------------------------------------
+-- XP AWARD REMOTE
+--------------------------------------------------
+
+local xpAward = remotes:FindFirstChild("XPAward")
+
+if not xpAward then
+    xpAward = Instance.new("RemoteEvent")
+    xpAward.Name = "XPAward"
+    xpAward.Parent = remotes
+end
+
+assert(
+    xpAward:IsA("RemoteEvent"),
+    "Remotes.XPAward must be a RemoteEvent"
+)
+
 
 --------------------------------------------------
 -- SETTINGS
@@ -235,6 +252,202 @@ local XP_AWARD_CHUNK =
 local MAX_XP_DISTANCE_PER_HEARTBEAT =
 	10
 
+--------------------------------------------------
+-- XP GENERATOR SETTINGS
+--------------------------------------------------
+
+local XP_GENERATORS =
+	workspace:WaitForChild("XPGenerators")
+
+-- EDIT THESE VALUES TO MATCH YOUR ACTUAL GENERATOR NAMES.
+-- Names must match the MeshPart names in Explorer.
+-- Required rebirth counts must match your game design.
+
+local GENERATOR_MULTIPLIERS = {
+	GenX2 = 2,
+	GenX5 = 5,
+	GenX10 = 10,
+	GenX25 = 25,
+	GenX50 = 50,
+}
+
+local GENERATOR_REBIRTH_REQUIREMENTS = {
+	GenX2 = 0,
+	GenX5 = 1,
+	GenX10 = 2,
+	GenX25 = 3,
+	GenX50 = 4,
+}
+
+--------------------------------------------------
+-- GET GENERATOR NAME
+--------------------------------------------------
+
+local function getGeneratorName(part)
+
+	local current = part
+
+	while current and current ~= XP_GENERATORS do
+
+		if GENERATOR_MULTIPLIERS[current.Name] then
+			return current.Name
+		end
+
+		current = current.Parent
+	end
+
+	return nil
+end
+
+--------------------------------------------------
+-- GET XP GENERATOR PARTS
+--------------------------------------------------
+
+local function getXPGeneratorParts()
+
+	local parts = {}
+
+	for _, instance in ipairs(
+		XP_GENERATORS:GetDescendants()
+	) do
+
+		if instance:IsA("BasePart") then
+			table.insert(parts, instance)
+		end
+
+	end
+
+	return parts
+end
+
+--------------------------------------------------
+-- BALL / GENERATOR OVERLAP
+--------------------------------------------------
+
+local function isBallInsideGenerator(ball, part)
+
+	if not ball or not ball:IsA("BasePart")
+		or not part or not part:IsA("BasePart") then
+
+		return false
+	end
+
+	local localPosition =
+		part.CFrame:PointToObjectSpace(ball.Position)
+
+	local halfGenerator = part.Size * 0.5
+	local halfBall = ball.Size * 0.5
+	local padding = 0.5
+
+	return math.abs(localPosition.X)
+			<= halfGenerator.X + halfBall.X + padding
+		and math.abs(localPosition.Z)
+			<= halfGenerator.Z + halfBall.Z + padding
+		and math.abs(localPosition.Y)
+			<= halfGenerator.Y + halfBall.Y + padding
+end
+
+--------------------------------------------------
+-- FIND ACTIVE GENERATOR
+--------------------------------------------------
+
+local function getActiveGeneratorMultiplier(player, ball)
+
+	if not player or not ball or not ball.Parent then
+		return 1, nil
+	end
+
+	local rebirths =
+		PlayerDataService.GetRebirths(player)
+
+	if typeof(rebirths) ~= "number"
+		or rebirths < 0
+		or rebirths ~= rebirths
+		or rebirths == math.huge then
+
+		return 1, nil
+	end
+
+	rebirths = math.floor(rebirths)
+
+	local bestMultiplier = 1
+	local activeGenerator = nil
+
+	for _, part in ipairs(getXPGeneratorParts()) do
+
+		local generatorName = getGeneratorName(part)
+
+		if not generatorName then
+			continue
+		end
+
+		local multiplier =
+			GENERATOR_MULTIPLIERS[generatorName]
+
+		local requiredRebirths =
+			GENERATOR_REBIRTH_REQUIREMENTS[generatorName]
+
+		if not multiplier or not requiredRebirths then
+			continue
+		end
+
+		if rebirths < requiredRebirths then
+			continue
+		end
+
+		if multiplier <= bestMultiplier then
+			continue
+		end
+
+		if isBallInsideGenerator(ball, part) then
+
+			bestMultiplier = multiplier
+			activeGenerator = generatorName
+
+		end
+	end
+
+	return bestMultiplier, activeGenerator
+end
+	--------------------------------------------------
+-- REBIRTH XP MULTIPLIER
+--------------------------------------------------
+
+local function getRebirthXPMultiplier(player)
+    local rebirths = PlayerDataService.GetRebirths(player)
+
+    rebirths = math.max(0, math.floor(rebirths))
+
+    -- Each rebirth adds a 1000% bonus.
+    -- 0 rebirths = 1x
+    -- 1 rebirth = 11x
+    -- 2 rebirths = 21x
+    return 1 + (rebirths * 10)
+end
+
+--------------------------------------------------
+-- XP GENERATOR SETTINGS
+--------------------------------------------------
+
+-- XP GENERATOR REFERENCES
+
+local XP_GENERATORS = workspace:WaitForChild("XPGenerators")
+
+-- GET XP GENERATOR PARTS
+
+local function getXPGeneratorParts()
+
+local parts = {}
+
+for , instance in ipairs( XPGENERATORS:GetDescendants() ) do
+
+if instance:IsA("BasePart") then table.insert(parts, instance) end
+
+end
+
+return parts
+
+end
 
 --------------------------------------------------
 -- STATE
@@ -898,6 +1111,12 @@ ballMovement.OnServerEvent:Connect(
 		input
 	)
 
+		print(
+			"[BallPhysicsController] INPUT RECEIVED:",
+			player.Name,
+			input
+		)
+
 	--------------------------------------------------
 	-- PLAYER
 	--------------------------------------------------
@@ -1199,103 +1418,98 @@ end
 			if runState == "Waiting"
 				and previousPosition then
 
-				local currentXZ =
-					Vector3.new(
-						currentPosition.X,
-						0,
-						currentPosition.Z
-					)
+				local currentXZ = Vector3.new(
+					currentPosition.X,
+					0,
+					currentPosition.Z
+				)
 
+				local previousXZ = Vector3.new(
+					previousPosition.X,
+					0,
+					previousPosition.Z
+				)
 
-				local previousXZ =
-					Vector3.new(
-						previousPosition.X,
-						0,
-						previousPosition.Z
-					)
-
-
-				local distance =
-					(
-						currentXZ
-						-
-						previousXZ
-					).Magnitude
-
+				local distance = (
+					currentXZ - previousXZ
+				).Magnitude
 
 				if distance > 0
-					and distance
-						<= MAX_XP_DISTANCE_PER_HEARTBEAT then
+					and distance <= MAX_XP_DISTANCE_PER_HEARTBEAT then
 
 					xpDistanceBuffer[player] =
-						(
-							xpDistanceBuffer[player]
-							or 0
-						)
-						+
-						distance
-
+						(xpDistanceBuffer[player] or 0)
+						+ distance
 
 					local xpPerStud =
 						BASE_XP_PER_STUD
-						*
-						(
-							getForwardSpeed(
-								ball
-							)
-							/
-							50
-						)
+						* (getForwardSpeed(ball) / 50)
 
-
-					if isFiniteNumber(
-						xpPerStud
-					)
+					if isFiniteNumber(xpPerStud)
 						and xpPerStud > 0 then
 
-						local availableXP =
-							math.floor(
-								xpDistanceBuffer[player]
-								*
-								xpPerStud
-							)
-
+						local availableXP = math.floor(
+							xpDistanceBuffer[player] * xpPerStud
+						)
 
 						local wholeXP =
 							math.floor(
-								availableXP
-								/
-								XP_AWARD_CHUNK
-							)
-							*
-							XP_AWARD_CHUNK
+								availableXP / XP_AWARD_CHUNK
+							) * XP_AWARD_CHUNK
 
+						if wholeXP >= XP_AWARD_CHUNK then
 
-						if wholeXP >=
-							XP_AWARD_CHUNK then
+							--------------------------------------------------
+-- VALIDATED REBIRTH + GENERATOR MULTIPLIERS
+--------------------------------------------------
 
-							local success =
-								PlayerDataService.AddXP(
-									player,
-									wholeXP
-								)
+local rebirthMultiplier =
+    getRebirthXPMultiplier(player)
 
+local generatorMultiplier, generatorName =
+    getActiveGeneratorMultiplier(player, ball)
 
-							if success then
+player:SetAttribute(
+    "ActiveXPGenerator",
+    generatorName or ""
+)
+print(
+    "[XP GENERATOR]",
+    player.Name,
+    "Generator:", generatorName or "NONE",
+    "Multiplier:", generatorMultiplier,
+    "Rebirths:", PlayerDataService.GetRebirths(player)
+)
 
-								xpDistanceBuffer[player] -=
-									wholeXP
-									/
-									xpPerStud
+local awardedXP = math.floor(
+    wholeXP
+        * rebirthMultiplier
+        * generatorMultiplier
+)
 
+							if awardedXP > 0 then
+
+								local success =
+									PlayerDataService.AddXP(
+										player,
+										awardedXP
+									)
+
+								if success then
+
+									xpAward:FireClient(
+										player,
+										awardedXP
+									)
+
+									xpDistanceBuffer[player] -=
+										wholeXP / xpPerStud
+
+								end
 							end
-
 						end
-
 					end
-
 				end
-
 			end
 
 
@@ -1483,6 +1697,8 @@ Players.PlayerRemoving:Connect(
 
 		xpDistanceBuffer[player] =
 			nil
+
+		player:SetAttribute("ActiveXPGenerator", nil)
 
 	end
 )

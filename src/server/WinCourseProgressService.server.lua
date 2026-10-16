@@ -575,6 +575,38 @@ local function collectWinTiles(winCourse)
 
 end
 
+--------------------------------------------------
+-- REFRESH DYNAMIC COURSE TILES
+--------------------------------------------------
+
+local function refreshRunTiles(run)
+
+	local success, result = pcall(function()
+		return WinCourseGenerator.EnsureTilesThroughDistance(
+			run.CourseProgress + run.TravelBudget
+		)
+	end)
+
+	if not success or result ~= true then
+		warn(
+			"[WinCourseProgressService] Failed to extend WinCourse:",
+			result
+		)
+		return false
+	end
+
+	local tiles = collectWinTiles(run.WinCourse)
+
+	if #tiles == 0 then
+		return false
+	end
+
+	run.Tiles = tiles
+	run.TileCount = #tiles
+
+	return true
+end
+
 
 --------------------------------------------------
 -- VALIDATE TILE ORDER
@@ -1825,36 +1857,24 @@ local function updateRollingRun(
 
 
 	--------------------------------------------------
-	-- DISTANCE TRAVELLED
-	--------------------------------------------------
+-- DISTANCE TRAVELLED
+--------------------------------------------------
 
-	local previousPosition =
-		run.LastPosition
+local previousPosition = run.LastPosition
 
-	if previousPosition then
+if previousPosition then
 
-		local frameDistance =
-			(
-				currentPosition
-				-
-				previousPosition
-			).Magnitude
+	local frameDistance =
+		(currentPosition - previousPosition).Magnitude
 
-		if frameDistance >= 0
-			and frameDistance <= run.MaxFrameDistance then
-
-			run.DistanceTravelled +=
-				frameDistance
-
-			run.LastGoodPosition =
-				currentPosition
-
-		end
-
+	if frameDistance >= 0 then
+		run.DistanceTravelled += frameDistance
+		run.LastGoodPosition = currentPosition
 	end
 
-	run.LastPosition =
-		currentPosition
+end
+
+run.LastPosition = currentPosition
 
 
 	--------------------------------------------------
@@ -1891,30 +1911,28 @@ local function updateRollingRun(
 	end
 
 
-	--------------------------------------------------
-	-- TILE PROGRESS
-	--------------------------------------------------
+--------------------------------------------------
+-- TILE PROGRESS + DISTANCE GENERATION
+--------------------------------------------------
 
-	updateProgress(run)
+updateProgress(run)
 
+local ensured =
+	WinCourseGenerator.EnsureTilesThroughDistance(
+		run.CourseProgress
+	)
 
-	--------------------------------------------------
-	-- ALL TILES REACHED
-	--------------------------------------------------
+if ensured then
 
-	if run.FurthestTileIndex
-		>= run.TileCount then
+	local refreshedTiles =
+		collectWinTiles(run.WinCourse)
 
-		finishRun(
-			player,
-			run,
-			"ALL_TILES_REACHED"
-		)
-
-		return
-
+	if #refreshedTiles > 0 then
+		run.Tiles = refreshedTiles
+		run.TileCount = #refreshedTiles
 	end
 
+end
 
 	--------------------------------------------------
 	-- OIL EXHAUSTED

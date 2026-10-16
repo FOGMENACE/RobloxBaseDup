@@ -1,0 +1,128 @@
+--------------------------------------------------
+-- REBIRTH SERVER
+-- SERVER AUTHORITATIVE
+--------------------------------------------------
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+--------------------------------------------------
+-- REFERENCES
+--------------------------------------------------
+
+local RebirthSystem = ReplicatedStorage:WaitForChild("RebirthSystem")
+local RebirthRemote = RebirthSystem:WaitForChild("RebirthRemote")
+
+local PlayerDataService = require(
+	ServerScriptService
+		:WaitForChild("PlayerDataLoader")
+		:WaitForChild("PlayerDataService")
+)
+
+--------------------------------------------------
+-- SETTINGS
+--------------------------------------------------
+
+local REQUEST_COOLDOWN = 1.0
+
+local lastRequest = {}
+
+--------------------------------------------------
+-- REMOTE HANDLER
+--------------------------------------------------
+
+RebirthRemote.OnServerEvent:Connect(function(player, action)
+
+	if not player or not player:IsA("Player") then
+		return
+	end
+
+	if typeof(action) ~= "string" then
+		return
+	end
+
+	--------------------------------------------------
+	-- RATE LIMIT
+	--------------------------------------------------
+
+	local now = os.clock()
+	local previous = lastRequest[player]
+
+	if previous and now - previous < REQUEST_COOLDOWN then
+		return
+	end
+
+	lastRequest[player] = now
+
+	--------------------------------------------------
+	-- REBIRTH REQUEST
+	--------------------------------------------------
+
+	if action == "Rebirth" then
+
+		local success, reason =
+			PlayerDataService.RebirthPlayer(player)
+
+		RebirthRemote:FireClient(
+			player,
+			"RebirthResult",
+			success,
+			reason
+		)
+
+		return
+	end
+
+	--------------------------------------------------
+	-- REQUEST CURRENT STATE
+	--------------------------------------------------
+
+	if action == "GetState" then
+
+		local data = PlayerDataService.GetData(player)
+
+		if not data then
+			RebirthRemote:FireClient(
+				player,
+				"State",
+				nil
+			)
+
+			return
+		end
+
+		local requiredLevel =
+			65 + (data.Rebirths * 15)
+
+		local progress =
+			PlayerDataService.GetXPProgress(player)
+
+		RebirthRemote:FireClient(
+			player,
+			"State",
+			{
+				XP = data.XP,
+				Level = data.Level,
+				Rebirths = data.Rebirths,
+				RequiredLevel = requiredLevel,
+				MaxReached = data.Level >= requiredLevel,
+				LevelProgress = progress and progress.Progress or 0,
+				XPIntoLevel = progress and progress.XPIntoLevel or 0,
+				XPNeededForLevel = progress and progress.XPNeededForLevel or 0,
+			}
+		)
+
+	end
+
+end)
+
+--------------------------------------------------
+-- CLEANUP
+--------------------------------------------------
+
+Players.PlayerRemoving:Connect(function(player)
+	lastRequest[player] = nil
+end)
+
+print("[RebirthServer] Ready.")

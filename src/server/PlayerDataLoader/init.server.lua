@@ -5,32 +5,25 @@
 --
 -- LOCATION:
 -- ServerScriptService
---     > PlayerDataLoader
+--     > PlayerDataLoader (Script)
+--         > PlayerDataService (ModuleScript)
 --
--- PURPOSE:
+-- RESPONSIBILITIES:
+-- - Load player data when players join
+-- - Save player data when players leave
+-- - Save player data during server shutdown
+-- - Prevent gameplay with unavailable player data
 --
--- Owns player data lifecycle.
---
--- PlayerDataService owns:
--- - DataStore
--- - In-memory data
+-- PlayerDataService remains responsible for:
+-- - DataStore operations
 -- - Data validation
--- - Data mutation
--- - Saving
+-- - In-memory player data
+-- - XP, levels, wins, rebirths and oil
+-- - Ball ownership and equipment
+-- - Rebirth processing
+-- - Saving individual player data
 --
--- This script owns:
--- - PlayerAdded
--- - PlayerRemoving
--- - BindToClose
---
--- IMPORTANT:
---
--- There is exactly ONE lifecycle owner.
---
--- No other script should:
--- - Load player data
--- - Save player data
--- - BindToClose for player data
+-- THIS SCRIPT IS THE ONLY LIFECYCLE OWNER.
 --------------------------------------------------
 
 
@@ -38,39 +31,38 @@
 -- SERVICES
 --------------------------------------------------
 
-local Players =
-	game:GetService("Players")
+local Players = game:GetService("Players")
 
 
 --------------------------------------------------
 -- PLAYER DATA SERVICE
 --------------------------------------------------
 
-local PlayerDataService =
-	require(
-		script:WaitForChild(
-			"PlayerDataService"
-		)
-	)
+local PlayerDataService = require(
+	script:WaitForChild("PlayerDataService")
+)
 
 
 --------------------------------------------------
 -- SETTINGS
 --------------------------------------------------
 
-local DEBUG =
-	true
+local DEBUG = true
 
-local SHUTDOWN_TIMEOUT =
-	25
+local SHUTDOWN_TIMEOUT = 25
 
 
 --------------------------------------------------
 -- SERVER STATE
 --------------------------------------------------
 
-local shuttingDown =
-	false
+local shuttingDown = false
+
+-- Prevent duplicate concurrent loads for the same player.
+local loadingPlayers = {}
+
+-- Track players whose load completed successfully.
+local loadedPlayers = {}
 
 
 --------------------------------------------------
@@ -78,107 +70,127 @@ local shuttingDown =
 --------------------------------------------------
 
 local function debugPrint(...)
-
-	if not DEBUG then
-
-		return
-
+	if DEBUG then
+		print("[PlayerDataLoader]", ...)
 	end
-
-
-	print(
-		"[PlayerDataLoader]",
-		...
-	)
-
 end
 
 
 --------------------------------------------------
--- PLAYER ADDED
+-- LOAD PLAYER
 --------------------------------------------------
 
-local function onPlayerAdded(
-	player
-)
-
-	if not player
-		or not player:IsA("Player") then
-
+local function onPlayerAdded(player)
+	if not player or not player:IsA("Player") then
 		return
-
 	end
-
-
-	--------------------------------------------------
-	-- DO NOT LOAD NEW PLAYERS DURING SHUTDOWN
-	--------------------------------------------------
 
 	if shuttingDown then
-
 		warn(
-			"[PlayerDataLoader]",
-			"Rejected player load during shutdown:",
-			player.Name,
-			player.UserId
+			"[PlayerDataLoader] Rejected load during shutdown:",
+			player.Name
 		)
-
 		return
-
 	end
 
+	if loadedPlayers[player] then
+		return
+	end
 
-	--------------------------------------------------
-	-- LOAD
-	--------------------------------------------------
+	if loadingPlayers[player] then
+		return
+	end
+
+	loadingPlayers[player] = true
 
 	debugPrint(
-		"Loading data for:",
+		"Loading data:",
 		player.Name,
 		player.UserId
 	)
 
+	local success, result = pcall(function()
+		return PlayerDataService.LoadPlayer(player)
+	end)
 
-	local success =
-		PlayerDataService.LoadPlayer(
-			player
-		)
+	loadingPlayers[player] = nil
 
-
-	if not success then
-
+	if not success or result ~= true then
 		warn(
-			"[PlayerDataLoader]",
-			"Could not load data for:",
+			"[PlayerDataLoader] Data load failed:",
 			player.Name,
-			player.UserId
+			player.UserId,
+			result
 		)
 
-
-		--------------------------------------------------
-		-- NEVER ALLOW GAMEPLAY WITH UNKNOWN DATA
-		--------------------------------------------------
-
-		if player.Parent then
-
+		if player.Parent == Players then
 			player:Kick(
 				"Your data could not be loaded. Please rejoin."
 			)
-
 		end
 
-
 		return
-
 	end
 
+	loadedPlayers[player] = true
 
 	debugPrint(
-		"Data loaded:",
+		"Data loaded successfully:",
 		player.Name,
 		player.UserId
 	)
+end
 
+
+--------------------------------------------------
+-- SAVE PLAYER
+--------------------------------------------------
+
+local function savePlayer(player, reason)
+	if not player then
+		return false
+	end
+
+	-- Never save data that this loader failed to load.
+	if not loadedPlayers[player] then
+		debugPrint(
+			"Skipping save for player without confirmed load:",
+			player.Name,
+			reason
+		)
+		return false
+	end
+
+	debugPrint(
+		"Saving data:",
+		player.Name,
+		"Reason:",
+		reason
+	)
+
+	local success, result = pcall(function()
+		return PlayerDataService.SavePlayer(player)
+	end)
+
+	if not success or result ~= true then
+		warn(
+			"[PlayerDataLoader] Save failed:",
+			player.Name,
+			player.UserId,
+			result
+		)
+
+		return false
+	end
+
+	debugPrint(
+		"Data saved successfully:",
+		player.Name,
+		"Reason:",
+		reason
+	)
+
+	return true
 end
 
 
@@ -186,114 +198,42 @@ end
 -- PLAYER REMOVING
 --------------------------------------------------
 
-local function onPlayerRemoving(
-	player
-)
-
+local function onPlayerRemoving(player)
 	if not player then
-
 		return
-
 	end
 
-
-	--------------------------------------------------
-	-- SHUTDOWN HANDLING
-	--
-	-- During BindToClose, shutdown saves are started
-	-- explicitly below.
-	--
-	-- Do not start another save here if the player
-	-- is already being handled by shutdown.
-	--------------------------------------------------
-
+	-- During shutdown, BindToClose owns the save process.
 	if shuttingDown then
-
 		debugPrint(
-			"PlayerRemoving during shutdown:",
-			player.Name,
-			player.UserId
+			"Player leaving during shutdown:",
+			player.Name
 		)
-
 		return
-
 	end
 
+	savePlayer(player, "PlayerRemoving")
 
-	--------------------------------------------------
-	-- NORMAL PLAYER LEAVE
-	--------------------------------------------------
-
-	debugPrint(
-		"Saving data for:",
-		player.Name,
-		player.UserId
-	)
-
-
-	local success =
-		PlayerDataService.SavePlayer(
-			player
-		)
-
-
-	if not success then
-
-		warn(
-			"[PlayerDataLoader]",
-			"Could not save data for:",
-			player.Name,
-			player.UserId
-		)
-
-		return
-
-	end
-
-
-	debugPrint(
-		"Data saved:",
-		player.Name,
-		player.UserId
-	)
-
+	loadedPlayers[player] = nil
+	loadingPlayers[player] = nil
 end
 
 
 --------------------------------------------------
--- CONNECTIONS
+-- PLAYER CONNECTIONS
 --------------------------------------------------
 
-Players.PlayerAdded:Connect(
-	onPlayerAdded
-)
+Players.PlayerAdded:Connect(onPlayerAdded)
 
-Players.PlayerRemoving:Connect(
-	onPlayerRemoving
-)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
 
 
 --------------------------------------------------
 -- HANDLE PLAYERS ALREADY PRESENT
---
--- Important for cases where this script starts
--- after players have already entered the server.
 --------------------------------------------------
 
-for _, player in ipairs(
-	Players:GetPlayers()
-) do
-
-	task.spawn(
-		function()
-
-			onPlayerAdded(
-				player
-			)
-
-		end
-	)
-
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(onPlayerAdded, player)
 end
 
 
@@ -303,215 +243,107 @@ end
 -- ONLY THIS SCRIPT OWNS BindToClose.
 --------------------------------------------------
 
-game:BindToClose(
-	function()
-
-		--------------------------------------------------
-		-- PREVENT DUPLICATE SHUTDOWN
-		--------------------------------------------------
-
-		if shuttingDown then
-
-			return
-
-		end
-
-
-		shuttingDown =
-			true
-
-
-		debugPrint(
-			"Server shutting down."
-		)
-
-
-		--------------------------------------------------
-		-- TELL PLAYER DATA SERVICE TO ENTER SHUTDOWN
-		--------------------------------------------------
-
-		PlayerDataService.BeginShutdown()
-
-
-		--------------------------------------------------
-		-- SNAPSHOT CURRENT PLAYERS
-		--------------------------------------------------
-
-		local players =
-			Players:GetPlayers()
-
-
-		if #players == 0 then
-
-			debugPrint(
-				"Shutdown saves complete."
-			)
-
-			return
-
-		end
-
-
-		--------------------------------------------------
-		-- START ALL SHUTDOWN SAVES CONCURRENTLY
-		--------------------------------------------------
-
-		for _, player in ipairs(
-			players
-		) do
-
-			task.spawn(
-				function()
-
-					local success =
-						PlayerDataService.SavePlayer(
-							player
-						)
-
-
-					if not success then
-
-						warn(
-							"[PlayerDataLoader]",
-							"Shutdown save failed:",
-							player.Name,
-							player.UserId
-						)
-
-					end
-
-				end
-			)
-
-		end
-
-
-		--------------------------------------------------
-		-- WAIT FOR ACTIVE SAVES
-		--------------------------------------------------
-
-		local deadline =
-			os.clock()
-			+ SHUTDOWN_TIMEOUT
-
-
-		while os.clock() < deadline do
-
-			local pending =
-				0
-
-
-			for _, player in ipairs(
-				players
-			) do
-
-				if PlayerDataService.IsSaving(
-					player
-				) then
-
-					pending += 1
-
-				end
-
-			end
-
-
-			if pending <= 0 then
-
-				break
-
-			end
-
-
-			task.wait(
-				0.1
-			)
-
-		end
-
-
-		--------------------------------------------------
-		-- FINAL STATUS
-		--------------------------------------------------
-
-		local stillSaving =
-			0
-
-
-		for _, player in ipairs(
-			players
-		) do
-
-			if PlayerDataService.IsSaving(
-				player
-			) then
-
-				stillSaving += 1
-
-			end
-
-		end
-
-
-		if stillSaving > 0 then
-
-			warn(
-				"[PlayerDataLoader]",
-				"Shutdown timeout reached with",
-				stillSaving,
-				"save(s) still active."
-			)
-
-		else
-
-			debugPrint(
-				"Shutdown saves complete."
-			)
-
-		end
-
+game:BindToClose(function()
+	if shuttingDown then
+		return
 	end
-)
+
+	shuttingDown = true
+
+	debugPrint("Server shutdown started.")
+
+	--------------------------------------------------
+	-- STOP NORMAL LIFECYCLE ACTIVITY
+	--------------------------------------------------
+
+	PlayerDataService.BeginShutdown()
+
+	--------------------------------------------------
+	-- SNAPSHOT PLAYERS WITH CONFIRMED LOADED DATA
+	--------------------------------------------------
+
+	local playersToSave = {}
+
+	for player in pairs(loadedPlayers) do
+		table.insert(playersToSave, player)
+	end
+
+	if #playersToSave == 0 then
+		debugPrint("No loaded player data to save.")
+		return
+	end
+
+	--------------------------------------------------
+	-- START SAVES CONCURRENTLY
+	--------------------------------------------------
+
+	local pending = #playersToSave
+	local saveResults = {}
+
+	for _, player in ipairs(playersToSave) do
+		task.spawn(function()
+			local success = savePlayer(
+				player,
+				"ServerShutdown"
+			)
+
+			saveResults[player] = success
+			pending -= 1
+		end)
+	end
+
+	--------------------------------------------------
+	-- WAIT FOR SAVES OR TIMEOUT
+	--------------------------------------------------
+
+	local deadline = os.clock() + SHUTDOWN_TIMEOUT
+
+	while pending > 0 and os.clock() < deadline do
+		task.wait(0.1)
+	end
+
+	--------------------------------------------------
+	-- REPORT FINAL STATUS
+	--------------------------------------------------
+
+	if pending > 0 then
+		warn(
+			"[PlayerDataLoader] Shutdown timed out.",
+			pending,
+			"save(s) did not finish before the deadline."
+		)
+	else
+		local failed = 0
+
+		for _, success in pairs(saveResults) do
+			if not success then
+				failed += 1
+			end
+		end
+
+		if failed > 0 then
+			warn(
+				"[PlayerDataLoader] Shutdown finished with",
+				failed,
+				"failed save(s)."
+			)
+		else
+			debugPrint("All shutdown saves completed.")
+		end
+	end
+end)
 
 
 --------------------------------------------------
 -- STARTUP
 --------------------------------------------------
 
-print(
-	"================================"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"SERVER READY"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"Lifecycle owner: ENABLED"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"PlayerRemoving save: ENABLED"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"BindToClose save: ENABLED"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"Duplicate shutdown protection: ENABLED"
-)
-
-print(
-	"[PlayerDataLoader]",
-	"Waiting for players..."
-)
-
-print(
-	"================================"
-)
+print("================================")
+print("[PlayerDataLoader] SERVER READY")
+print("[PlayerDataLoader] Lifecycle owner: ENABLED")
+print("[PlayerDataLoader] PlayerAdded loading: ENABLED")
+print("[PlayerDataLoader] PlayerRemoving saving: ENABLED")
+print("[PlayerDataLoader] BindToClose saving: ENABLED")
+print("[PlayerDataLoader] Duplicate load protection: ENABLED")
+print("[PlayerDataLoader] Waiting for players...")
+print("================================")

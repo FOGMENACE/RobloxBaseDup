@@ -1,2127 +1,1171 @@
 --------------------------------------------------
 -- PLAYER DATA SERVICE
---
 -- SERVER ONLY
---
 -- LOCATION:
 -- ServerScriptService
---     > PlayerDataLoader
---         > PlayerDataService
---------------------------------------------------
-
---------------------------------------------------
--- SERVICES
+--   > PlayerDataLoader
+--     > PlayerDataService
 --------------------------------------------------
 
 local DataStoreService = game:GetService("DataStoreService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-
---------------------------------------------------
--- MODULE
---------------------------------------------------
-
 local PlayerDataService = {}
 
-
---------------------------------------------------
--- BALL DEFINITIONS
---------------------------------------------------
-
 local BallDefinitions = require(
-	ServerScriptService:WaitForChild("BallDefinitions")
+    ServerScriptService:WaitForChild("BallDefinitions")
 )
-
-
---------------------------------------------------
--- DATASTORE
---------------------------------------------------
-
-local DATASTORE_NAME = "PlayerData_v1"
-
-local playerDataStore = DataStoreService:GetDataStore(
-	DATASTORE_NAME
-)
-
 
 --------------------------------------------------
 -- SETTINGS
 --------------------------------------------------
 
+local DATASTORE_NAME = "PlayerData_v1"
 local AUTOSAVE_INTERVAL = 60
-
 local SAVE_TIMEOUT = 20
 
 local MAX_XP = 1e15
-
 local MAX_LEVEL = 1000000
-
 local MAX_WINS = 1e15
-
 local MAX_REBIRTHS = 1000000
-
 local MAX_OIL = 1e9
-
 local MAX_BALL_NAME_LENGTH = 64
 
-
---------------------------------------------------
--- XP SETTINGS
---------------------------------------------------
-
 local BASE_XP_PER_LEVEL = 100
-
 local XP_LEVEL_GROWTH = 1.35
 
-
---------------------------------------------------
--- BALL SETTINGS
---------------------------------------------------
+local BASE_REBIRTH_LEVEL = 65
+local REBIRTH_LEVEL_INCREMENT = 15
 
 local DEFAULT_BALL_ID = "StraightBall"
 
+local playerDataStore = DataStoreService:GetDataStore(
+    DATASTORE_NAME
+)
 
 --------------------------------------------------
 -- DEFAULT DATA
 --------------------------------------------------
 
 local DEFAULT_DATA = {
-	XP = 0,
-	Level = 1,
-	Wins = 0,
-	Rebirths = 0,
-	CurrentOil = 0,
+    XP = 0,
+    Level = 1,
+    GlobalLevel = 1,
+    Wins = 0,
+    Rebirths = 0,
+    RebirthLevelRequirement = BASE_REBIRTH_LEVEL,
+    CurrentOil = 0,
 
-	OwnedBalls = {
-		[DEFAULT_BALL_ID] = true,
-	},
+    OwnedBalls = {
+        [DEFAULT_BALL_ID] = true,
+    },
 
-	EquippedBall = DEFAULT_BALL_ID,
+    EquippedBall = DEFAULT_BALL_ID,
 }
-
 
 --------------------------------------------------
 -- SERVER MEMORY
 --------------------------------------------------
 
 local loadedData = {}
-
 local saving = {}
-
 local saveRequested = {}
-
 local shuttingDown = false
 
-
 --------------------------------------------------
--- UTILITY
+-- NUMBER VALIDATION
 --------------------------------------------------
 
 local function isFiniteNumber(value)
-
-	return typeof(value) == "number"
-		and value == value
-		and value ~= math.huge
-		and value ~= -math.huge
-
+    return typeof(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
 end
 
+local function sanitizeNumber(value, defaultValue, maximum)
+    if not isFiniteNumber(value) or value < 0 then
+        return defaultValue
+    end
 
---------------------------------------------------
--- COPY OWNED BALLS
---------------------------------------------------
-
-local function copyOwnedBalls(ownedBalls)
-
-	local copy = {}
-
-	if typeof(ownedBalls) ~= "table" then
-		return copy
-	end
-
-	for ballId, owned in pairs(ownedBalls) do
-
-		if typeof(ballId) == "string"
-			and owned == true then
-
-			copy[ballId] = true
-
-		end
-
-	end
-
-	return copy
-
+    return math.min(value, maximum)
 end
 
-
 --------------------------------------------------
--- COPY DATA
+-- REBIRTH REQUIREMENT
 --------------------------------------------------
 
-local function copyData(data)
+local function getRequiredRebirthLevel(rebirths)
+    rebirths = math.clamp(
+        math.floor(tonumber(rebirths) or 0),
+        0,
+        MAX_REBIRTHS
+    )
 
-	local copy = {}
-
-	if typeof(data) ~= "table" then
-		return copy
-	end
-
-	for key, value in pairs(data) do
-
-		if key == "OwnedBalls"
-			and typeof(value) == "table" then
-
-			copy.OwnedBalls = copyOwnedBalls(value)
-
-		else
-
-			copy[key] = value
-
-		end
-
-	end
-
-	return copy
-
+    return math.min(
+        MAX_LEVEL,
+        BASE_REBIRTH_LEVEL
+            + rebirths * REBIRTH_LEVEL_INCREMENT
+    )
 end
 
-
 --------------------------------------------------
--- VALID BALL ID
---------------------------------------------------
-
-local function isValidBallId(ballId)
-
-	if typeof(ballId) ~= "string"
-		or ballId == ""
-		or #ballId > MAX_BALL_NAME_LENGTH then
-
-		return false
-
-	end
-
-	local definition = BallDefinitions[ballId]
-
-	if typeof(definition) ~= "table" then
-		return false
-	end
-
-	return true
-
-end
-
-
---------------------------------------------------
--- GET BALL DEFINITION
---------------------------------------------------
-
-local function getBallDefinition(ballId)
-
-	if not isValidBallId(ballId) then
-		return nil
-	end
-
-	return BallDefinitions[ballId]
-
-end
-
-
---------------------------------------------------
--- VALIDATE BALL DEFINITION
---------------------------------------------------
-
-local function validateBallDefinition(
-	ballId,
-	definition
-)
-
-	if typeof(ballId) ~= "string"
-		or not isValidBallId(ballId) then
-
-		return false, "INVALID_BALL_ID"
-
-	end
-
-	if typeof(definition) ~= "table" then
-		return false, "INVALID_DEFINITION"
-	end
-
-	if not isFiniteNumber(definition.ForwardSpeed) then
-		return false, "INVALID_FORWARD_SPEED"
-	end
-
-	if definition.ForwardSpeed < 0 then
-		return false, "NEGATIVE_FORWARD_SPEED"
-	end
-
-	if not isFiniteNumber(definition.HorizontalSpeed) then
-		return false, "INVALID_HORIZONTAL_SPEED"
-	end
-
-	if definition.HorizontalSpeed < 0 then
-		return false, "NEGATIVE_HORIZONTAL_SPEED"
-	end
-
-	if definition.WinsCost ~= nil then
-
-		if not isFiniteNumber(definition.WinsCost) then
-			return false, "INVALID_WINS_COST"
-		end
-
-		if definition.WinsCost < 0 then
-			return false, "NEGATIVE_WINS_COST"
-		end
-
-	end
-
-	if definition.RequiredRebirths ~= nil then
-
-		if not isFiniteNumber(definition.RequiredRebirths) then
-			return false, "INVALID_REQUIRED_REBIRTHS"
-		end
-
-		if definition.RequiredRebirths < 0 then
-			return false, "NEGATIVE_REQUIRED_REBIRTHS"
-		end
-
-	end
-
-	if definition.DeveloperProductId ~= nil then
-
-		if not isFiniteNumber(definition.DeveloperProductId) then
-			return false, "INVALID_DEVELOPER_PRODUCT_ID"
-		end
-
-		if definition.DeveloperProductId < 0 then
-			return false, "NEGATIVE_DEVELOPER_PRODUCT_ID"
-		end
-
-		if definition.DeveloperProductId % 1 ~= 0 then
-			return false, "NON_INTEGER_DEVELOPER_PRODUCT_ID"
-		end
-
-	end
-
-	if definition.DisplayOrder ~= nil then
-
-		if not isFiniteNumber(definition.DisplayOrder) then
-			return false, "INVALID_DISPLAY_ORDER"
-		end
-
-	end
-
-	return true, "VALID"
-
-end
-
-
---------------------------------------------------
--- VALIDATE DEFAULT BALL
---------------------------------------------------
-
-do
-
-	local defaultDefinition = getBallDefinition(
-		DEFAULT_BALL_ID
-	)
-
-	if not defaultDefinition then
-
-		error(
-			"[PlayerDataService] DEFAULT_BALL_ID does not exist in BallDefinitions: "
-				.. DEFAULT_BALL_ID
-		)
-
-	end
-
-	local valid, reason = validateBallDefinition(
-		DEFAULT_BALL_ID,
-		defaultDefinition
-	)
-
-	if not valid then
-
-		error(
-			"[PlayerDataService] Invalid default ball definition: "
-				.. DEFAULT_BALL_ID
-				.. " | "
-				.. reason
-		)
-
-	end
-
-	if defaultDefinition.DeveloperProductId ~= nil
-		and defaultDefinition.DeveloperProductId ~= 0 then
-
-		error(
-			"[PlayerDataService] StraightBall cannot have a DeveloperProductId."
-		)
-
-	end
-
-end
-
-
---------------------------------------------------
--- XP REQUIRED FOR LEVEL
+-- XP CALCULATIONS
 --------------------------------------------------
 
 local function getXPRequiredForLevel(level)
+    level = math.clamp(
+        math.floor(tonumber(level) or 1),
+        1,
+        MAX_LEVEL
+    )
 
-	if not isFiniteNumber(level) then
-		level = 1
-	end
-
-	level = math.clamp(
-		math.floor(level),
-		1,
-		MAX_LEVEL
-	)
-
-	return BASE_XP_PER_LEVEL
-		* (
-			XP_LEVEL_GROWTH ^ (level - 1)
-		)
-
+    return BASE_XP_PER_LEVEL
+        * (XP_LEVEL_GROWTH ^ (level - 1))
 end
-
-
---------------------------------------------------
--- TOTAL XP REQUIRED TO REACH LEVEL
---------------------------------------------------
 
 local function getTotalXPForLevel(level)
+    level = math.max(
+        1,
+        math.floor(tonumber(level) or 1)
+    )
 
-	if not isFiniteNumber(level) then
-		return 0
-	end
+    if level <= 1 then
+        return 0
+    end
 
-	level = math.max(
-		1,
-		math.floor(level)
-	)
-
-	if level <= 1 then
-		return 0
-	end
-
-	return BASE_XP_PER_LEVEL
-		* (
-			(
-				XP_LEVEL_GROWTH ^ (level - 1)
-			) - 1
-		)
-		/
-		(
-			XP_LEVEL_GROWTH - 1
-		)
-
+    return BASE_XP_PER_LEVEL
+        * ((XP_LEVEL_GROWTH ^ (level - 1) - 1)
+        / (XP_LEVEL_GROWTH - 1))
 end
 
+local function calculateLevelFromXP(xp, maxLevel)
+    if not isFiniteNumber(xp) or xp <= 0 then
+        return 1
+    end
 
---------------------------------------------------
--- CALCULATE LEVEL FROM XP
---------------------------------------------------
+    xp = math.clamp(xp, 0, MAX_XP)
 
-local function calculateLevelFromXP(xp)
+    maxLevel = math.clamp(
+        math.floor(tonumber(maxLevel) or BASE_REBIRTH_LEVEL),
+        1,
+        MAX_LEVEL
+    )
 
-	if not isFiniteNumber(xp)
-		or xp <= 0 then
+    local inside =
+        (xp * (XP_LEVEL_GROWTH - 1) / BASE_XP_PER_LEVEL) + 1
 
-		return 1
+    local level = 1
 
-	end
+    if inside > 1 then
+        level = math.floor(
+            1 + math.log(inside) / math.log(XP_LEVEL_GROWTH)
+        )
+    end
 
-	xp = math.clamp(
-		xp,
-		0,
-		MAX_XP
-	)
+    level = math.clamp(level, 1, maxLevel)
 
-	local inside =
-		(
-			xp
-			* (XP_LEVEL_GROWTH - 1)
-			/ BASE_XP_PER_LEVEL
-		)
-		+ 1
+    while level > 1 and xp < getTotalXPForLevel(level) do
+        level -= 1
+    end
 
-	if inside <= 1 then
-		return 1
-	end
+    while level < maxLevel
+        and xp >= getTotalXPForLevel(level + 1) do
+        level += 1
+    end
 
-	local level = math.floor(
-		1
-			+ (
-				math.log(inside)
-				/ math.log(XP_LEVEL_GROWTH)
-			)
-	)
-
-	level = math.clamp(
-		level,
-		1,
-		MAX_LEVEL
-	)
-
-	while level > 1
-		and xp < getTotalXPForLevel(level) do
-
-		level -= 1
-
-	end
-
-	while level < MAX_LEVEL
-		and xp >= getTotalXPForLevel(level + 1) do
-
-		level += 1
-
-	end
-
-	return level
-
+    return level
 end
 
+local function getXPProgress(xp, maxLevel)
+    xp = sanitizeNumber(xp, 0, MAX_XP)
 
---------------------------------------------------
--- XP PROGRESS
---------------------------------------------------
+    maxLevel = math.clamp(
+        math.floor(tonumber(maxLevel) or BASE_REBIRTH_LEVEL),
+        1,
+        MAX_LEVEL
+    )
 
-local function getXPProgress(xp)
+    local level = calculateLevelFromXP(xp, maxLevel)
+    local currentLevelXP = getTotalXPForLevel(level)
+    local nextLevelXP = getTotalXPForLevel(level + 1)
 
-	if not isFiniteNumber(xp) then
-		xp = 0
-	end
+    local xpIntoLevel = math.max(0, xp - currentLevelXP)
+    local xpNeededForLevel = math.max(
+        0,
+        nextLevelXP - currentLevelXP
+    )
 
-	xp = math.clamp(
-		xp,
-		0,
-		MAX_XP
-	)
+    local maxReached = level >= maxLevel
+    local progress = 0
 
-	local level = calculateLevelFromXP(xp)
+    if maxReached then
+        xpIntoLevel = xpNeededForLevel
+        progress = 1
+    elseif xpNeededForLevel > 0 then
+        progress = xpIntoLevel / xpNeededForLevel
+    end
 
-	local currentLevelXP =
-		getTotalXPForLevel(level)
-
-	local nextLevelXP =
-		getTotalXPForLevel(level + 1)
-
-	local xpIntoLevel =
-		math.max(
-			0,
-			xp - currentLevelXP
-		)
-
-	local xpNeededForLevel =
-		math.max(
-			0,
-			nextLevelXP - currentLevelXP
-		)
-
-	local progress = 0
-
-	if xpNeededForLevel > 0 then
-
-		progress =
-			xpIntoLevel
-			/
-			xpNeededForLevel
-
-	end
-
-	return {
-		Level = level,
-
-		CurrentLevelXP = currentLevelXP,
-
-		NextLevelXP = nextLevelXP,
-
-		XPIntoLevel = xpIntoLevel,
-
-		XPNeededForLevel = xpNeededForLevel,
-
-		Progress = math.clamp(
-			progress,
-			0,
-			1
-		),
-	}
-
+    return {
+        Level = level,
+        CurrentLevelXP = currentLevelXP,
+        NextLevelXP = nextLevelXP,
+        XPIntoLevel = xpIntoLevel,
+        XPNeededForLevel = xpNeededForLevel,
+        Progress = math.clamp(progress, 0, 1),
+        MaxLevel = maxLevel,
+        MaxReached = maxReached,
+    }
 end
 
-
 --------------------------------------------------
--- SANITIZE NUMBER
+-- BALL VALIDATION
 --------------------------------------------------
 
-local function sanitizeNumber(
-	value,
-	defaultValue,
-	maximum
-)
+local function isValidBallId(ballId)
+    if typeof(ballId) ~= "string"
+        or ballId == ""
+        or #ballId > MAX_BALL_NAME_LENGTH then
+        return false
+    end
 
-	if not isFiniteNumber(value) then
-		return defaultValue
-	end
-
-	if value < 0 then
-		return defaultValue
-	end
-
-	return math.min(
-		value,
-		maximum
-	)
-
+    return typeof(BallDefinitions[ballId]) == "table"
 end
 
+local function getBallDefinition(ballId)
+    if not isValidBallId(ballId) then
+        return nil
+    end
 
---------------------------------------------------
--- SANITIZE OWNED BALLS
---------------------------------------------------
-
-local function sanitizeOwnedBalls(value)
-
-	local ownedBalls = {}
-
-	if typeof(value) == "table" then
-
-		for ballId, owned in pairs(value) do
-
-			if typeof(ballId) == "string"
-				and ballId ~= ""
-				and #ballId <= MAX_BALL_NAME_LENGTH
-				and owned == true
-				and isValidBallId(ballId) then
-
-				local definition =
-					getBallDefinition(ballId)
-
-				local valid =
-					validateBallDefinition(
-						ballId,
-						definition
-					)
-
-				if valid then
-					ownedBalls[ballId] = true
-				end
-
-			end
-
-		end
-
-	end
-
-	ownedBalls[DEFAULT_BALL_ID] = true
-
-	return ownedBalls
-
+    return BallDefinitions[ballId]
 end
 
+local function validateBallDefinition(ballId, definition)
+    if not isValidBallId(ballId)
+        or typeof(definition) ~= "table" then
+        return false, "INVALID_DEFINITION"
+    end
+
+    for _, field in ipairs({
+        "ForwardSpeed",
+        "HorizontalSpeed",
+    }) do
+        if not isFiniteNumber(definition[field])
+            or definition[field] < 0 then
+            return false, "INVALID_" .. string.upper(field)
+        end
+    end
+
+    for _, field in ipairs({
+        "WinsCost",
+        "RequiredRebirths",
+        "DeveloperProductId",
+        "DisplayOrder",
+    }) do
+        local value = definition[field]
+
+        if value ~= nil and not isFiniteNumber(value) then
+            return false, "INVALID_" .. string.upper(field)
+        end
+
+        if value ~= nil and field ~= "DisplayOrder" and value < 0 then
+            return false, "NEGATIVE_" .. string.upper(field)
+        end
+    end
+
+    if definition.DeveloperProductId ~= nil
+        and definition.DeveloperProductId % 1 ~= 0 then
+        return false, "NON_INTEGER_DEVELOPER_PRODUCT_ID"
+    end
+
+    return true, "VALID"
+end
+
+do
+    local definition = getBallDefinition(DEFAULT_BALL_ID)
+
+    if not definition then
+        error(
+            "[PlayerDataService] Missing default ball: "
+                .. DEFAULT_BALL_ID
+        )
+    end
+
+    local valid, reason = validateBallDefinition(
+        DEFAULT_BALL_ID,
+        definition
+    )
+
+    if not valid then
+        error(
+            "[PlayerDataService] Invalid default ball: "
+                .. reason
+        )
+    end
+
+    if definition.DeveloperProductId ~= nil
+        and definition.DeveloperProductId ~= 0 then
+        error(
+            "[PlayerDataService] StraightBall cannot have a DeveloperProductId."
+        )
+    end
+end
 
 --------------------------------------------------
--- SANITIZE DATA
+-- COPY AND SANITIZE OWNED BALLS
+--------------------------------------------------
+
+local function copyOwnedBalls(value)
+    local result = {}
+
+    if typeof(value) == "table" then
+        for ballId, owned in pairs(value) do
+            if owned == true and isValidBallId(ballId) then
+                result[ballId] = true
+            end
+        end
+    end
+
+    result[DEFAULT_BALL_ID] = true
+    return result
+end
+
+local function copyData(data)
+    local result = {}
+
+    for key, value in pairs(data) do
+        if key == "OwnedBalls" then
+            result.OwnedBalls = copyOwnedBalls(value)
+        else
+            result[key] = value
+        end
+    end
+
+    return result
+end
+
+--------------------------------------------------
+-- SANITIZE SAVED DATA
 --------------------------------------------------
 
 local function sanitizeData(data)
+    if typeof(data) ~= "table" then
+        data = {}
+    end
 
-	if typeof(data) ~= "table" then
-		data = {}
-	end
+    local rebirths = math.floor(sanitizeNumber(
+        data.Rebirths,
+        DEFAULT_DATA.Rebirths,
+        MAX_REBIRTHS
+    ))
 
-	local sanitized = {
+    -- Use the rebirth count to determine the authoritative
+    -- requirement. This repairs inconsistent older saves.
+    local requirement = getRequiredRebirthLevel(rebirths)
 
-		XP = sanitizeNumber(
-			data.XP,
-			DEFAULT_DATA.XP,
-			MAX_XP
-		),
+    local xp = sanitizeNumber(
+        data.XP,
+        DEFAULT_DATA.XP,
+        MAX_XP
+    )
 
-		Level = 1,
+    local oldLevel = math.floor(sanitizeNumber(
+        data.Level,
+        DEFAULT_DATA.Level,
+        MAX_LEVEL
+    ))
 
-		Wins = sanitizeNumber(
-			data.Wins,
-			DEFAULT_DATA.Wins,
-			MAX_WINS
-		),
+    local globalLevel = math.floor(sanitizeNumber(
+        data.GlobalLevel,
+        oldLevel,
+        MAX_LEVEL
+    ))
 
-		Rebirths = sanitizeNumber(
-			data.Rebirths,
-			DEFAULT_DATA.Rebirths,
-			MAX_REBIRTHS
-		),
+    globalLevel = math.clamp(
+        math.max(1, globalLevel, oldLevel),
+        1,
+        MAX_LEVEL
+    )
 
-		CurrentOil = sanitizeNumber(
-			data.CurrentOil,
-			DEFAULT_DATA.CurrentOil,
-			MAX_OIL
-		),
+    local result = {
+        XP = xp,
+        Level = 1,
+        GlobalLevel = globalLevel,
 
-		OwnedBalls = sanitizeOwnedBalls(
-			data.OwnedBalls
-		),
+        Wins = math.floor(sanitizeNumber(
+            data.Wins,
+            DEFAULT_DATA.Wins,
+            MAX_WINS
+        )),
 
-		EquippedBall = DEFAULT_BALL_ID,
-	}
+        Rebirths = rebirths,
+        RebirthLevelRequirement = requirement,
 
-	sanitized.Wins = math.floor(
-		sanitized.Wins
-	)
+        CurrentOil = sanitizeNumber(
+            data.CurrentOil,
+            DEFAULT_DATA.CurrentOil,
+            MAX_OIL
+        ),
 
-	sanitized.Rebirths = math.floor(
-		sanitized.Rebirths
-	)
+        OwnedBalls = copyOwnedBalls(data.OwnedBalls),
+        EquippedBall = DEFAULT_BALL_ID,
+    }
 
-	sanitized.Level = calculateLevelFromXP(
-		sanitized.XP
-	)
+    result.Level = calculateLevelFromXP(
+        result.XP,
+        result.RebirthLevelRequirement
+    )
 
-	if typeof(data.EquippedBall) == "string"
-		and data.EquippedBall ~= ""
-		and #data.EquippedBall <= MAX_BALL_NAME_LENGTH
-		and isValidBallId(data.EquippedBall)
-		and sanitized.OwnedBalls[data.EquippedBall] == true then
+    local equipped = data.EquippedBall
 
-		local definition =
-			getBallDefinition(
-				data.EquippedBall
-			)
+    if typeof(equipped) == "string"
+        and isValidBallId(equipped)
+        and result.OwnedBalls[equipped] == true then
 
-		local valid =
-			validateBallDefinition(
-				data.EquippedBall,
-				definition
-			)
+        local definition = getBallDefinition(equipped)
+        local valid = validateBallDefinition(equipped, definition)
 
-		if valid then
+        if valid then
+            result.EquippedBall = equipped
+        end
+    end
 
-			sanitized.EquippedBall =
-				data.EquippedBall
-
-		end
-
-	end
-
-	if sanitized.OwnedBalls[
-		sanitized.EquippedBall
-	] ~= true then
-
-		sanitized.EquippedBall =
-			DEFAULT_BALL_ID
-
-	end
-
-	return sanitized
-
+    return result
 end
 
-
 --------------------------------------------------
--- DATA KEY
+-- PLAYER DATA KEY
 --------------------------------------------------
 
 local function getDataKey(player)
-
-	return "Player_" .. tostring(
-		player.UserId
-	)
-
+    return "Player_" .. tostring(player.UserId)
 end
 
+--------------------------------------------------
+-- UPDATE ATTRIBUTES AND LEADERSTATS
+--------------------------------------------------
+
+local function updatePlayerValues(player, data)
+    data.Level = calculateLevelFromXP(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
+
+    local progress = getXPProgress(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
+
+    -- Attributes consumed by ProgressionUI and RebirthUIClient.
+    player:SetAttribute("XP", data.XP)
+    player:SetAttribute("Level", data.Level)
+    player:SetAttribute("GlobalLevel", data.GlobalLevel)
+    player:SetAttribute("Wins", data.Wins)
+    player:SetAttribute("Rebirths", data.Rebirths)
+    player:SetAttribute("RebirthLevelRequirement",
+        data.RebirthLevelRequirement)
+    player:SetAttribute("RebirthMaxReached", progress.MaxReached)
+    player:SetAttribute("CurrentOil", data.CurrentOil)
+    player:SetAttribute("EquippedBall", data.EquippedBall)
+
+    player:SetAttribute("XPForCurrentLevel",
+        progress.CurrentLevelXP)
+    player:SetAttribute("XPForNextLevel",
+        progress.NextLevelXP)
+    player:SetAttribute("XPIntoLevel",
+        progress.XPIntoLevel)
+    player:SetAttribute("XPNeededForLevel",
+        progress.XPNeededForLevel)
+    player:SetAttribute("LevelProgress",
+        progress.Progress)
+
+    local leaderstats = player:FindFirstChild("leaderstats")
+
+    if not leaderstats then
+        return
+    end
+
+    for name, value in pairs({
+        Level = data.Level,
+        GlobalLevel = data.GlobalLevel,
+        Wins = data.Wins,
+        Rebirths = data.Rebirths,
+    }) do
+        local stat = leaderstats:FindFirstChild(name)
+
+        if stat and stat:IsA("IntValue") then
+            stat.Value = math.floor(value)
+        end
+    end
+end
+
+--------------------------------------------------
+-- CREATE LEADERSTATS
+--------------------------------------------------
+
+local function createLeaderstats(player, data)
+    local leaderstats = player:FindFirstChild("leaderstats")
+
+    if not leaderstats then
+        leaderstats = Instance.new("Folder")
+        leaderstats.Name = "leaderstats"
+        leaderstats.Parent = player
+    end
+
+    for _, name in ipairs({
+        "Level",
+        "GlobalLevel",
+        "Wins",
+        "Rebirths",
+    }) do
+        local stat = leaderstats:FindFirstChild(name)
+
+        if not stat then
+            stat = Instance.new("IntValue")
+            stat.Name = name
+            stat.Parent = leaderstats
+        end
+    end
+
+    updatePlayerValues(player, data)
+end
 
 --------------------------------------------------
 -- LOAD DATA
 --------------------------------------------------
 
 local function loadData(player)
+    if shuttingDown then
+        return nil
+    end
 
-	if shuttingDown then
-		return nil
-	end
+    if loadedData[player] then
+        return loadedData[player]
+    end
 
-	if loadedData[player] then
-		return loadedData[player]
-	end
+    local success, result = pcall(function()
+        return playerDataStore:GetAsync(getDataKey(player))
+    end)
 
-	local key = getDataKey(player)
+    if not success then
+        warn(
+            "[PlayerDataService] Failed to load:",
+            player.Name,
+            result
+        )
+        return nil
+    end
 
-	local success, result = pcall(
-		function()
-			return playerDataStore:GetAsync(key)
-		end
-	)
+    local data = sanitizeData(result)
+    loadedData[player] = data
 
-	if not success then
-
-		warn(
-			"[PlayerDataService]",
-			"Failed to load:",
-			player.Name,
-			result
-		)
-
-		return nil
-
-	end
-
-	local data = sanitizeData(result)
-
-	loadedData[player] = data
-
-	return data
-
+    return data
 end
-
-
---------------------------------------------------
--- CREATE LEADERSTATS
---------------------------------------------------
-
-local function createLeaderstats(
-	player,
-	data
-)
-
-	local leaderstats =
-		player:FindFirstChild("leaderstats")
-
-	if not leaderstats then
-
-		leaderstats =
-			Instance.new("Folder")
-
-		leaderstats.Name =
-			"leaderstats"
-
-		leaderstats.Parent =
-			player
-
-	end
-
-	local rebirths =
-		leaderstats:FindFirstChild("Rebirths")
-
-	if not rebirths then
-
-		rebirths =
-			Instance.new("IntValue")
-
-		rebirths.Name =
-			"Rebirths"
-
-		rebirths.Parent =
-			leaderstats
-
-	end
-
-	local wins =
-		leaderstats:FindFirstChild("Wins")
-
-	if not wins then
-
-		wins =
-			Instance.new("IntValue")
-
-		wins.Name =
-			"Wins"
-
-		wins.Parent =
-			leaderstats
-
-	end
-
-	local level =
-		leaderstats:FindFirstChild("Level")
-
-	if not level then
-
-		level =
-			Instance.new("IntValue")
-
-		level.Name =
-			"Level"
-
-		level.Parent =
-			leaderstats
-
-	end
-
-	rebirths.Value = data.Rebirths
-	wins.Value = data.Wins
-	level.Value = data.Level
-
-end
-
-
---------------------------------------------------
--- UPDATE PLAYER VALUES
---------------------------------------------------
-
-local function updatePlayerValues(
-	player,
-	data
-)
-
-	data.Level =
-		calculateLevelFromXP(
-			data.XP
-		)
-
-	local progress =
-		getXPProgress(
-			data.XP
-		)
-
-	player:SetAttribute(
-		"XP",
-		data.XP
-	)
-
-	player:SetAttribute(
-		"Level",
-		data.Level
-	)
-
-	player:SetAttribute(
-		"Wins",
-		data.Wins
-	)
-
-	player:SetAttribute(
-		"Rebirths",
-		data.Rebirths
-	)
-
-	player:SetAttribute(
-		"CurrentOil",
-		data.CurrentOil
-	)
-
-	player:SetAttribute(
-		"EquippedBall",
-		data.EquippedBall
-	)
-
-	player:SetAttribute(
-		"XPForCurrentLevel",
-		progress.CurrentLevelXP
-	)
-
-	player:SetAttribute(
-		"XPForNextLevel",
-		progress.NextLevelXP
-	)
-
-	player:SetAttribute(
-		"XPIntoLevel",
-		progress.XPIntoLevel
-	)
-
-	player:SetAttribute(
-		"XPNeededForLevel",
-		progress.XPNeededForLevel
-	)
-
-	player:SetAttribute(
-		"LevelProgress",
-		progress.Progress
-	)
-
-	local leaderstats =
-		player:FindFirstChild("leaderstats")
-
-	if not leaderstats then
-		return
-	end
-
-	local level =
-		leaderstats:FindFirstChild("Level")
-
-	if level then
-		level.Value = data.Level
-	end
-
-	local wins =
-		leaderstats:FindFirstChild("Wins")
-
-	if wins then
-		wins.Value = data.Wins
-	end
-
-	local rebirths =
-		leaderstats:FindFirstChild("Rebirths")
-
-	if rebirths then
-		rebirths.Value = data.Rebirths
-	end
-
-end
-
-
---------------------------------------------------
--- LOAD PLAYER
---------------------------------------------------
 
 function PlayerDataService.LoadPlayer(player)
+    if not player or not player:IsA("Player") or shuttingDown then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    if loadedData[player] then
+        return true
+    end
 
-		return false
+    local data = loadData(player)
 
-	end
+    if not data then
+        return false
+    end
 
-	if shuttingDown then
-		return false
-	end
+    createLeaderstats(player, data)
+    updatePlayerValues(player, data)
 
-	if loadedData[player] then
-		return true
-	end
+    print(
+        "[PlayerDataService] Loaded:",
+        player.Name,
+        "| Level:", data.Level,
+        "| GlobalLevel:", data.GlobalLevel,
+        "| Rebirths:", data.Rebirths,
+        "| Requirement:", data.RebirthLevelRequirement
+    )
 
-	local data = loadData(player)
-
-	if not data then
-		return false
-	end
-
-	data.OwnedBalls[DEFAULT_BALL_ID] = true
-
-	if typeof(data.EquippedBall) ~= "string"
-		or data.EquippedBall == ""
-		or not isValidBallId(data.EquippedBall)
-		or data.OwnedBalls[data.EquippedBall] ~= true then
-
-		data.EquippedBall =
-			DEFAULT_BALL_ID
-
-	end
-
-	data.Level =
-		calculateLevelFromXP(
-			data.XP
-		)
-
-	createLeaderstats(
-		player,
-		data
-	)
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	print(
-		"[PlayerDataService]",
-		"Loaded:",
-		player.Name,
-		"| XP:",
-		data.XP,
-		"| Level:",
-		data.Level,
-		"| Wins:",
-		data.Wins,
-		"| Rebirths:",
-		data.Rebirths,
-		"| Oil:",
-		data.CurrentOil,
-		"| EquippedBall:",
-		data.EquippedBall
-	)
-
-	return true
-
+    return true
 end
 
-
 --------------------------------------------------
--- GET DATA
+-- READ DATA
 --------------------------------------------------
 
 function PlayerDataService.GetData(player)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return nil
-	end
-
-	return copyData(data)
-
+    local data = loadedData[player]
+    return data and copyData(data) or nil
 end
-
-
---------------------------------------------------
--- GET XP
---------------------------------------------------
 
 function PlayerDataService.GetXP(player)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return 0
-	end
-
-	return data.XP
-
+    local data = loadedData[player]
+    return data and data.XP or 0
 end
-
-
---------------------------------------------------
--- GET WINS
---------------------------------------------------
 
 function PlayerDataService.GetWins(player)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return 0
-	end
-
-	return data.Wins
-
+    local data = loadedData[player]
+    return data and data.Wins or 0
 end
-
-
---------------------------------------------------
--- GET REBIRTHS
---------------------------------------------------
 
 function PlayerDataService.GetRebirths(player)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return 0
-	end
-
-	return data.Rebirths
-
+    local data = loadedData[player]
+    return data and data.Rebirths or 0
 end
-
-
---------------------------------------------------
--- GET OIL
---------------------------------------------------
 
 function PlayerDataService.GetOil(player)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return 0
-	end
-
-	return math.max(
-		0,
-		data.CurrentOil
-	)
-
+    local data = loadedData[player]
+    return data and math.max(0, data.CurrentOil) or 0
 end
 
-
---------------------------------------------------
--- XP GETTERS
---------------------------------------------------
-
-function PlayerDataService.GetXPRequiredForLevel(
-	level
-)
-
-	return getXPRequiredForLevel(level)
-
+function PlayerDataService.GetXPRequiredForLevel(level)
+    return getXPRequiredForLevel(level)
 end
 
-
-function PlayerDataService.GetTotalXPForLevel(
-	level
-)
-
-	return getTotalXPForLevel(level)
-
+function PlayerDataService.GetTotalXPForLevel(level)
+    return getTotalXPForLevel(level)
 end
-
 
 function PlayerDataService.GetXPProgress(player)
+    local data = loadedData[player]
 
-	local data =
-		loadedData[player]
+    if not data then
+        return nil
+    end
 
-	if not data then
-		return nil
-	end
-
-	return getXPProgress(
-		data.XP
-	)
-
+    return getXPProgress(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
 end
-
 
 --------------------------------------------------
 -- ADD XP
 --------------------------------------------------
 
-function PlayerDataService.AddXP(
-	player,
-	amount
-)
+function PlayerDataService.AddXP(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount <= 0 then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    local data = loadedData[player]
 
-		return false
+    if not data then
+        return false
+    end
 
-	end
+    amount = math.floor(amount)
 
-	if not isFiniteNumber(amount)
-		or amount <= 0 then
+    if amount <= 0 then
+        return false
+    end
 
-		return false
+    local oldLevel = calculateLevelFromXP(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
 
-	end
+    local xpCap = math.min(
+        MAX_XP,
+        getTotalXPForLevel(data.RebirthLevelRequirement + 1) - 1
+    )
 
-	local data =
-		loadedData[player]
+    if data.XP >= xpCap then
+        data.XP = xpCap
+        updatePlayerValues(player, data)
+        return false
+    end
 
-	if not data then
-		return false
-	end
+    data.XP = math.min(data.XP + amount, xpCap)
 
-	amount =
-		math.floor(amount)
+    local newLevel = calculateLevelFromXP(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
 
-	if amount <= 0 then
-		return false
-	end
+    -- Lifetime level increases when the current run gains levels.
+    local levelsGained = math.max(0, newLevel - oldLevel)
 
-	data.XP =
-		math.min(
-			data.XP + amount,
-			MAX_XP
-		)
+    data.GlobalLevel = math.min(
+        MAX_LEVEL,
+        data.GlobalLevel + levelsGained
+    )
 
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    updatePlayerValues(player, data)
+    return true
 end
 
-
 --------------------------------------------------
--- ADD WINS
+-- WINS
 --------------------------------------------------
 
-function PlayerDataService.AddWins(
-	player,
-	amount
-)
+function PlayerDataService.AddWins(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount <= 0 then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    local data = loadedData[player]
+    amount = math.floor(amount)
 
-		return false
+    if not data or amount <= 0 then
+        return false
+    end
 
-	end
+    data.Wins = math.min(data.Wins + amount, MAX_WINS)
+    updatePlayerValues(player, data)
 
-	if not isFiniteNumber(amount)
-		or amount <= 0 then
-
-		return false
-
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	amount =
-		math.floor(amount)
-
-	if amount <= 0 then
-		return false
-	end
-
-	data.Wins =
-		math.min(
-			data.Wins + amount,
-			MAX_WINS
-		)
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
+function PlayerDataService.RemoveWins(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount <= 0 then
+        return false
+    end
 
---------------------------------------------------
--- REMOVE WINS
---------------------------------------------------
+    local data = loadedData[player]
+    amount = math.floor(amount)
 
-function PlayerDataService.RemoveWins(
-	player,
-	amount
-)
+    if not data or amount <= 0 or data.Wins < amount then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    data.Wins -= amount
+    updatePlayerValues(player, data)
 
-		return false
-
-	end
-
-	if not isFiniteNumber(amount)
-		or amount <= 0 then
-
-		return false
-
-	end
-
-	amount =
-		math.floor(amount)
-
-	if amount <= 0 then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	if data.Wins < amount then
-		return false
-	end
-
-	data.Wins -= amount
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
-
 --------------------------------------------------
--- DEFAULT BALL
+-- BALL API
 --------------------------------------------------
 
 function PlayerDataService.GetDefaultBallId()
-
-	return DEFAULT_BALL_ID
-
+    return DEFAULT_BALL_ID
 end
 
+function PlayerDataService.GetBallDefinition(ballId)
+    local definition = getBallDefinition(ballId)
 
---------------------------------------------------
--- BALL DEFINITION
---------------------------------------------------
+    if not definition then
+        return nil
+    end
 
-function PlayerDataService.GetBallDefinition(
-	ballId
-)
+    local result = {}
 
-	local definition =
-		getBallDefinition(ballId)
+    for key, value in pairs(definition) do
+        result[key] = value
+    end
 
-	if not definition then
-		return nil
-	end
-
-	local copy = {}
-
-	for key, value in pairs(definition) do
-		copy[key] = value
-	end
-
-	return copy
-
+    return result
 end
 
-
---------------------------------------------------
--- VALID BALL
---------------------------------------------------
-
-function PlayerDataService.IsValidBallId(
-	ballId
-)
-
-	return isValidBallId(ballId)
-
+function PlayerDataService.IsValidBallId(ballId)
+    return isValidBallId(ballId)
 end
 
-
---------------------------------------------------
--- OWNED BALLS
---------------------------------------------------
-
-function PlayerDataService.GetOwnedBalls(
-	player
-)
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return {}
-	end
-
-	return copyOwnedBalls(
-		data.OwnedBalls
-	)
-
+function PlayerDataService.GetOwnedBalls(player)
+    local data = loadedData[player]
+    return data and copyOwnedBalls(data.OwnedBalls) or {}
 end
 
+function PlayerDataService.OwnsBall(player, ballId)
+    local data = loadedData[player]
 
---------------------------------------------------
--- OWNS BALL
---------------------------------------------------
-
-function PlayerDataService.OwnsBall(
-	player,
-	ballId
-)
-
-	if not isValidBallId(ballId) then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	return data.OwnedBalls[ballId] == true
-
+    return data ~= nil
+        and isValidBallId(ballId)
+        and data.OwnedBalls[ballId] == true
 end
 
+function PlayerDataService.AddOwnedBall(player, ballId)
+    if not player or not player:IsA("Player")
+        or not isValidBallId(ballId) then
+        return false
+    end
 
---------------------------------------------------
--- ADD OWNED BALL
---------------------------------------------------
+    local data = loadedData[player]
+    local definition = getBallDefinition(ballId)
 
-function PlayerDataService.AddOwnedBall(
-	player,
-	ballId
-)
+    if not data or not validateBallDefinition(ballId, definition) then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    data.OwnedBalls[ballId] = true
+    updatePlayerValues(player, data)
 
-		return false
-
-	end
-
-	if not isValidBallId(ballId) then
-		return false
-	end
-
-	local definition =
-		getBallDefinition(ballId)
-
-	local valid =
-		validateBallDefinition(
-			ballId,
-			definition
-		)
-
-	if not valid then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	data.OwnedBalls[ballId] = true
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
+function PlayerDataService.RemoveOwnedBall(player, ballId)
+    if not player or not player:IsA("Player")
+        or not isValidBallId(ballId)
+        or ballId == DEFAULT_BALL_ID then
+        return false
+    end
 
---------------------------------------------------
--- REMOVE OWNED BALL
---------------------------------------------------
+    local data = loadedData[player]
 
-function PlayerDataService.RemoveOwnedBall(
-	player,
-	ballId
-)
+    if not data or data.OwnedBalls[ballId] ~= true then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    data.OwnedBalls[ballId] = nil
 
-		return false
+    if data.EquippedBall == ballId then
+        data.EquippedBall = DEFAULT_BALL_ID
+    end
 
-	end
-
-	if not isValidBallId(ballId) then
-		return false
-	end
-
-	if ballId == DEFAULT_BALL_ID then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	if data.OwnedBalls[ballId] ~= true then
-		return false
-	end
-
-	data.OwnedBalls[ballId] = nil
-
-	if data.EquippedBall == ballId then
-
-		data.EquippedBall =
-			DEFAULT_BALL_ID
-
-	end
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    updatePlayerValues(player, data)
+    return true
 end
 
+function PlayerDataService.GetEquippedBall(player)
+    local data = loadedData[player]
 
---------------------------------------------------
--- GET EQUIPPED BALL
---------------------------------------------------
+    if not data then
+        return DEFAULT_BALL_ID
+    end
 
-function PlayerDataService.GetEquippedBall(
-	player
-)
+    if not isValidBallId(data.EquippedBall)
+        or data.OwnedBalls[data.EquippedBall] ~= true then
+        return DEFAULT_BALL_ID
+    end
 
-	local data =
-		loadedData[player]
-
-	if not data then
-		return DEFAULT_BALL_ID
-	end
-
-	if typeof(data.EquippedBall) ~= "string"
-		or data.EquippedBall == ""
-		or not isValidBallId(data.EquippedBall)
-		or data.OwnedBalls[data.EquippedBall] ~= true then
-
-		return DEFAULT_BALL_ID
-
-	end
-
-	return data.EquippedBall
-
+    return data.EquippedBall
 end
 
+function PlayerDataService.EquipBall(player, ballId)
+    if not player or not player:IsA("Player")
+        or not isValidBallId(ballId) then
+        return false
+    end
 
---------------------------------------------------
--- EQUIP BALL
---------------------------------------------------
+    local data = loadedData[player]
+    local definition = getBallDefinition(ballId)
 
-function PlayerDataService.EquipBall(
-	player,
-	ballId
-)
+    if not data
+        or not validateBallDefinition(ballId, definition)
+        or data.OwnedBalls[ballId] ~= true then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    data.EquippedBall = ballId
+    updatePlayerValues(player, data)
 
-		return false
-
-	end
-
-	if not isValidBallId(ballId) then
-		return false
-	end
-
-	local definition =
-		getBallDefinition(ballId)
-
-	local valid =
-		validateBallDefinition(
-			ballId,
-			definition
-		)
-
-	if not valid then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	if data.OwnedBalls[ballId] ~= true then
-		return false
-	end
-
-	data.EquippedBall = ballId
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
-
 --------------------------------------------------
--- SET OIL
+-- OIL
 --------------------------------------------------
 
-function PlayerDataService.SetOil(
-	player,
-	amount
-)
+function PlayerDataService.SetOil(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount < 0 then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    local data = loadedData[player]
 
-		return false
+    if not data then
+        return false
+    end
 
-	end
+    data.CurrentOil = math.clamp(amount, 0, MAX_OIL)
+    updatePlayerValues(player, data)
 
-	if not isFiniteNumber(amount)
-		or amount < 0 then
-
-		return false
-
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	data.CurrentOil =
-		math.clamp(
-			amount,
-			0,
-			MAX_OIL
-		)
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
+function PlayerDataService.AddOil(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount <= 0 then
+        return false
+    end
 
---------------------------------------------------
--- ADD OIL
---------------------------------------------------
+    local data = loadedData[player]
 
-function PlayerDataService.AddOil(
-	player,
-	amount
-)
+    if not data then
+        return false
+    end
 
-	if not isFiniteNumber(amount)
-		or amount <= 0 then
+    data.CurrentOil = math.min(
+        data.CurrentOil + amount,
+        MAX_OIL
+    )
 
-		return false
-
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	data.CurrentOil =
-		math.min(
-			data.CurrentOil + amount,
-			MAX_OIL
-		)
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    updatePlayerValues(player, data)
+    return true
 end
 
+function PlayerDataService.RemoveOil(player, amount)
+    if not player or not player:IsA("Player")
+        or not isFiniteNumber(amount) or amount <= 0 then
+        return false
+    end
 
---------------------------------------------------
--- REMOVE OIL
---------------------------------------------------
+    local data = loadedData[player]
 
-function PlayerDataService.RemoveOil(
-	player,
-	amount
-)
+    if not data or data.CurrentOil < amount then
+        return false
+    end
 
-	if not isFiniteNumber(amount)
-		or amount <= 0 then
+    data.CurrentOil -= amount
+    updatePlayerValues(player, data)
 
-		return false
-
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	if data.CurrentOil < amount then
-		return false
-	end
-
-	data.CurrentOil -= amount
-
-	if data.CurrentOil < 0 then
-		data.CurrentOil = 0
-	end
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
-
 --------------------------------------------------
--- SET LEVEL
+-- LEVEL AND REBIRTH SETTERS
 --------------------------------------------------
 
-function PlayerDataService.SetLevel(
-	player,
-	level
-)
+function PlayerDataService.SetLevel(player, level)
+    if not isFiniteNumber(level) then
+        return false
+    end
 
-	if not isFiniteNumber(level) then
-		return false
-	end
+    local data = loadedData[player]
+    level = math.floor(level)
 
-	level =
-		math.floor(level)
+    if not data or level < 1
+        or level > data.RebirthLevelRequirement then
+        return false
+    end
 
-	if level < 1
-		or level > MAX_LEVEL then
+    local actualLevel = calculateLevelFromXP(
+        data.XP,
+        data.RebirthLevelRequirement
+    )
 
-		return false
+    -- XP remains authoritative; this cannot grant levels.
+    if level > actualLevel then
+        return false
+    end
 
-	end
+    data.Level = actualLevel
+    updatePlayerValues(player, data)
 
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	local calculatedLevel =
-		calculateLevelFromXP(
-			data.XP
-		)
-
-	if level > calculatedLevel then
-		return false
-	end
-
-	data.Level =
-		calculatedLevel
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    return true
 end
 
+function PlayerDataService.SetRebirths(player, rebirths)
+    if not isFiniteNumber(rebirths) then
+        return false
+    end
 
---------------------------------------------------
--- SET REBIRTHS
---------------------------------------------------
+    local data = loadedData[player]
+    rebirths = math.floor(rebirths)
 
-function PlayerDataService.SetRebirths(
-	player,
-	rebirths
-)
+    if not data or rebirths ~= data.Rebirths then
+        return false
+    end
 
-	if not isFiniteNumber(rebirths) then
-		return false
-	end
-
-	rebirths =
-		math.floor(rebirths)
-
-	if rebirths < 0 then
-		return false
-	end
-
-	local data =
-		loadedData[player]
-
-	if not data then
-		return false
-	end
-
-	data.Rebirths =
-		math.min(
-			rebirths,
-			MAX_REBIRTHS
-		)
-
-	updatePlayerValues(
-		player,
-		data
-	)
-
-	return true
-
+    -- Rebirths can only be changed by the rebirth function.
+    return true
 end
+--------------------------------------------------
+-- PERFORM REBIRTH
+--------------------------------------------------
 
+function PlayerDataService.RebirthPlayer(player)
+    if not player or not player:IsA("Player") then
+        return false, "INVALID_PLAYER"
+    end
+
+    local data = loadedData[player]
+
+    if not data then
+        return false, "DATA_NOT_LOADED"
+    end
+
+    if shuttingDown then
+        return false, "SERVER_SHUTTING_DOWN"
+    end
+
+    if data.Rebirths >= MAX_REBIRTHS then
+        return false, "MAX_REBIRTHS_REACHED"
+    end
+
+    local requiredLevel = getRequiredRebirthLevel(data.Rebirths)
+
+    local currentLevel = calculateLevelFromXP(
+        data.XP,
+        requiredLevel
+    )
+
+    if currentLevel < requiredLevel then
+        return false, "LEVEL_REQUIREMENT_NOT_MET"
+    end
+
+    -- Advance rebirth count and calculate the next requirement.
+    data.Rebirths += 1
+    data.RebirthLevelRequirement = getRequiredRebirthLevel(
+        data.Rebirths
+    )
+
+    -- Reset current-run progress; preserve lifetime progress.
+    data.XP = 0
+    data.Level = 1
+
+    updatePlayerValues(player, data)
+
+    print(
+        "[PlayerDataService] REBIRTH COMPLETE:",
+        player.Name,
+        "| GlobalLevel:", data.GlobalLevel,
+        "| Rebirths:", data.Rebirths,
+        "| Next Requirement:", data.RebirthLevelRequirement
+    )
+
+    -- Return success only if the new state is saved.
+    local saved = PlayerDataService.SavePlayer(player)
+
+    if not saved then
+        warn(
+            "[PlayerDataService] Rebirth save failed:",
+            player.Name
+        )
+
+        -- The rebirth already happened in memory.
+        -- Do not tell the client it was rolled back.
+    end
+
+    return true, "REBIRTH_SUCCESS"
+end
 
 --------------------------------------------------
 -- SAVE PLAYER
 --------------------------------------------------
 
-function PlayerDataService.SavePlayer(
-	player
-)
+function PlayerDataService.SavePlayer(player)
+    if not player or not player:IsA("Player") then
+        return false
+    end
 
-	if not player
-		or not player:IsA("Player") then
+    if not loadedData[player] then
+        return false
+    end
 
-		return false
+    if saving[player] then
+        saveRequested[player] = true
 
-	end
+        local deadline = os.clock() + SAVE_TIMEOUT
 
-	if not loadedData[player] then
-		return false
-	end
+        while saving[player] and os.clock() < deadline do
+            task.wait(0.1)
+        end
 
-	if saving[player] then
+        return not saving[player]
+    end
 
-		saveRequested[player] = true
+    saving[player] = true
 
-		local deadline =
-			os.clock() + SAVE_TIMEOUT
+    local overallSuccess = true
 
-		while saving[player]
-			and os.clock() < deadline do
+    repeat
+        saveRequested[player] = nil
 
-			task.wait(0.1)
+        local currentData = loadedData[player]
 
-		end
+        if not currentData then
+            overallSuccess = false
+            break
+        end
 
-		return not saving[player]
+        local sanitized = sanitizeData(currentData)
 
-	end
+        loadedData[player] = sanitized
+        updatePlayerValues(player, sanitized)
 
-	saving[player] = true
+        local dataToSave = copyData(sanitized)
+        local key = getDataKey(player)
 
-	local overallSuccess = true
+        local success, errorMessage = pcall(function()
+            playerDataStore:UpdateAsync(key, function()
+                return dataToSave
+            end)
+        end)
 
-	while true do
+        if not success then
+            warn(
+                "[PlayerDataService] Failed to save:",
+                player.Name,
+                errorMessage
+            )
 
-		saveRequested[player] = nil
+            overallSuccess = false
+            break
+        end
+    until not saveRequested[player]
 
-		local currentData =
-			loadedData[player]
+    saving[player] = nil
+    saveRequested[player] = nil
 
-		if not currentData then
-
-			overallSuccess = false
-			break
-
-		end
-
-		local sanitized =
-			sanitizeData(
-				currentData
-			)
-
-		loadedData[player] =
-			sanitized
-
-		updatePlayerValues(
-			player,
-			sanitized
-		)
-
-		local dataToSave =
-			copyData(
-				sanitized
-			)
-
-		local key =
-			getDataKey(player)
-
-		local success, errorMessage =
-			pcall(
-				function()
-
-					playerDataStore:UpdateAsync(
-						key,
-						function()
-
-							return dataToSave
-
-						end
-					)
-
-				end
-			)
-
-		if not success then
-
-			warn(
-				"[PlayerDataService]",
-				"Failed to save:",
-				player.Name,
-				errorMessage
-			)
-
-			overallSuccess = false
-			break
-
-		end
-
-		if not saveRequested[player] then
-			break
-		end
-
-	end
-
-	saving[player] = nil
-
-	saveRequested[player] = nil
-
-	return overallSuccess
-
+    return overallSuccess
 end
-
 
 --------------------------------------------------
 -- SAVE STATE
 --------------------------------------------------
 
-function PlayerDataService.IsSaving(
-	player
-)
-
-	return saving[player] == true
-
+function PlayerDataService.IsSaving(player)
+    return saving[player] == true
 end
 
-
 --------------------------------------------------
--- BEGIN SHUTDOWN
+-- SHUTDOWN
 --------------------------------------------------
 
 function PlayerDataService.BeginShutdown()
-
-	shuttingDown = true
-
+    shuttingDown = true
 end
-
-
---------------------------------------------------
--- IS SHUTTING DOWN
---------------------------------------------------
 
 function PlayerDataService.IsShuttingDown()
-
-	return shuttingDown
-
+    return shuttingDown
 end
-
 
 --------------------------------------------------
 -- AUTOSAVE
 --------------------------------------------------
 
-task.spawn(
-	function()
+task.spawn(function()
+    while not shuttingDown do
+        task.wait(AUTOSAVE_INTERVAL)
 
-		while true do
+        if shuttingDown then
+            break
+        end
 
-			task.wait(
-				AUTOSAVE_INTERVAL
-			)
-
-			if shuttingDown then
-				break
-			end
-
-			for player in pairs(loadedData) do
-
-				if player.Parent then
-
-					task.spawn(
-						function()
-
-							PlayerDataService.SavePlayer(
-								player
-							)
-
-						end
-					)
-
-				end
-
-			end
-
-		end
-
-	end
-)
-
+        for player in pairs(loadedData) do
+            if player.Parent then
+                task.spawn(function()
+                    PlayerDataService.SavePlayer(player)
+                end)
+            end
+        end
+    end
+end)
 
 --------------------------------------------------
 -- STARTUP
 --------------------------------------------------
 
 print("================================")
-
-print(
-	"[PlayerDataService]",
-	"Loaded."
-)
-
-print(
-	"[PlayerDataService]",
-	"DataStore:",
-	DATASTORE_NAME
-)
-
-print(
-	"[PlayerDataService]",
-	"Default Ball:",
-	DEFAULT_BALL_ID
-)
-
-print(
-	"[PlayerDataService]",
-	"BallDefinitions:",
-	"AUTHORITATIVE"
-)
-
-print(
-	"[PlayerDataService]",
-	"Universal Ball Ownership:",
-	"ENABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"Persistent EquippedBall:",
-	"ENABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"XP Authoritative Level:",
-	"ENABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"Tutorial Ball Developer Products:",
-	"DISABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"Invalid Ball IDs:",
-	"REJECTED"
-)
-
-print(
-	"[PlayerDataService]",
-	"Legacy Striker System:",
-	"DISABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"Lifecycle Ownership:",
-	"PlayerDataLoader"
-)
-
-print(
-	"[PlayerDataService]",
-	"Server Authoritative:",
-	"ENABLED"
-)
-
-print(
-	"[PlayerDataService]",
-	"================================"
-)
-
+print("[PlayerDataService] Loaded.")
+print("[PlayerDataService] DataStore:", DATASTORE_NAME)
+print("[PlayerDataService] Default Ball:", DEFAULT_BALL_ID)
+print("[PlayerDataService] Server Authoritative: ENABLED")
+print("[PlayerDataService] Rebirth + Progression Attributes: ENABLED")
+print("================================")
 
 --------------------------------------------------
--- RETURN
+-- RETURN MODULE
 --------------------------------------------------
 
 return PlayerDataService

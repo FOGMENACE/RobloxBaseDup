@@ -1341,6 +1341,119 @@ function WinCourseGenerator.Generate()
 
 end
 
+--------------------------------------------------
+-- ENSURE TILES EXIST THROUGH A DISTANCE
+--
+-- Appends from the LAST existing tile index.
+-- Generates farther ahead of the ball.
+--------------------------------------------------
+
+local TILE_LOOKAHEAD_DISTANCE = 430 -- 10 tile spacings
+
+function WinCourseGenerator.EnsureTilesThroughDistance(distance)
+
+	if typeof(distance) ~= "number"
+		or distance ~= distance
+		or distance == math.huge
+		or distance == -math.huge then
+		return false
+	end
+
+	local winCourse = course:FindFirstChild("WinCourse")
+
+	if not winCourse
+		or winCourse:GetAttribute("IsWinCourse") ~= true then
+		return false
+	end
+
+	distance = math.max(0, distance)
+
+	-- Generate ten tiles beyond the requested distance.
+	local requiredIndex =
+		math.floor(
+			(distance + TILE_LOOKAHEAD_DISTANCE) / TILE_SPACING
+		) + 1
+
+	local highestIndex = 0
+
+	for _, child in ipairs(winCourse:GetChildren()) do
+		if child:IsA("Model")
+			and child.Name:match("^WinTile_") then
+
+			local index = child:GetAttribute("TileIndex")
+
+			if typeof(index) == "number"
+				and index % 1 == 0
+				and index > highestIndex then
+				highestIndex = index
+			end
+		end
+	end
+
+	-- Never regenerate or reset existing indices.
+	if requiredIndex <= highestIndex then
+		return true
+	end
+
+	for index = highestIndex + 1, requiredIndex do
+
+		--------------------------------------------------
+-- CONTINUOUS WIN AMOUNTS
+--
+-- Tile 1  = +1
+-- Tile 12 = +40
+-- Tile 13 = +41
+-- Tile 14 = +42
+-- etc.
+--------------------------------------------------
+
+local winAmount
+
+if index <= #WIN_AMOUNTS then
+	winAmount = WIN_AMOUNTS[index]
+else
+	winAmount = 40 + (index - #WIN_AMOUNTS)
+end
+
+		local tile = winTileTemplate:Clone()
+
+		tile.Name =
+			"WinTile_"
+			.. tostring(winAmount)
+			.. "_"
+			.. tostring(index)
+
+		if not configureTile(tile, winAmount, index) then
+			tile:Destroy()
+
+			warn(
+				"[WinCourseGenerator] Failed to configure tile:",
+				index
+			)
+
+			return false
+		end
+
+		positionTile(tile, index)
+		tile.Parent = winCourse
+
+		print(
+			"[WinCourseGenerator] APPENDED:",
+			tile.Name,
+			"| Index:",
+			index,
+			"| Win:",
+			winAmount,
+			"| Distance:",
+			(index - 1) * TILE_SPACING
+		)
+	end
+
+	winCourse:SetAttribute("TileCount", requiredIndex)
+
+	return true
+end
+
 
 --------------------------------------------------
 -- PUBLIC CONFIG
