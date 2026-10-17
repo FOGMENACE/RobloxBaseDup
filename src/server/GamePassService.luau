@@ -6,8 +6,8 @@
 -- "purchased" flag is never trusted: it only triggers a server check.
 --
 -- Results are cached in memory so physics code can query them every
--- frame without yielding. Nothing here is replicated to clients, so
--- the silent multiplier passes stay silent.
+-- frame without yielding. Only the best multiplier is replicated, so
+-- the multiplier total is published as PassXPMultiplier (display only).
 --------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -85,16 +85,29 @@ function GamePassService.GetSecretMultiplier(player)
 	return best
 end
 
+
+-- Published for the HUD only (display); the physics code reads the cache.
+local function publish(player)
+	if player.Parent then
+		player:SetAttribute("PassXPMultiplier", GamePassService.GetSecretMultiplier(player))
+	end
+end
 --------------------------------------------------
 -- LIFECYCLE
 --------------------------------------------------
 
 Players.PlayerAdded:Connect(function(player)
-	task.spawn(loadPlayer, player)
+	task.spawn(function()
+		loadPlayer(player)
+		publish(player)
+	end)
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(loadPlayer, player)
+	task.spawn(function()
+		loadPlayer(player)
+		publish(player)
+	end)
 end
 
 Players.PlayerRemoving:Connect(function(player)
@@ -123,6 +136,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passI
 
 		if checkPass(player, passId) == true and owned[player] then
 			owned[player][passId] = true
+			publish(player)
 
 			-- A brand-new purchase: count its price for the ROBUX SPENT board.
 			if not wasOwned then

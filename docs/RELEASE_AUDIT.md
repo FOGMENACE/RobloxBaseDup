@@ -43,15 +43,21 @@ Status key: **Verified** = seen in a Studio play test. **Built** = written and l
 - The leave popup fires on the Esc menu. Keep it to free rewards only (it is), and do not add a paid offer there.
 - Players under 13 cannot get some paid-random-item mechanics; nothing here is random-paid, keep it that way (no loot boxes).
 
-## Engagement rating: about 7 / 10
+## Ratings after the quests update
 
-**Hooks:** short runs with a visible payoff, several progress layers (XP/level, wins, rebirth multipliers, balls, leaderboards), variance (multiplier/divider/tier platforms), reasons to return (calendar, timed gift, X6, leave reward), friend bonus, effects and music.
+**Engagement: about 8 / 10** (was 7). New: 3 daily quests per player (server-tracked, reset at UTC midnight, wins scale with rebirths) plus an all-done bonus of 500 wins and 5 min of x4 XP. That adds a reason to return every day and short goals inside a run. Built and loads (state, hub button and bonus pill verified); a full claim cycle is not exercised yet.
 
-**Holding it back:** no short-term goals beyond bigger numbers (no daily quests), mid-game surprises thin out, limited social play.
+**Monetization: about 7 / 10.** Honest note: it cannot reach 8+ with the products that exist today. The strongest additions need new Developer Products that only you can create in Creator Hub:
+1. *Starter pack* (one-time, shown for the first sessions): e.g. a ball + 30 min x2 oil + x2 wins.
+2. *Quest refresh / skip* (small R$): replaces one quest.
+3. *Boost bundle* (x2 oil + x2 wins together at a small discount).
+Send me the product ids and I will wire them with the same durable receipt path (`ProductService`). Until then I did not add placeholder buy buttons.
 
-**Added this pass:** friend XP bonus; purchase confirmation toast. Nothing else added; the next items below are optional, so I did not build them unasked.
+**Passes:** the six passes are now `X100 / X1000` (admin generators) and `X240 / X360 / X1900 / X2200` (everywhere), only the two generator passes are listed in the Store; the four multiplier passes are not listed anywhere in the UI. The HUD shows a small "REBIRTH XP / PASS XP" pill (0% with no pass). It shows the best owned multiplier only; the admin x100 / x1000 passes work on their generators and are not in that percentage.
 
-**Best next, in order:** (1) 3 daily quests with a wins reward; (2) first-time milestone rewards (first rebirth, first premium ball); (3) a weekly leaderboard reset with a small prize.
+**Other:** the XP multiplier no longer appears in the rebirth panel or the rebirth window (still applied by the server).
+
+**Best next, in order:** milestone rewards (first rebirth, first premium ball), a weekly leaderboard reset with a small prize, then the paid items above.
 
 ## Release checklist
 1. Set every Developer Product price and description in Creator Hub; match `ShopConfig.RobuxPrices`.

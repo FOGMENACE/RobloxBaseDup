@@ -405,6 +405,64 @@ task.spawn(function()
 	end
 end)
 
+--------------------------------------------------
+-- XP BONUS PILL (small, above the oil counter)
+--
+-- Top line: rebirth XP bonus. Bottom line: the Game Pass multiplier,
+-- 0% until a pass is owned. Display only; the server applies the real
+-- multipliers (RebirthBonuses / GamePassService).
+--------------------------------------------------
+
+local bonusPill = create("Frame", {
+	Name = "XPBonusPill",
+	Position = UDim2.fromOffset(366, -44),
+	Size = UDim2.fromOffset(174, 40),
+	BackgroundColor3 = CREAM,
+}, hud)
+round(bonusPill, 10)
+outline(bonusPill, 3)
+local bonusScale = create("UIScale", { Scale = 1 }, bonusPill)
+
+local function bonusLine(y, color)
+	local line = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(8, y),
+		Size = UDim2.new(1, -16, 0, 17),
+		Font = FONT,
+		Text = "",
+		TextColor3 = color,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, bonusPill)
+	return line
+end
+
+local rebirthBonusLine = bonusLine(2, Color3.fromRGB(110, 70, 160))
+local passBonusLine = bonusLine(20, Color3.fromRGB(30, 130, 70))
+
+local function percentText(value)
+	value = math.floor(value + 0.5)
+	local text = tostring(value)
+	-- thousands separators
+	local formatted = text:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+	return "+" .. formatted .. "%"
+end
+
+local function refreshBonusPill()
+	local rebirths = player:GetAttribute("Rebirths") or 0
+	local rebirthPercent = (RebirthBonuses.XPMultiplier(rebirths) - 1) * 100
+	local passMultiplier = player:GetAttribute("PassXPMultiplier") or 1
+	local passPercent = math.max(passMultiplier - 1, 0) * 100
+
+	rebirthBonusLine.Text = "REBIRTH XP " .. percentText(rebirthPercent)
+	passBonusLine.Text = "PASS XP " .. percentText(passPercent)
+	bump(bonusScale, 1.08)
+end
+
+player:GetAttributeChangedSignal("Rebirths"):Connect(refreshBonusPill)
+player:GetAttributeChangedSignal("PassXPMultiplier"):Connect(refreshBonusPill)
+refreshBonusPill()
+
 local function fitHud()
 	local viewport = gui.AbsoluteSize
 	hudScale.Scale = math.clamp(viewport.X / 620, 0.5, 1.15)
@@ -475,11 +533,11 @@ local nextLabel = create("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, rebirthPanel)
 
--- Three multiplier chips next to the rebirth: XP / OIL / WINS
+-- Two multiplier chips next to the rebirth: OIL / WINS (XP is shown in the bonus pill instead)
 local function makeChip(index, caption, color)
 	local chip = create("Frame", {
-		Position = UDim2.fromOffset(66 + (index - 1) * 76, 66),
-		Size = UDim2.fromOffset(70, 22),
+		Position = UDim2.fromOffset(70 + (index - 1) * 110, 66),
+		Size = UDim2.fromOffset(104, 22),
 		BackgroundColor3 = color,
 	}, rebirthPanel)
 	round(chip, 11)
@@ -491,16 +549,15 @@ local function makeChip(index, caption, color)
 		Font = FONT,
 		Text = caption,
 		TextColor3 = CREAM,
-		TextSize = 12,
+		TextSize = 15,
 	}, chip)
 	create("UIStroke", { Color = INK, Thickness = 1.5 }, label)
 
 	return label, create("UIScale", { Scale = 1 }, chip)
 end
 
-local xpChip, xpChipScale = makeChip(1, "XP x1", Color3.fromRGB(86, 168, 240))
-local oilChip2, oilChipScale = makeChip(2, "OIL x1", Color3.fromRGB(110, 90, 160))
-local winsChip, winsChipScale = makeChip(3, "WINS x1", Color3.fromRGB(88, 196, 110))
+local oilChip2, oilChipScale = makeChip(1, "🛢️ x1", Color3.fromRGB(110, 90, 160))
+local winsChip, winsChipScale = makeChip(2, "🏆 x1", Color3.fromRGB(88, 196, 110))
 
 local rebirthTrack = create("Frame", {
 	Position = UDim2.fromOffset(10, 96),
@@ -699,19 +756,17 @@ local function refreshRebirth()
 	local required = player:GetAttribute("RebirthLevelRequirement") or 65
 
 	-- Display only: the server applies these same rules (RebirthBonuses).
-	local xpMultiplier = RebirthBonuses.XPMultiplier(rebirths)
 	local oilMultiplier = RebirthBonuses.OilMultiplier(rebirths)
 	local winsMultiplier = RebirthBonuses.WinsMultiplier(rebirths)
 
 	multiplierLabel.Text = "REBIRTH " .. rebirths
-	xpChip.Text = "XP x" .. formatNumber(xpMultiplier)
-	oilChip2.Text = "OIL x" .. formatNumber(oilMultiplier)
-	winsChip.Text = "WINS x" .. formatNumber(winsMultiplier)
+	oilChip2.Text = "🛢️ x" .. formatNumber(oilMultiplier)
+	winsChip.Text = "🏆 x" .. formatNumber(winsMultiplier)
 
 	-- What the next rebirth adds
 	local nextWins = RebirthBonuses.WinsMultiplier(rebirths + 1)
-	nextLabel.Text = "NEXT: OIL x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths + 1))
-		.. (nextWins > winsMultiplier and (" + WINS x" .. formatNumber(nextWins)) or "")
+	nextLabel.Text = "NEXT: 🛢️ x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths + 1))
+		.. (nextWins > winsMultiplier and (" + 🏆 x" .. formatNumber(nextWins)) or "")
 
 	local fraction = math.clamp(level / math.max(required, 1), 0, 1)
 	TweenService:Create(
@@ -728,7 +783,6 @@ local function refreshRebirth()
 	if lastRebirths ~= nil and rebirths > lastRebirths then
 		-- A rebirth just happened: pop the panel and every chip that grew.
 		bump(rebirthScale, 1.15)
-		bump(xpChipScale, 1.3)
 		bump(oilChipScale, 1.3)
 		bump(winsChipScale, 1.3)
 	end

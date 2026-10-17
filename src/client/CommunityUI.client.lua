@@ -22,6 +22,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
+local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
 local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -270,15 +271,16 @@ local function refresh()
 	end
 end
 
+PanelManager.Register("Community", panel, function()
+	message.Text = ""
+	task.spawn(refresh)
+end)
+
 local function setOpen(open)
 	if open then
-		panel.Visible = true
-		scale.Scale = 0.8
-		TweenService:Create(scale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1 }):Play()
-		message.Text = ""
-		task.spawn(refresh)
+		PanelManager.Open("Community")
 	else
-		panel.Visible = false
+		PanelManager.Close("Community")
 	end
 end
 
@@ -357,6 +359,6 @@ end)
 
 ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
 	if who == player and prompt.Name == "CommunityPrompt" then
-		setOpen(not panel.Visible)
+		PanelManager.Toggle("Community")
 	end
 end)

@@ -26,6 +26,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local GiftConfig = require(ReplicatedStorage:WaitForChild("GiftConfig"))
 local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
+local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
 local ShopConfig = require(ReplicatedStorage:WaitForChild("ShopConfig"))
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -401,6 +402,7 @@ local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE
 local giftButton = makeHubButton(3, "GiftButton", "🎁", "...", SKY, 3)
 local dailyButton = makeHubButton(4, "DailyButton", "📅", "...", GREEN, -2)
 local x6Button = makeHubButton(5, "X6Button", "X6", "...", Color3.fromRGB(255, 170, 40), 3)
+local questsButton = makeHubButton(6, "QuestsButton", "📋", "QUESTS", Color3.fromRGB(255, 140, 80), -2)
 
 --------------------------------------------------
 -- REWARD PREVIEW (automatic ViewportFrame for ball rewards)
@@ -425,6 +427,7 @@ local function applyRewardPreview(holder, reward)
 			Position = UDim2.fromScale(0.5, 0.5),
 			Size = UDim2.fromOffset(40, 40),
 			Image = TROPHY_IMAGE,
+			ZIndex = 24,
 		}, holder)
 		return
 	end
@@ -440,6 +443,7 @@ local function applyRewardPreview(holder, reward)
 			local viewport = create("ViewportFrame", {
 				Name = "Preview",
 				BackgroundTransparency = 1,
+				ZIndex = 24,
 				Size = UDim2.fromScale(1, 1),
 			}, holder)
 
@@ -519,9 +523,9 @@ end
 
 local function describe(reward)
 	if reward.Type == "Wins" then
-		return "+" .. formatNumber(reward.Amount) .. " Wins"
+		return "+" .. formatNumber(reward.Amount) .. " 🏆"
 	elseif reward.Type == "Oil" then
-		return "+" .. formatNumber(reward.Amount) .. " starter oil for your next run"
+		return "+" .. formatNumber(reward.Amount) .. " 🛢️ starter oil for your next run"
 	elseif reward.Type == "Ball" then
 		return "New ball unlocked: " .. tostring(reward.BallId)
 	elseif reward.Type == "Rebirth" then
@@ -774,9 +778,9 @@ local calendarDays = GiftConfig.DailyCalendar.Days
 
 local function slotText(reward)
 	if reward.Type == "Wins" then
-		return "+" .. formatNumber(reward.Amount) .. "\nWINS"
+		return "+" .. formatNumber(reward.Amount) .. "\n🏆"
 	elseif reward.Type == "Oil" then
-		return formatNumber(reward.Amount) .. "\nSTART OIL"
+		return formatNumber(reward.Amount) .. " 🛢️\nSTART"
 	elseif reward.Type == "Ball" then
 		return "BALL"
 	elseif reward.Type == "BallNext" then
@@ -895,19 +899,21 @@ rebuildCalendar = function()
 	end
 end
 
+PanelManager.Register("Calendar", calendarPanel, function()
+	pullGiftState()
+	updateCalendarScale()
+end)
+
 local function setCalendarOpen(open)
 	if open then
-		pullGiftState()
-		calendarPanel.Visible = true
-		calendarScale.Scale = calendarScale.Scale * 0.9
-		updateCalendarScale()
+		PanelManager.Open("Calendar")
 	else
-		calendarPanel.Visible = false
+		PanelManager.Close("Calendar")
 	end
 end
 
 dailyButton.Button.Activated:Connect(function()
-	setCalendarOpen(not calendarPanel.Visible)
+	PanelManager.Toggle("Calendar")
 end)
 calendarClose.Activated:Connect(function()
 	setCalendarOpen(false)
@@ -996,63 +1002,6 @@ create("UIListLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, shopList)
 
-local BoostConfig = require(ReplicatedStorage:WaitForChild("BoostConfig"))
-
--- Boost offers (x2 WINS / x2 OIL) sit at the top of the Store.
-for order, key in ipairs({ "Wins2x", "Oil2x" }) do
-	local boost = BoostConfig.Boosts[key]
-	local row = create("Frame", {
-		LayoutOrder = -10 + order,
-		Size = UDim2.new(1, -8, 0, 72),
-		BackgroundColor3 = Color3.fromRGB(255, 226, 120),
-		ZIndex = 22,
-	}, shopList)
-	round(row, 12)
-	outline(row, INK, 3)
-
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 6),
-		Size = UDim2.new(1, -112, 0, 26),
-		Font = FONT,
-		Text = boost.Label .. " - " .. math.floor(boost.Duration / 60) .. " MIN",
-		TextColor3 = INK,
-		TextSize = 20,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 23,
-	}, row)
-
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 34),
-		Size = UDim2.new(1, -112, 0, 30),
-		Font = FONT,
-		Text = "R$ " .. boost.PriceRobux .. " ONLY!",
-		TextColor3 = Color3.fromRGB(200, 40, 40),
-		TextSize = 16,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 23,
-	}, row)
-
-	local buy = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
-		Size = UDim2.fromOffset(84, 36),
-		BackgroundColor3 = GREEN,
-		Font = FONT,
-		Text = "BUY",
-		TextColor3 = CREAM,
-		TextSize = 16,
-		ZIndex = 23,
-	}, row)
-	round(buy, 10)
-	Shine.Attach(buy, { Offset = order })
-
-	buy.Activated:Connect(function()
-		ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("BoostPrompt"):FireServer(key)
-	end)
-end
-
 for index, pass in ipairs(ShopConfig.GamePasses) do
 	local row = create("Frame", {
 		LayoutOrder = index,
@@ -1111,22 +1060,18 @@ for index, pass in ipairs(ShopConfig.GamePasses) do
 	end
 end
 
+PanelManager.Register("Store", shopPanel)
+
 local function setShopOpen(open)
 	if open then
-		shopPanel.Visible = true
-		shopScale.Scale = 0.85
-		TweenService:Create(
-			shopScale,
-			TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ Scale = 1 }
-		):Play()
+		PanelManager.Open("Store")
 	else
-		shopPanel.Visible = false
+		PanelManager.Close("Store")
 	end
 end
 
 shopButton.Button.Activated:Connect(function()
-	setShopOpen(not shopPanel.Visible)
+	PanelManager.Toggle("Store")
 end)
 shopClose.Activated:Connect(function()
 	setShopOpen(false)

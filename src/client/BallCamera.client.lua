@@ -46,6 +46,23 @@ local UserInputService =
 local RunService =
 	game:GetService("RunService")
 
+local PanelManager =
+	require(
+		game:GetService("ReplicatedStorage")
+			:WaitForChild("PanelManager")
+	)
+
+-- True while any big panel (or the ball shop) is open: zoom and FOV
+-- presets are ignored so scrolling a list never moves the camera.
+local function uiBlocksZoom()
+	if PanelManager.AnyOpen() then
+		return true
+	end
+
+	local gui = Players.LocalPlayer.PlayerGui:FindFirstChild("BallShopUI")
+	return gui ~= nil and gui:IsA("ScreenGui") and gui.Enabled
+end
+
 
 --------------------------------------------------
 -- PLAYER
@@ -386,6 +403,10 @@ UserInputService.InputChanged:Connect(
 
 		end
 
+
+		if uiBlocksZoom() then
+			return
+		end
 
 		--------------------------------------------------
 		-- GET BALL
@@ -995,6 +1016,10 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 local function cycleLobbyZoom()
+	if uiBlocksZoom() then
+		return
+	end
+
 	-- 1 close -> 2 normal -> 3 far -> back to 1
 	currentLobbyZoom = currentLobbyZoom % #LOBBY_ZOOM_LEVELS + 1
 end

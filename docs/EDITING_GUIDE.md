@@ -22,6 +22,8 @@ Edit files in `src/` in your code editor, with `rojo serve` running and the Rojo
 | XP kit sizes | `shared/XPKits.luau` | `FRACTIONS` (1 = one level's XP) |
 | x2 oil / x2 wins length, price label | `shared/BoostConfig.luau` | `Duration`, `PriceRobux` (the real price is set in Creator Hub) |
 | Rebirth multipliers | `shared/RebirthBonuses.luau` | the three formulas |
+| Daily quests (targets, wins, bonus) | `shared/QuestConfig.luau` | `Pool`, `BonusWins`, `BonusBoostSeconds` |
+| Game pass ids and multipliers | `server/GamePassConfig.luau` (grants) and `shared/ShopConfig.luau` (Store list) | change the id in both |
 | Friend XP bonus | `server/BoostService.luau` | `FRIEND_BONUS_PER`, `FRIEND_BONUS_MAX` |
 | Which rows are upgrade/downgrade | `server/BallTierGates.server.lua` | `TIER_ROWS`, and the percentages in `rollPattern` |
 | Space between oil rows | `server/OilCourseGenerator.luau` and `server/OilCoursePreview.server.lua` (same number in both) | `ROW_SPACING`; then follow the steps in `studio-exports/README.md` (lane length, FinishWall, `WinCourseGenerator` start) |
@@ -65,3 +67,9 @@ The Store panel is built in `src/client/HubUI.client.lua`, in the section `GAME 
 - Don't rename DataStore keys or player attributes (`CurrentOil`, `Wins`, `Level`, ...) without tracing every user of them (`grep` the name first).
 - Don't put prices, amounts or ids that grant things into client scripts.
 - Don't publish from here without testing in Studio first.
+
+## Adding a new big panel
+
+Register it with `PanelManager` (`src/shared/PanelManager.luau`) instead of toggling `Visible` yourself:
+`PanelManager.Register("Name", frame)`, then `PanelManager.Toggle("Name")`. That gives the slide in/out transition,
+closes whichever panel is open, and makes the camera ignore zoom/FOV input while it is open.

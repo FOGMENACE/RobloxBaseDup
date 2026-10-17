@@ -2,8 +2,8 @@
 -- SHOP CONFIG
 --
 -- GamePasses : shown in the hub's pass panel. PassId = 0 shows "SOON".
---              (The silent multiplier passes are NOT listed anywhere
---              client-side; they live in the server-only GamePassConfig.)
+--              (Passes are granted by server/GamePassService, never by
+--              the client; ids here only open the purchase prompt.)
 -- RobuxPrices: DISPLAY ONLY labels for the ball shop's Robux buttons.
 --              The price that is actually charged is the one set on the
 --              Developer Product in the Creator Hub; keep them in sync.
@@ -14,16 +14,8 @@
 local ShopConfig = {}
 
 ShopConfig.GamePasses = {
-	{
-		Name = "Admin x100 XP",
-		Description = "Earn 100x XP when you roll onto the Admin x100 generator.",
-		PassId = 2038347056,
-	},
-	{
-		Name = "Admin x1000 XP",
-		Description = "Earn 1000x XP when you roll onto the Admin x1000 generator.",
-		PassId = 2036523093,
-	},
+	{ Name = "X100 LESSONS", Description = "Earn 100x XP on the Admin x100 generator.", PassId = 2039936926 },
+	{ Name = "X1000 MOST WANTED LESSONS", Description = "Earn 1000x XP on the Admin x1000 generator.", PassId = 2036355132 },
 }
 
 ShopConfig.RobuxPrices = {

@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RebirthBonuses = require(ReplicatedStorage:WaitForChild("RebirthBonuses"))
+local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -313,8 +314,10 @@ statusLabel.TextColor3 = COLORS.Muted
 -- UI OPEN / CLOSE
 --------------------------------------------------
 
+PanelManager.Register("Rebirth", panel)
+
 openButton.Activated:Connect(function()
-	panel.Visible = not panel.Visible
+	PanelManager.Toggle("Rebirth")
 end)
 
 -- The hub (HubUI) now owns the entry button. It fires this client-only
@@ -331,11 +334,11 @@ toggleEvent.Name = "ToggleRebirthPanel"
 toggleEvent.Parent = playerGui
 
 toggleEvent.Event:Connect(function()
-	panel.Visible = not panel.Visible
+	PanelManager.Toggle("Rebirth")
 end)
 
 closeButton.Activated:Connect(function()
-	panel.Visible = false
+	PanelManager.Close("Rebirth")
 end)
 
 --------------------------------------------------
@@ -368,7 +371,7 @@ local function refreshUI()
 		.. "  |  REBIRTHS " .. tostring(rebirths)
 
 	rewardLabel.Text =
-		"NEXT REBIRTH: OIL x" .. tostring(RebirthBonuses.OilMultiplier(rebirths + 1)) .. "  WINS x" .. tostring(RebirthBonuses.WinsMultiplier(rebirths + 1)) .. "  XP x" .. tostring(RebirthBonuses.XPMultiplier(rebirths + 1))
+		"NEXT REBIRTH: 🛢️ x" .. tostring(RebirthBonuses.OilMultiplier(rebirths + 1)) .. "  🏆 x" .. tostring(RebirthBonuses.WinsMultiplier(rebirths + 1))
 
 	progress = math.clamp(progress, 0, 1)
 
