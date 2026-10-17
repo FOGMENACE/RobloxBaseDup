@@ -692,6 +692,56 @@ local function startRun(
 
 
 	--------------------------------------------------
+	-- STARTER OIL (daily calendar reward)
+	--
+	-- Added AFTER the run-oil reset above, otherwise it would be wiped.
+	-- Failure here must never block the run.
+	--------------------------------------------------
+
+	local starterOk, starterError = pcall(
+		function()
+
+			local starterOil = require(
+				ServerScriptService:WaitForChild("StarterOil")
+			).Take(player)
+
+			if starterOil > 0 then
+
+				-- Same accounting as OilCollectionService: the lifetime total
+				-- (PlayerDataService) grows by the amount, and the player's
+				-- CurrentOil ATTRIBUTE is this run's oil. AddOil overwrites the
+				-- attribute with the lifetime total, so set the run oil
+				-- explicitly afterwards; otherwise the previous run's oil
+				-- leaks into the new run.
+				require(
+					ServerScriptService
+						:WaitForChild("PlayerDataLoader")
+						:WaitForChild("PlayerDataService")
+				).AddOil(
+					player,
+					starterOil
+				)
+
+				player:SetAttribute(
+					"CurrentOil",
+					starterOil
+				)
+
+			end
+
+		end
+	)
+
+	if not starterOk then
+
+		warn(
+			"[RunController] Starter oil failed:",
+			starterError
+		)
+
+	end
+
+	--------------------------------------------------
 	-- REMOVE LOBBY COURSE
 	--------------------------------------------------
 

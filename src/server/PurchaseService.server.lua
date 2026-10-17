@@ -475,6 +475,24 @@ MarketplaceService.ProcessReceipt =
 		-- CONSUME RECEIPT
 		--------------------------------------------------
 
+		-- Leaderboard bookkeeping (never affects the purchase itself).
+		if receiptInfo.CurrencyType == Enum.CurrencyType.Robux then
+
+			pcall(
+				function()
+					require(
+						ServerScriptService:WaitForChild(
+							"RobuxLedger"
+						)
+					).Add(
+						receiptInfo.PlayerId,
+						receiptInfo.CurrencySpent
+					)
+				end
+			)
+
+		end
+
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 
 	end

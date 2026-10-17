@@ -122,6 +122,36 @@ local PlayerDataService =
 	)
 
 
+local GamePassService =
+	requireModule(
+		ServerScriptService,
+		"GamePassService"
+	)
+
+
+local LimitedGenerator =
+	requireModule(
+		ServerScriptService,
+		"LimitedGenerator"
+	)
+
+
+-- Keeps a ball's accessory parts (cat, spikes, dragon...) sized with it.
+local BallAccessories =
+	requireModule(
+		ReplicatedStorage,
+		"BallAccessories"
+	)
+
+
+-- Timed boosts (x4 XP reward); see BoostService.
+local BoostService =
+	requireModule(
+		ServerScriptService,
+		"BoostService"
+	)
+
+
 local playerBalls =
 	workspace:WaitForChild(
 		"PlayerBalls"
@@ -243,6 +273,13 @@ local MIN_COURSE_SPEED =
 local INPUT_TIMEOUT =
 	0.20
 
+-- Horizontal acceleration budget (studs/s^2) for the velocity controller.
+local HORIZONTAL_FORCE_PER_MASS =
+	600
+local JUMP_VELOCITY =
+	40 -- ~4 stud hop at default gravity
+local JUMP_COOLDOWN =
+	0.4
 local BASE_XP_PER_STUD =
 	0.5
 
@@ -263,20 +300,32 @@ local XP_GENERATORS =
 -- Names must match the MeshPart names in Explorer.
 -- Required rebirth counts must match your game design.
 
+-- Must match XPGeneratorController.client.lua labels.
 local GENERATOR_MULTIPLIERS = {
+	GenX1 = 1,
 	GenX2 = 2,
-	GenX5 = 5,
+	GenX4 = 4,
+	GenX6 = 6,
+	GenX8 = 8,
 	GenX10 = 10,
-	GenX25 = 25,
-	GenX50 = 50,
+	["GenX100 Admin XP"] = 100,
+	["GenX1000 Admin XP"] = 1000,
 }
 
 local GENERATOR_REBIRTH_REQUIREMENTS = {
-	GenX2 = 0,
-	GenX5 = 1,
-	GenX10 = 2,
-	GenX25 = 3,
-	GenX50 = 4,
+	GenX1 = 0,
+	GenX2 = 2,
+	GenX4 = 4,
+	GenX6 = 0, -- limited-time gift: no rebirth gate (no time gate implemented)
+	GenX8 = 8,
+	GenX10 = 10,
+}
+
+-- Admin generators need their Game Pass (GamePassService, server-side
+-- ownership check). Pass ids live in GamePassConfig (server only).
+local ADMIN_GENERATORS = {
+	["GenX100 Admin XP"] = true,
+	["GenX1000 Admin XP"] = true,
 }
 
 --------------------------------------------------
@@ -387,6 +436,20 @@ local function getActiveGeneratorMultiplier(player, ball)
 		local requiredRebirths =
 			GENERATOR_REBIRTH_REQUIREMENTS[generatorName]
 
+		-- GenX6 is the limited-time gift: it only pays while the player
+		-- has claimed an active boost (server-timed, see LimitedGenerator).
+		if generatorName == "GenX6"
+			and not LimitedGenerator.IsActive(player) then
+			continue
+		end
+
+		if ADMIN_GENERATORS[generatorName] then
+			if not GamePassService.OwnsAdminGenerator(player, generatorName) then
+				continue
+			end
+			requiredRebirths = 0
+		end
+
 		if not multiplier or not requiredRebirths then
 			continue
 		end
@@ -395,7 +458,7 @@ local function getActiveGeneratorMultiplier(player, ball)
 			continue
 		end
 
-		if multiplier <= bestMultiplier then
+		if activeGenerator and multiplier <= bestMultiplier then
 			continue
 		end
 
@@ -423,30 +486,6 @@ local function getRebirthXPMultiplier(player)
     -- 1 rebirth = 11x
     -- 2 rebirths = 21x
     return 1 + (rebirths * 10)
-end
-
---------------------------------------------------
--- XP GENERATOR SETTINGS
---------------------------------------------------
-
--- XP GENERATOR REFERENCES
-
-local XP_GENERATORS = workspace:WaitForChild("XPGenerators")
-
--- GET XP GENERATOR PARTS
-
-local function getXPGeneratorParts()
-
-local parts = {}
-
-for , instance in ipairs( XPGENERATORS:GetDescendants() ) do
-
-if instance:IsA("BasePart") then table.insert(parts, instance) end
-
-end
-
-return parts
-
 end
 
 --------------------------------------------------
@@ -835,8 +874,18 @@ local function getLinearVelocity(
 	controller.VelocityConstraintMode =
 		Enum.VelocityConstraintMode.Vector
 
-	controller.MaxForce =
-		math.huge
+	-- ROOT CAUSE OF HOVERING: this controller used to command a full
+	-- 3D velocity (Y = 0) with unlimited force, which pinned the ball's
+	-- vertical velocity to zero: no gravity, no falling off edges, no
+	-- following lower ground. Only constrain the horizontal axes; Y is
+	-- left to the physics engine. Force is finite so steps/slopes can
+	-- still push the ball up instead of the ball plowing through them.
+	controller.ForceLimitMode =
+		Enum.ForceLimitMode.PerAxis
+	local horizontalForce =
+		math.max(ball.AssemblyMass, 1) * HORIZONTAL_FORCE_PER_MASS
+	controller.MaxAxesForce =
+		Vector3.new(horizontalForce, 0, horizontalForce)
 
 	controller.Enabled =
 		true
@@ -859,7 +908,7 @@ end
 -- SERVER NETWORK OWNERSHIP
 --------------------------------------------------
 
-local function ensureServerOwnership(ball)
+local function ensureServerOwnership(ball, player)
 
 	if not ball or not ball.Parent then
 		return
@@ -871,14 +920,117 @@ local function ensureServerOwnership(ball)
 		return
 	end
 
+	-- OWNERSHIP MODEL
+	--
+	-- Lobby (RunState Waiting): the PLAYER owns the ball's physics so
+	-- rolling is instant (no server round trip). BallController drives
+	-- the velocity locally; this server validates the result (XP
+	-- distance is capped to the legal lobby speed).
+	--
+	-- Every other state (Starting / Running / Finishing / WinCourse):
+	-- the SERVER owns the ball and drives it, exactly as before.
+	local runState = player and player:GetAttribute("RunState")
+	local inLobby = player ~= nil
+		and (typeof(runState) ~= "string"
+			or runState == ""
+			or runState == "Waiting")
+
+	local desiredOwner = inLobby and player or nil
+
 	pcall(function()
-		if ball:GetNetworkOwner() ~= nil then
-			ball:SetNetworkOwner(nil)
+		if ball:GetNetworkOwner() ~= desiredOwner then
+			ball:SetNetworkOwner(desiredOwner)
 		end
 	end)
 
+	-- Only claim "client driven" if the owner really is the player.
+	local owner = nil
+	pcall(function()
+		owner = ball:GetNetworkOwner()
+	end)
+
+	local clientDriven = player ~= nil and owner == player
+
+	if ball:GetAttribute("ClientDriven") ~= clientDriven then
+		ball:SetAttribute("ClientDriven", clientDriven)
+	end
+
+	-- Authoritative lobby speed, read by the owning client.
+	if ball:GetAttribute("LobbySpeed") ~= LOBBY_SPEED then
+		ball:SetAttribute("LobbySpeed", LOBBY_SPEED)
+	end
+
 end
 
+
+--------------------------------------------------
+-- LOBBY BALL SCALE
+--
+-- Balls are a little smaller in the lobby (Waiting) and pop up to
+-- full size when a run starts, so the WinCourse placement math
+-- (which reads ball.Size) always sees the full-size ball.
+-- The authoritative full size is stored in the "BaseSize" attribute.
+--------------------------------------------------
+
+local LOBBY_BALL_SCALE =
+	0.7
+local BALL_SCALE_TIME =
+	0.45
+
+local ballScaleState = {}
+
+local function easeOutBack(t)
+	local c1 = 1.70158
+	local c3 = c1 + 1
+	return 1 + c3 * (t - 1) ^ 3 + c1 * (t - 1) ^ 2
+end
+
+local function updateBallScale(ball, wantSmall, deltaTime)
+	local state = ballScaleState[ball]
+
+	if not state then
+		local base = ball:GetAttribute("BaseSize")
+		if typeof(base) ~= "Vector3" then
+			base = ball.Size
+			ball:SetAttribute("BaseSize", base)
+		end
+
+		local startScale = wantSmall and LOBBY_BALL_SCALE or 1
+		state = {
+			Base = base,
+			Scale = startScale,
+			From = startScale,
+			To = startScale,
+			T = 1,
+		}
+		ballScaleState[ball] = state
+		ball.Size = base * startScale
+		BallAccessories.SetScale(ball)
+		return
+	end
+
+	local target = wantSmall and LOBBY_BALL_SCALE or 1
+	if state.To ~= target then
+		state.From = state.Scale
+		state.To = target
+		state.T = 0
+	end
+
+	if state.T >= 1 then
+		return
+	end
+
+	state.T = math.min(1, state.T + deltaTime / BALL_SCALE_TIME)
+
+	-- Growing overshoots slightly (the "pop"); shrinking eases out.
+	local eased = state.To > state.From
+		and easeOutBack(state.T)
+		or (1 - (1 - state.T) ^ 2)
+
+	state.Scale = state.From + (state.To - state.From) * eased
+	ball.Size = state.Base * state.Scale
+	BallAccessories.SetScale(ball)
+end
 
 --------------------------------------------------
 -- STOP BALL
@@ -980,6 +1132,18 @@ local function prepareBall(
 	ball.CanQuery =
 		true
 
+	-- No bounce: the template's elasticity (0.5) made the ball dribble over
+	-- tiny lane seams at speed. Weight 100 makes the ball's value win the
+	-- contact-pair average with the floor.
+	ball.CustomPhysicalProperties =
+		PhysicalProperties.new(
+			0.7,
+			0.3,
+			0,
+			1,
+			100
+		)
+
 
 	--------------------------------------------------
 	-- SERVER OWNERSHIP
@@ -1019,8 +1183,20 @@ local function prepareBall(
 	-- SPEED
 	--------------------------------------------------
 
+	-- A mid-run ball swap (BallTierGates) hands over the current course
+	-- speed so an upgrade does not restart the speed ramp.
+	local carriedSpeed =
+		ball:GetAttribute("CarrySpeed")
+
 	ballSpeeds[ball] =
-		COURSE_START_SPEED
+		(
+			typeof(carriedSpeed) == "number"
+			and carriedSpeed > 0
+		)
+		and carriedSpeed
+		or COURSE_START_SPEED
+
+	ball:SetAttribute("CarrySpeed", nil)
 
 
 	--------------------------------------------------
@@ -1102,20 +1278,73 @@ end
 
 
 --------------------------------------------------
+-- JUMP (server validated)
+--------------------------------------------------
+
+local lastJumpTimes = {}
+
+local function isBallGrounded(ball)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore = { playerBalls }
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other.Character then
+			table.insert(ignore, other.Character)
+		end
+	end
+	params.FilterDescendantsInstances = ignore
+
+	local radius = ball.Size.Y * 0.5
+	local result = workspace:Raycast(
+		ball.Position,
+		Vector3.new(0, -(radius + 0.75), 0),
+		params
+	)
+	return result ~= nil
+end
+
+local function tryJump(player, ball)
+	-- A client-owned ball jumps locally (BallController); see ensureServerOwnership.
+	if ball:GetAttribute("ClientDriven") == true then
+		return
+	end
+
+	-- Lobby only (RunController owns RunState).
+	local runState = player:GetAttribute("RunState")
+	if runState ~= nil and runState ~= "Waiting" then
+		return
+	end
+
+	if ball:GetAttribute("WinCourseActive") == true then
+		return
+	end
+
+	local now = os.clock()
+	if now - (lastJumpTimes[player] or 0) < JUMP_COOLDOWN then
+		return
+	end
+
+	if not isBallGrounded(ball) then
+		return
+	end
+
+	lastJumpTimes[player] = now
+
+	local velocity = ball.AssemblyLinearVelocity
+	ball.AssemblyLinearVelocity =
+		Vector3.new(velocity.X, JUMP_VELOCITY, velocity.Z)
+end
+
+--------------------------------------------------
 -- MOVEMENT INPUT
 --------------------------------------------------
 
 ballMovement.OnServerEvent:Connect(
 	function(
 		player,
-		input
+		input,
+		jump
 	)
-
-		print(
-			"[BallPhysicsController] INPUT RECEIVED:",
-			player.Name,
-			input
-		)
 
 	--------------------------------------------------
 	-- PLAYER
@@ -1203,6 +1432,12 @@ end
 			Time = os.clock()
 
 		}
+
+		-- Optional jump request. Server decides everything: lobby only,
+		-- grounded, rate limited; the client only says "I pressed jump".
+		if jump == true then
+			tryJump(player, ball)
+		end
 
 	end
 )
@@ -1302,6 +1537,18 @@ RunService.Heartbeat:Connect(
 			end
 
 
+			-- Lobby ball scale (see LOBBY BALL SCALE).
+			do
+				local scaleRunState = player:GetAttribute("RunState")
+				local inLobby =
+					(typeof(scaleRunState) ~= "string"
+						or scaleRunState == ""
+						or scaleRunState == "Waiting")
+					and ball:GetAttribute("WinCourseActive") ~= true
+
+				updateBallScale(ball, inLobby, deltaTime)
+			end
+
 			--------------------------------------------------
 -- WIN COURSE ACTIVE
 --------------------------------------------------
@@ -1322,7 +1569,7 @@ end
 releasedBalls[ball] = nil
 
 -- Ensure the normal server-owned lobby controller is active.
-ensureServerOwnership(ball)
+ensureServerOwnership(ball, player)
 
 local controller = getLinearVelocity(ball)
 
@@ -1346,7 +1593,7 @@ end
 			--------------------------------------------------
 
 			ensureServerOwnership(
-				ball
+				ball, player
 			)
 
 
@@ -1434,6 +1681,27 @@ end
 					currentXZ - previousXZ
 				).Magnitude
 
+				-- Client-owned lobby ball: never credit more distance than
+				-- the legal lobby speed allows (+ small tolerance), so a
+				-- teleporting or speed-hacked ball cannot farm XP.
+				if ball:GetAttribute("ClientDriven") == true then
+					distance = math.min(
+						distance,
+						LOBBY_SPEED * 1.5 * deltaTime + 0.1
+					)
+				end
+
+				-- Standing on a generator you qualify for still earns XP,
+				-- at the rate of rolling at lobby speed. Server-side only.
+				local idleDistance = LOBBY_SPEED * deltaTime
+				if distance < idleDistance then
+					local _, standingGenerator =
+						getActiveGeneratorMultiplier(player, ball)
+					if standingGenerator then
+						distance = idleDistance
+					end
+				end
+
 				if distance > 0
 					and distance <= MAX_XP_DISTANCE_PER_HEARTBEAT then
 
@@ -1469,22 +1737,23 @@ local rebirthMultiplier =
 local generatorMultiplier, generatorName =
     getActiveGeneratorMultiplier(player, ball)
 
+-- Silent Game Pass multiplier (server-side only, no UI): applies
+-- everywhere, not only on a generator. The higher of the two wins.
+generatorMultiplier = math.max(
+    generatorMultiplier,
+    GamePassService.GetSecretMultiplier(player)
+)
+
 player:SetAttribute(
     "ActiveXPGenerator",
     generatorName or ""
-)
-print(
-    "[XP GENERATOR]",
-    player.Name,
-    "Generator:", generatorName or "NONE",
-    "Multiplier:", generatorMultiplier,
-    "Rebirths:", PlayerDataService.GetRebirths(player)
 )
 
 local awardedXP = math.floor(
     wholeXP
         * rebirthMultiplier
         * generatorMultiplier
+        * (BoostService.XPMultiplier(player)) -- timed x4 XP boost (reward)
 )
 
 							if awardedXP > 0 then
@@ -1545,11 +1814,18 @@ if runState == "Waiting"
 
 	ballSpeeds[ball] = COURSE_START_SPEED
 
-	controller.VectorVelocity = Vector3.new(
-		input.X * LOBBY_SPEED,
-		0,
-		input.Y * LOBBY_SPEED
-	)
+	-- Client-owned lobby ball: the owning client drives the velocity
+	-- (BallController). Writing it here would fight the client.
+	if not (runState == "Waiting"
+		and ball:GetAttribute("ClientDriven") == true) then
+
+		controller.VectorVelocity = Vector3.new(
+			input.X * LOBBY_SPEED,
+			0,
+			input.Y * LOBBY_SPEED
+		)
+
+	end
 
 
 			--------------------------------------------------
@@ -1662,6 +1938,21 @@ if runState == "Waiting"
 		currentSpeed
 	)
 
+				-- The lane is flat, so the ball never needs to move UP. Rolling a
+				-- mesh ball at speed made it micro-hop ("dribble"); cancelling any
+				-- upward velocity keeps it on the floor. Falling is untouched.
+				local assemblyVelocity =
+					ball.AssemblyLinearVelocity
+
+				if assemblyVelocity.Y > 0 then
+					ball.AssemblyLinearVelocity =
+						Vector3.new(
+							assemblyVelocity.X,
+							0,
+							assemblyVelocity.Z
+						)
+				end
+
 			--------------------------------------------------
 			-- UNKNOWN STATE
 			--------------------------------------------------
@@ -1689,6 +1980,7 @@ Players.PlayerRemoving:Connect(
 		player
 	)
 
+		lastJumpTimes[player] = nil
 		playerInputs[player] =
 			nil
 
@@ -1713,6 +2005,7 @@ playerBalls.ChildRemoved:Connect(
 		ball
 	)
 
+		ballScaleState[ball] = nil
 		ballControllers[ball] =
 			nil
 

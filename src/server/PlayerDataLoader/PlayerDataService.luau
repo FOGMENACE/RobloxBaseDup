@@ -1040,6 +1040,28 @@ function PlayerDataService.RebirthPlayer(player)
 end
 
 --------------------------------------------------
+-- GRANT REBIRTH (reward use only)
+--
+-- Adds one rebirth WITHOUT the level requirement and WITHOUT
+-- resetting XP / Level. Only for server-side rewards such as the
+-- daily calendar; the normal path is still RebirthPlayer.
+--------------------------------------------------
+
+function PlayerDataService.GrantRebirth(player)
+    local data = loadedData[player]
+
+    if not data or shuttingDown or data.Rebirths >= MAX_REBIRTHS then
+        return false
+    end
+
+    data.Rebirths += 1
+    data.RebirthLevelRequirement = getRequiredRebirthLevel(data.Rebirths)
+    updatePlayerValues(player, data)
+
+    return true
+end
+
+--------------------------------------------------
 -- SAVE PLAYER
 --------------------------------------------------
 

@@ -49,6 +49,9 @@ Do not merely remove anchoring or constraints without understanding their purpos
 Refactor or replace defective controllers when necessary, ensuring that each responsibility has a clear owner.
 UI, Audio, and Lobby
 
+- Store game-ready texture files in `assets/textures/`.
+- Roblox must import/upload textures before they can be used as in-game assets.
+
 Improve the lobby, ball shop, progression UI, animations, and player feedback into a consistent visual experience.
 
 Reuse existing models and assets where appropriate.

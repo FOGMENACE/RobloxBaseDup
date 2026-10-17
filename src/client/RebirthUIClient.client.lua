@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RebirthBonuses = require(ReplicatedStorage:WaitForChild("RebirthBonuses"))
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -44,7 +45,7 @@ end
 -- CLEAN UP OLD UI
 --------------------------------------------------
 
-local oldUI = playerGui:FindFirstChild("RebirthBrainrotUI")
+local oldUI = playerGui:FindFirstChild("RebirthUI")
 
 if oldUI then
 	oldUI:Destroy()
@@ -97,7 +98,7 @@ end
 --------------------------------------------------
 
 local screen = make("ScreenGui", {
-	Name = "RebirthBrainrotUI",
+	Name = "RebirthUI",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -316,6 +317,23 @@ openButton.Activated:Connect(function()
 	panel.Visible = not panel.Visible
 end)
 
+-- The hub (HubUI) now owns the entry button. It fires this client-only
+-- BindableEvent to toggle the panel; the old floating button is hidden.
+openButton.Visible = false
+
+local oldToggle = playerGui:FindFirstChild("ToggleRebirthPanel")
+if oldToggle then
+	oldToggle:Destroy()
+end
+
+local toggleEvent = Instance.new("BindableEvent")
+toggleEvent.Name = "ToggleRebirthPanel"
+toggleEvent.Parent = playerGui
+
+toggleEvent.Event:Connect(function()
+	panel.Visible = not panel.Visible
+end)
+
 closeButton.Activated:Connect(function()
 	panel.Visible = false
 end)
@@ -343,14 +361,14 @@ local function refreshUI()
 	levelLabel.Text = "LEVEL " .. tostring(level)
 
 	requirementLabel.Text =
-		"REACH LEVEL " .. tostring(requirement)
+		"REACH LEVEL " .. tostring(requirement) .. "  -  " .. tostring(math.floor(math.clamp(progress, 0, 1) * 100)) .. "% DONE"
 
 	statsLabel.Text =
 		"GLOBAL LEVEL " .. tostring(globalLevel)
 		.. "  |  REBIRTHS " .. tostring(rebirths)
 
 	rewardLabel.Text =
-		"NEXT GOAL: +" .. tostring(15) .. " LEVELS"
+		"NEXT REBIRTH: OIL x" .. tostring(RebirthBonuses.OilMultiplier(rebirths + 1)) .. "  WINS x" .. tostring(RebirthBonuses.WinsMultiplier(rebirths + 1)) .. "  XP x" .. tostring(RebirthBonuses.XPMultiplier(rebirths + 1))
 
 	progress = math.clamp(progress, 0, 1)
 
@@ -489,4 +507,4 @@ pulseTween:Play()
 
 refreshUI()
 
-print("[RebirthUIClient] Brainrot rebirth UI loaded.")
+print("[RebirthUIClient] Rebirth UI loaded.")

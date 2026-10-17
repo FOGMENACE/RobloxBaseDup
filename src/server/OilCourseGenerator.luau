@@ -80,7 +80,7 @@ local course = workspace:WaitForChild("Course")
 --------------------------------------------------
 
 local NUMBER_OF_ROWS = 12
-local ROW_SPACING = 27
+local ROW_SPACING = 39
 local PLATFORM_SEPARATION = 5
 
 local START_POSITION = Vector3.new(

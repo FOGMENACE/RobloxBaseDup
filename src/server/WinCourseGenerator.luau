@@ -78,7 +78,7 @@ local course =
 
 local START_POSITION =
 	Vector3.new(
-		-64.726, 63.444, 135.584
+		-64.726, 63.444, 300.244
 	)
 
 

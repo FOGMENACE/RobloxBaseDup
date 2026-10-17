@@ -150,7 +150,7 @@ local lobbyPitch =
 --------------------------------------------------
 
 local MIN_LOBBY_PITCH =
-	math.rad(-80)
+	math.rad(-15)
 
 local MAX_LOBBY_PITCH =
 	math.rad(80)
@@ -528,6 +528,8 @@ UserInputService.InputChanged:Connect(
 		-- Mouse LEFT  = orbit LEFT
 		--------------------------------------------------
 
+		-- Drag right turns the view right: the camera orbits toward +X when
+		-- facing +Z, i.e. yaw DEcreases (Ry(-a)*(0,0,-d) = (+sin a, 0, -cos a)).
 		lobbyYaw -=
 			delta.X * 0.005
 
@@ -570,52 +572,15 @@ local function getLobbyOrbitPosition(
 	ballPosition,
 	distance
 )
+	-- Course direction = +Z, so "behind" is -Z. Yaw is applied first,
+	-- then pitch about the yawed X axis. (Previously pitch was applied
+	-- about the WORLD X axis after yaw, which tilted the orbit the wrong
+	-- way whenever the camera had been turned.)
+	local rotation =
+		CFrame.Angles(0, lobbyYaw, 0)
+		* CFrame.Angles(lobbyPitch, 0, 0)
 
-	--------------------------------------------------
-	-- START BEHIND BALL
-	--
-	-- Course direction = +Z
-	-- Behind = -Z
-	--------------------------------------------------
-
-	local direction =
-		Vector3.new(
-			0,
-			0,
-			-distance
-		)
-
-
-	--------------------------------------------------
-	-- YAW
-	--------------------------------------------------
-
-	direction =
-		CFrame.Angles(
-			0,
-			lobbyYaw,
-			0
-		)
-		*
-		direction
-
-
-	--------------------------------------------------
-	-- PITCH
-	--------------------------------------------------
-
-	direction =
-		CFrame.Angles(
-			lobbyPitch,
-			0,
-			0
-		)
-		*
-		direction
-
-
-	return ballPosition + direction
-
+	return ballPosition + rotation * Vector3.new(0, 0, -distance)
 end
 
 
@@ -852,8 +817,23 @@ local function updateCourseCamera(
 	-- FIXED COURSE FOV
 	--------------------------------------------------
 
+	-- Speed feel: the field of view widens a little as the ball speeds up
+	-- (read-only use of the replicated velocity), eased so it never snaps.
+	local speedPush =
+		math.clamp(
+			(ball.AssemblyLinearVelocity.Magnitude - 25) / 120,
+			0,
+			1
+		)
+		* 14
+
+	local targetFov =
+		COURSE_FOV + speedPush
+
 	camera.FieldOfView =
-		COURSE_FOV
+		camera.FieldOfView
+		+ (targetFov - camera.FieldOfView)
+		* (1 - math.exp(-6 * deltaTime))
 
 
 	--------------------------------------------------
@@ -950,6 +930,113 @@ local function updateCamera(
 
 end
 
+
+--------------------------------------------------
+-- TOUCH ROTATION + ZOOM BUTTON (mobile and desktop)
+--
+-- Touch: drag on the right half of the screen to orbit.
+-- (Left half belongs to the movement thumbstick; touches
+-- consumed by GUI are ignored via gameProcessed.)
+-- Zoom button: cycles the same 3 presets as the mouse wheel.
+--------------------------------------------------
+
+local TOUCH_SENSITIVITY = 0.006
+local activeTouch = nil
+
+local function applyOrbitDelta(dx, dy)
+	-- Drag right turns the view right; drag down raises the camera, same as the mouse.
+	lobbyYaw -= dx
+	lobbyPitch = math.clamp(
+		lobbyPitch + dy,
+		MIN_LOBBY_PITCH,
+		MAX_LOBBY_PITCH
+	)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed
+		or input.UserInputType ~= Enum.UserInputType.Touch
+		or activeTouch then
+		return
+	end
+
+	local viewport = camera.ViewportSize
+	if input.Position.X < viewport.X * 0.4 then
+		return
+	end
+
+	local ball = getBall()
+	if ball and getCameraMode(ball) == "Lobby" then
+		activeTouch = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input ~= activeTouch then
+		return
+	end
+
+	local ball = getBall()
+	if not ball or getCameraMode(ball) ~= "Lobby" then
+		activeTouch = nil
+		return
+	end
+
+	applyOrbitDelta(
+		input.Delta.X * TOUCH_SENSITIVITY,
+		input.Delta.Y * TOUCH_SENSITIVITY
+	)
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input == activeTouch then
+		activeTouch = nil
+	end
+end)
+
+local function cycleLobbyZoom()
+	-- 1 close -> 2 normal -> 3 far -> back to 1
+	currentLobbyZoom = currentLobbyZoom % #LOBBY_ZOOM_LEVELS + 1
+end
+
+local zoomGui = Instance.new("ScreenGui")
+zoomGui.Name = "BallCameraControls"
+zoomGui.ResetOnSpawn = false
+zoomGui.DisplayOrder = 5
+zoomGui.Parent = player:WaitForChild("PlayerGui")
+
+local zoomButton = Instance.new("TextButton")
+zoomButton.Name = "ZoomButton"
+zoomButton.AnchorPoint = Vector2.new(1, 1)
+zoomButton.Position = UDim2.new(1, -16, 1, -150)
+zoomButton.Size = UDim2.fromOffset(52, 52)
+zoomButton.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+zoomButton.BackgroundTransparency = 0.25
+zoomButton.TextColor3 = Color3.new(1, 1, 1)
+zoomButton.Font = Enum.Font.GothamBold
+zoomButton.TextSize = 14
+zoomButton.AutoButtonColor = true
+zoomButton.Parent = zoomGui
+
+local zoomCorner = Instance.new("UICorner")
+zoomCorner.CornerRadius = UDim.new(1, 0)
+zoomCorner.Parent = zoomButton
+
+local ZOOM_LABELS = { "NEAR", "MID", "FAR" }
+
+local function refreshZoomButton()
+	zoomButton.Text = ZOOM_LABELS[currentLobbyZoom] or "ZOOM"
+
+	local ball = getBall()
+	zoomButton.Visible = ball ~= nil and getCameraMode(ball) == "Lobby"
+end
+
+zoomButton.Activated:Connect(function()
+	cycleLobbyZoom()
+	refreshZoomButton()
+end)
+
+RunService.RenderStepped:Connect(refreshZoomButton)
 
 --------------------------------------------------
 -- INITIAL CAMERA

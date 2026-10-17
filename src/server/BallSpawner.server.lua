@@ -438,6 +438,33 @@ local function getBallTemplate(
 
 
 	--------------------------------------------------
+	-- BALL MODEL (ReplicatedStorage.BallModels/<BallId>)
+	--
+	-- The real mesh, colour and textures of every ball live here (it
+	-- is also what the shop previews). Without this the spawner fell
+	-- back to the plain universal Part, so every ball, StraightBall
+	-- included, spawned as an unintended grey sphere.
+	--------------------------------------------------
+
+	local ballModels =
+		game:GetService("ReplicatedStorage"):FindFirstChild(
+			"BallModels"
+		)
+
+	local modelTemplate =
+		ballModels
+		and ballModels:FindFirstChild(
+			ballId
+		)
+
+	if modelTemplate
+		and modelTemplate:IsA(
+			"BasePart"
+		) then
+		return modelTemplate
+	end
+
+	--------------------------------------------------
 	-- UNIVERSAL TEMPLATE
 	--------------------------------------------------
 
@@ -886,7 +913,8 @@ end
 
 local function createPlayerBall(
 	player,
-	character
+	character,
+	options
 )
 
 	--------------------------------------------------
@@ -918,6 +946,55 @@ local function createPlayerBall(
 
 
 	--------------------------------------------------
+	-- KEEP POSITION ON EQUIP
+	--
+	-- Equipping a ball in the lobby swaps the ball where it is instead
+	-- of teleporting the player back to BallSpawn. Runs and the
+	-- WinCourse keep the old behaviour.
+	--------------------------------------------------
+
+	local keepCFrame = nil
+
+	do
+		local oldBall =
+			playerBalls:FindFirstChild(
+				getPlayerBallName(
+					player
+				)
+			)
+
+		local currentRunState =
+			player:GetAttribute(
+				"RunState"
+			)
+
+		if oldBall
+			and oldBall:IsA(
+				"BasePart"
+			)
+			and oldBall:GetAttribute(
+				"WinCourseActive"
+			) ~= true
+			and (
+				currentRunState == nil
+				or currentRunState == ""
+				or currentRunState == "Waiting"
+			) then
+
+			-- Slight lift: the lobby ball is smaller than the new one.
+			keepCFrame =
+				oldBall.CFrame
+				+ Vector3.new(0, 0.6, 0)
+
+		end
+	end
+
+	-- A mid-run swap passes the exact CFrame to continue from.
+	if options and typeof(options.CFrame) == "CFrame" then
+		keepCFrame = options.CFrame
+	end
+
+	--------------------------------------------------
 	-- REMOVE OLD BALL
 	--------------------------------------------------
 
@@ -930,8 +1007,16 @@ local function createPlayerBall(
 	-- GET EQUIPPED BALL
 	--------------------------------------------------
 
+	-- options.BallId: a mid-run swap (BallTierGates) uses a specific ball
+	-- instead of the equipped one. Validated by BallDefinitions below.
 	local ballId =
-		getEquippedBallId(
+		(
+			options
+			and typeof(options.BallId) == "string"
+			and getBallDefinition(options.BallId)
+			and options.BallId
+		)
+		or getEquippedBallId(
 			player
 		)
 
@@ -1100,7 +1185,8 @@ local function createPlayerBall(
 	--------------------------------------------------
 
 	ball.CFrame =
-		getBallSpawnCFrame(
+		keepCFrame
+		or getBallSpawnCFrame(
 			template
 		)
 
@@ -1112,8 +1198,31 @@ local function createPlayerBall(
 	-- controller sees a fully initialized ball.
 	--------------------------------------------------
 
+	-- Unique look for premium balls (cat, spikes, dragon, ...).
+	require(
+		game:GetService("ReplicatedStorage"):WaitForChild(
+			"BallAccessories"
+		)
+	).Apply(
+		ball,
+		ballId
+	)
+
+	-- Mid-run swap: hand the course speed to BallPhysicsController.
+	if options and typeof(options.CarrySpeed) == "number" then
+		ball:SetAttribute(
+			"CarrySpeed",
+			options.CarrySpeed
+		)
+	end
+
 	ball.Parent =
 		playerBalls
+
+	if options and typeof(options.Velocity) == "Vector3" then
+		ball.AssemblyLinearVelocity =
+			options.Velocity
+	end
 
 
 	--------------------------------------------------
@@ -1186,6 +1295,74 @@ local function createPlayerBall(
 	return ball
 
 end
+
+
+--------------------------------------------------
+-- MID-RUN BALL SWAP
+--
+-- BallTierGates fires this (server-only BindableEvent; clients cannot
+-- reach it) to replace a player's ball with another ball model while
+-- they keep rolling: same position, same velocity, same course speed.
+--------------------------------------------------
+
+local swapRunBall =
+	ServerScriptService:FindFirstChild(
+		"SwapRunBall"
+	)
+
+if not swapRunBall then
+
+	swapRunBall =
+		Instance.new(
+			"BindableEvent"
+		)
+
+	swapRunBall.Name =
+		"SwapRunBall"
+
+	swapRunBall.Parent =
+		ServerScriptService
+
+end
+
+swapRunBall.Event:Connect(
+	function(
+		player,
+		ballId,
+		cframe,
+		velocity,
+		carrySpeed
+	)
+
+		if not player
+			or not player.Parent then
+
+			return
+
+		end
+
+		local character =
+			player.Character
+
+		if not character then
+
+			return
+
+		end
+
+		createPlayerBall(
+			player,
+			character,
+			{
+				BallId = ballId,
+				CFrame = cframe,
+				Velocity = velocity,
+				CarrySpeed = carrySpeed,
+			}
+		)
+
+	end
+)
 
 
 --------------------------------------------------

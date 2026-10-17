@@ -72,6 +72,71 @@ local MarketplaceService =
 local ServerScriptService =
 	game:GetService("ServerScriptService")
 
+
+--------------------------------------------------
+-- DURABLE RECEIPT RECORD
+--
+-- Every granted Developer Product PurchaseId is stored in its own
+-- DataStore ("ProcessedReceipts_v1"), so a receipt is never granted
+-- twice and is never consumed before the grant has been saved.
+--------------------------------------------------
+
+local DataStoreService = game:GetService("DataStoreService")
+local receiptStore = DataStoreService:GetDataStore("ProcessedReceipts_v1")
+local MAX_RECORDED_RECEIPTS = 100
+
+-- PurchaseIds granted in memory but not yet saved + recorded.
+local pendingGrants = {}
+
+-- true / false = recorded or not; nil = DataStore failure.
+local function isReceiptRecorded(player, purchaseId)
+	local ok, list = pcall(function()
+		return receiptStore:GetAsync(tostring(player.UserId))
+	end)
+
+	if not ok then
+		warn("[BallService] Receipt lookup failed:", player.Name, list)
+		return nil
+	end
+
+	if typeof(list) == "table" then
+		for _, id in ipairs(list) do
+			if id == purchaseId then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function recordReceipt(player, purchaseId)
+	local ok, err = pcall(function()
+		receiptStore:UpdateAsync(tostring(player.UserId), function(list)
+			list = typeof(list) == "table" and list or {}
+
+			for _, id in ipairs(list) do
+				if id == purchaseId then
+					return nil -- already there, nothing to change
+				end
+			end
+
+			table.insert(list, purchaseId)
+			while #list > MAX_RECORDED_RECEIPTS do
+				table.remove(list, 1)
+			end
+
+			return list
+		end)
+	end)
+
+	if not ok then
+		warn("[BallService] Receipt record failed:", player.Name, err)
+	end
+
+	return ok
+end
+
 local ServerStorage =
 	game:GetService("ServerStorage")
 
@@ -1708,85 +1773,119 @@ local function registerBallProducts()
 
 						function()
 
-							--------------------------------------------------
-							-- ALREADY OWNED
-							--
-							-- This is important for receipt retries.
-							--
-							-- If the ball was already granted, the receipt
-							-- can safely be completed.
-							--------------------------------------------------
+							-- Receipt flow (durable, idempotent):
+							--   1. already recorded?  -> consume (it was granted AND saved)
+							--   2. grant the ball, or compensate if already owned
+							--   3. force a confirmed save of the player's data
+							--   4. record the PurchaseId, then consume the receipt
+							-- Any failure returns false, so Roblox retries the receipt;
+							-- pendingGrants stops a retry from granting/compensating twice.
 
-							if ownsBall(
-								player,
-								registeredBallId
-							) then
+							local recorded =
+								isReceiptRecorded(
+									player,
+									purchaseId
+								)
 
-								return true
-
+							if recorded == nil then
+								-- DataStore unavailable: try again later.
+								return false
 							end
 
-
-							--------------------------------------------------
-							-- DATA MUST BE LOADED
-							--------------------------------------------------
+							if recorded then
+								return true
+							end
 
 							if not getPlayerData(
 								player
 							) then
-
 								return false
-
 							end
 
+							if not pendingGrants[purchaseId] then
 
-							--------------------------------------------------
-							-- GRANT BALL
-							--------------------------------------------------
-
-							local granted =
-								PlayerDataService.AddOwnedBall(
+								if ownsBall(
 									player,
 									registeredBallId
-								)
+								) then
+									-- Owned through another route (e.g. bought with
+									-- Wins while the prompt was open). Do not eat
+									-- the Robux: credit the ball's Wins price.
+									local cost = tonumber(
+										currentDefinition.WinsCost
+									)
 
+									if cost and cost > 0 then
+										PlayerDataService.AddWins(
+											player,
+											cost
+										)
+									end
 
-							if not granted then
+									warn(
+										"[BallService] Robux receipt for an already owned ball; compensated with Wins:",
+										player.Name,
+										registeredBallId,
+										cost
+									)
 
+								else
+
+									local granted =
+										PlayerDataService.AddOwnedBall(
+											player,
+											registeredBallId
+										)
+
+									if not granted then
+										warn(
+											"[BallService] Failed to grant Robux ball:",
+											player.Name,
+											registeredBallId
+										)
+										return false
+									end
+
+									local equipped,
+										equipReason =
+										setEquippedBall(
+											player,
+											registeredBallId
+										)
+
+									if not equipped then
+										warn(
+											"[BallService] Robux ball granted but auto-equip failed:",
+											player.Name,
+											registeredBallId,
+											equipReason
+										)
+									end
+
+								end
+
+								pendingGrants[purchaseId] = true
+
+							end
+
+							-- Persist BEFORE the receipt is consumed.
+							if PlayerDataService.SavePlayer(player) ~= true then
 								warn(
-									"[BallService] Failed to grant Robux ball:",
+									"[BallService] Save failed; receipt stays pending:",
 									player.Name,
-									registeredBallId
+									purchaseId
 								)
-
 								return false
-
 							end
 
-
-							--------------------------------------------------
-							-- AUTO EQUIP
-							--------------------------------------------------
-
-							local equipped,
-								equipReason =
-								setEquippedBall(
-									player,
-									registeredBallId
-								)
-
-
-							if not equipped then
-
-								warn(
-									"[BallService] Robux ball granted but auto-equip failed:",
-									player.Name,
-									registeredBallId,
-									equipReason
-								)
-
+							if not recordReceipt(
+								player,
+								purchaseId
+							) then
+								return false
 							end
 
+							pendingGrants[purchaseId] = nil
 
 							return true
 

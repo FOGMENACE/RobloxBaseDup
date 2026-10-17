@@ -133,6 +133,33 @@ end
 -- UPDATE KEY STATE
 --------------------------------------------------
 
+--------------------------------------------------
+-- ROBLOX CONTROL MODULE (thumbstick / gamepad)
+--------------------------------------------------
+
+local cachedControls = nil
+
+local function getControls()
+	if cachedControls then
+		return cachedControls
+	end
+
+	local playerScripts = player:FindFirstChild("PlayerScripts")
+	local module = playerScripts
+		and playerScripts:FindFirstChild("PlayerModule")
+	if not module then
+		return nil
+	end
+
+	local ok, result = pcall(function()
+		return require(module):GetControls()
+	end)
+	if ok then
+		cachedControls = result
+	end
+	return cachedControls
+end
+
 local function updateKeys()
 
 	local x = 0
@@ -202,6 +229,22 @@ local function updateKeys()
 
 	end
 
+
+	-- Touch thumbstick / gamepad stick: read Roblox's own control module
+	-- (analog, already respects the device) instead of a second input path.
+	-- MoveVector: x = right, z = -forward.
+	if x == 0 and z == 0 then
+		local controls = getControls()
+		if controls then
+			local ok, moveVector = pcall(function()
+				return controls:GetMoveVector()
+			end)
+			if ok and typeof(moveVector) == "Vector3" then
+				x = moveVector.X
+				z = -moveVector.Z
+			end
+		end
+	end
 
 	inputX = x
 	inputZ = z
@@ -436,6 +479,10 @@ end
 -- SEND MOVEMENT
 --------------------------------------------------
 
+local KEEPALIVE_INTERVAL = 0.1
+local lastSentMovement = nil
+local lastSentTime = 0
+
 local function sendMovement()
 
 	local movement =
@@ -447,13 +494,22 @@ local function sendMovement()
 
 	end
 
-	print(
-		"[BallController]",
-		"Sending movement:",
-		movement,
-		"RunState:",
-		getRunState()
-	)
+	-- Only send on change, plus a keep-alive while input is held
+	-- (server INPUT_TIMEOUT is 0.20s). Idle zero input is not resent;
+	-- resending it at 60 Hz exhausted the remote queue.
+	local now = os.clock()
+	local changed = lastSentMovement == nil
+		or movement ~= lastSentMovement
+
+	if not changed then
+		if movement.Magnitude == 0
+			or now - lastSentTime < KEEPALIVE_INTERVAL then
+			return
+		end
+	end
+
+	lastSentMovement = movement
+	lastSentTime = now
 
 	ballMovement:FireServer(
 		movement
@@ -681,6 +737,151 @@ UserInputService.WindowFocusReleased:Connect(
 	end
 )
 
+
+--------------------------------------------------
+-- CLIENT-OWNED LOBBY BALL
+--
+-- In the lobby (RunState Waiting) the server hands this player
+-- network ownership of the ball and sets the ball attribute
+-- ClientDriven = true. While that is true, this script drives the
+-- ball's existing LinearVelocity locally so rolling is instant.
+-- The server still validates (XP distance is capped to LobbySpeed)
+-- and takes ownership back for every other state.
+--------------------------------------------------
+
+local LOCAL_JUMP_VELOCITY = 40
+local LOCAL_JUMP_COOLDOWN = 0.4
+local lastLocalJump = 0
+
+local function getOwnBall()
+	local balls = workspace:FindFirstChild("PlayerBalls")
+	return balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+end
+
+local function isClientDriven(ball)
+	return ball ~= nil
+		and ball:GetAttribute("ClientDriven") == true
+		and getRunState() == "Waiting"
+		and ball:GetAttribute("WinCourseActive") ~= true
+end
+
+RunService.RenderStepped:Connect(function()
+	local ball = getOwnBall()
+	if not isClientDriven(ball) then
+		return
+	end
+
+	local controller = ball:FindFirstChild("BallLinearVelocity")
+	if not controller or not controller:IsA("LinearVelocity") then
+		return
+	end
+
+	local speed = ball:GetAttribute("LobbySpeed")
+	if typeof(speed) ~= "number" then
+		return
+	end
+
+	updateKeys()
+	local movement = getLobbyMovement()
+	controller.VectorVelocity = Vector3.new(
+		movement.X * speed,
+		0,
+		movement.Y * speed
+	)
+end)
+
+local function localJump(ball)
+	local now = os.clock()
+	if now - lastLocalJump < LOCAL_JUMP_COOLDOWN then
+		return
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {
+		workspace:FindFirstChild("PlayerBalls"),
+		player.Character,
+	}
+
+	local radius = ball.Size.Y * 0.5
+	local hit = workspace:Raycast(
+		ball.Position,
+		Vector3.new(0, -(radius + 0.75), 0),
+		params
+	)
+	if not hit then
+		return
+	end
+
+	lastLocalJump = now
+	local v = ball.AssemblyLinearVelocity
+	ball.AssemblyLinearVelocity = Vector3.new(v.X, LOCAL_JUMP_VELOCITY, v.Z)
+end
+
+--------------------------------------------------
+-- JUMP (lobby)
+--
+-- Space / gamepad A / mobile button all raise
+-- UserInputService.JumpRequest. The client only
+-- reports the request; the server validates lobby
+-- state, ground contact and cooldown.
+--------------------------------------------------
+
+local lastJumpSent = 0
+
+local function requestJump()
+	local runState = getRunState()
+	if runState ~= "Waiting" then
+		return
+	end
+
+	local now = os.clock()
+	if now - lastJumpSent < 0.25 then
+		return
+	end
+	lastJumpSent = now
+	local ownBall = getOwnBall()
+	if isClientDriven(ownBall) then
+		localJump(ownBall)
+		return
+	end
+
+
+	ballMovement:FireServer(getLobbyMovement(), true)
+end
+
+UserInputService.JumpRequest:Connect(requestJump)
+
+if UserInputService.TouchEnabled then
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "BallJumpControls"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 5
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	local button = Instance.new("TextButton")
+	button.Name = "JumpButton"
+	button.AnchorPoint = Vector2.new(1, 1)
+	button.Position = UDim2.new(1, -16, 1, -80)
+	button.Size = UDim2.fromOffset(64, 64)
+	button.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+	button.BackgroundTransparency = 0.25
+	button.Text = "JUMP"
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 14
+	button.Parent = gui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = button
+
+	button.Activated:Connect(requestJump)
+
+	RunService.RenderStepped:Connect(function()
+		button.Visible = getRunState() == "Waiting"
+	end)
+end
 
 --------------------------------------------------
 -- STARTUP

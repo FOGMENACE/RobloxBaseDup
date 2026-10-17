@@ -183,14 +183,14 @@ local MAX_OIL_SPEED_BOOST = 100
 -- etc.
 --------------------------------------------------
 
-local WIN_COURSE_ACCELERATION = 8
+local WIN_COURSE_ACCELERATION = 14
 
 
 --------------------------------------------------
 -- MAXIMUM SPEED
 --------------------------------------------------
 
-local MAX_WIN_COURSE_SPEED = 140
+local MAX_WIN_COURSE_SPEED = 240
 
 
 --------------------------------------------------
@@ -1173,6 +1173,50 @@ end
 -- RETURN BALL TO LOBBY
 --------------------------------------------------
 
+--------------------------------------------------
+-- SAFE RETURN (no WinCourse run existed)
+--
+-- Used when a player reaches the FinishWall with no oil: there is no
+-- travel budget, so no WinCourse starts. Without this the player stayed
+-- in RunState "Finishing" at the FinishWall forever.
+--------------------------------------------------
+
+local function safeReturnToLobby(player, ball)
+	if not ball or not ball.Parent then
+		player:SetAttribute("RunState", "Waiting")
+		return
+	end
+
+	local spawnCFrame = getBallSpawnCFrame()
+	if spawnCFrame then
+		local offset = getBallVerticalOffset(ball)
+
+		ball.Anchored = true
+		ball.AssemblyLinearVelocity = Vector3.zero
+		ball.AssemblyAngularVelocity = Vector3.zero
+		ball.CFrame = spawnCFrame * CFrame.new(0, offset, 0)
+		ball.Anchored = false
+
+		RunService.Heartbeat:Wait()
+
+		ball.AssemblyLinearVelocity = Vector3.zero
+		ball.AssemblyAngularVelocity = Vector3.zero
+	else
+		warn("[WinCourseProgressService] safeReturnToLobby: invalid BallSpawn.")
+	end
+
+	ball:SetAttribute("WinCourseActive", false)
+
+	pcall(function()
+		ball:SetNetworkOwner(nil)
+	end)
+
+	-- Last, so the lobby controller only resumes once the ball is placed.
+	player:SetAttribute("RunState", "Waiting")
+
+	winCourseRemote:FireClient(player, "ReturnedToLobby")
+end
+
 local function returnBallToLobby(player, run)
 
 	if not run or run.Returned then
@@ -1387,6 +1431,35 @@ local function awardWinnings(
 			)
 		)
 
+	-- REBIRTH WINS MULTIPLIER: +x1 per rebirth from the 3rd on. Applied
+	-- here, on the server, to what is actually credited.
+	local okBonus, winsMultiplier = pcall(function()
+		local PlayerDataServiceModule = require(
+			ServerScriptService
+				:WaitForChild("PlayerDataLoader")
+				:WaitForChild("PlayerDataService")
+		)
+
+		return require(
+			game:GetService("ReplicatedStorage"):WaitForChild("RebirthBonuses")
+		).WinsMultiplier(PlayerDataServiceModule.GetRebirths(player))
+	end)
+
+	if okBonus and typeof(winsMultiplier) == "number" and winsMultiplier > 1 then
+		amount = math.floor(amount * winsMultiplier)
+	end
+
+	-- Timed x2 WINS boost (bought or rewarded), see BoostService.
+	local okBoost, boostMultiplier = pcall(function()
+		return require(
+			ServerScriptService:WaitForChild("BoostService")
+		).WinsMultiplier(player)
+	end)
+
+	if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
+		amount = math.floor(amount * boostMultiplier)
+	end
+
 	player:SetAttribute(
 		"LastWinCourseWinnings",
 		amount
@@ -1403,6 +1476,40 @@ local function awardWinnings(
 
 	end
 
+
+	--------------------------------------------------
+	-- AUTHORITATIVE CREDIT (PlayerDataService)
+	--
+	-- Wins live in PlayerDataService data. It syncs the Wins
+	-- attribute and leaderstats and saves them. Writing only to
+	-- leaderstats (the old path) never updated the attribute the
+	-- HUD reads and was overwritten on the next data sync.
+	--------------------------------------------------
+
+	local dataOk, dataService = pcall(function()
+		return require(
+			ServerScriptService
+				:WaitForChild("PlayerDataLoader")
+				:WaitForChild("PlayerDataService")
+		)
+	end)
+
+	if dataOk
+		and typeof(dataService) == "table"
+		and dataService.AddWins
+		and dataService.AddWins(player, amount) then
+
+		debugPrint(
+			"WINNINGS AWARDED:",
+			player.Name,
+			"| Amount:",
+			amount,
+			"| New Wins:",
+			dataService.GetWins(player)
+		)
+
+		return true
+	end
 
 	--------------------------------------------------
 	-- LEADERSTATS
@@ -1658,6 +1765,10 @@ local function finishRun(
 	end
 
 	run.Finished = true
+
+	player:SetAttribute("WinTravelBudget", nil)
+	player:SetAttribute("WinDistanceTravelled", nil)
+	player:SetAttribute("WinSpeed", nil)
 	run.Rolling = false
 
 
@@ -1889,6 +2000,24 @@ run.LastPosition = currentPosition
 
 	run.CurrentSpeed =
 		currentSpeed
+
+	--------------------------------------------------
+	-- PUBLISH RUN METER (read-only for clients)
+	--
+	-- WinTravelBudget / WinDistanceTravelled / WinSpeed drive the
+	-- client oil meter. Throttled to 10 Hz. Cleared in finishRun.
+	--------------------------------------------------
+	local publishNow = os.clock()
+	if not run.LastMeterPublish
+		or publishNow - run.LastMeterPublish >= 0.1 then
+		run.LastMeterPublish = publishNow
+		player:SetAttribute("WinTravelBudget", math.floor(run.TravelBudget))
+		player:SetAttribute(
+			"WinDistanceTravelled",
+			math.floor(math.min(run.DistanceTravelled, run.TravelBudget))
+		)
+		player:SetAttribute("WinSpeed", math.floor(currentSpeed))
+	end
 
 
 	--------------------------------------------------
@@ -2451,6 +2580,16 @@ local function startTracking(
 			"WinCourseActive",
 			false
 		)
+
+		-- No oil, no WinCourse: send the player back to the lobby
+		-- instead of leaving them stuck at the FinishWall.
+		warn(
+			"[WinCourseProgressService]",
+			player.Name,
+			"reached the FinishWall with no oil; returning to lobby."
+		)
+
+		safeReturnToLobby(player, ball)
 
 		return
 

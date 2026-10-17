@@ -975,6 +975,36 @@ local function applyOilChange(
     end
 
     --------------------------------------------------
+    -- REBIRTH OIL MULTIPLIER (gains only)
+    --
+    -- Each rebirth adds +x1 to oil gains (rebirth 1 = x2, 2 = x3 ...).
+    -- Losses are never multiplied. Computed here from the player's real
+    -- rebirth count.
+    --------------------------------------------------
+    if change > 0 then
+        local okBonus, oilMultiplier = pcall(function()
+            return require(
+                game:GetService("ReplicatedStorage"):WaitForChild("RebirthBonuses")
+            ).OilMultiplier(PlayerDataService.GetRebirths(player))
+        end)
+
+        if okBonus and typeof(oilMultiplier) == "number" and oilMultiplier > 1 then
+            change = math.floor(change * oilMultiplier)
+        end
+
+        -- Timed x2 OIL boost (bought or rewarded), see BoostService.
+        local okBoost, boostMultiplier = pcall(function()
+            return require(
+                game:GetService("ServerScriptService"):WaitForChild("BoostService")
+            ).OilMultiplier(player)
+        end)
+
+        if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
+            change = math.floor(change * boostMultiplier)
+        end
+    end
+
+    --------------------------------------------------
     -- GET CURRENT RUN OIL
     --------------------------------------------------
 

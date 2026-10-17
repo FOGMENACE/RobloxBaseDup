@@ -1,19 +1,26 @@
 --------------------------------------------------
 -- XP GENERATOR CONTROLLER
 --
--- LOCATION:
--- ServerScriptService
+-- CLIENT ONLY, display only. Each generator pad gets:
+--   * a slim label (multiplier + what it needs) that lives in the WORLD,
+--     so neighbouring labels can never overlap at any distance
+--   * a floating oil icon above it: bigger and more colourful for higher
+--     multipliers (x1 smallest ... x1000 largest), with sparkles and a
+--     colour-cycling glow on the two admin generators
+-- The GenX6 label also shows the limited-time claim state (waiting /
+-- ready / active / back tomorrow) published by the server.
 --
--- PURPOSE:
--- Creates clean floating generator labels in code.
--- Does not award XP or process purchases.
+-- The server (BallPhysicsController) decides what a generator pays;
+-- nothing here awards XP.
 --------------------------------------------------
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
---------------------------------------------------
--- REFERENCES
---------------------------------------------------
+local player = Players.LocalPlayer
+local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
 
 local generatorsFolder = Workspace:WaitForChild("XPGenerators")
 
@@ -22,73 +29,230 @@ assert(
 	"[XPGeneratorController] XPGenerators must be a Model."
 )
 
---------------------------------------------------
--- UI SETTINGS
---------------------------------------------------
+local INK = Color3.fromRGB(24, 22, 34)
+local CREAM = Color3.fromRGB(255, 247, 232)
+local FONT = Enum.Font.FredokaOne
+
+-- Display only. The server (BallPhysicsController) is the authority.
+local DISPLAY_REBIRTH_REQUIREMENT = {
+	GenX2 = 2,
+	GenX4 = 4,
+	GenX8 = 8,
+	GenX10 = 10,
+}
 
 local GUI_NAME = "GeneratorFloatingUI"
+local ICON_NAME = "GeneratorIcon"
 
-local GUI_WIDTH = 230
-local GUI_HEIGHT = 72
-
-local MAX_DISTANCE = 120
+-- World sizes, in studs
+local LABEL_WIDTH = 9.0
+local LABEL_HEIGHT = 2.7
+local LABEL_LIFT = 4.6 -- label centre above the pad's top surface
 
 --------------------------------------------------
 -- GENERATOR CONFIGURATION
 --------------------------------------------------
 
 local generatorInfo = {
-	GenX1 = {
-		Top = "NO REBIRTH",
-		Bottom = "X1",
-		Color = Color3.fromRGB(90, 255, 155),
-	},
-
-	GenX2 = {
-		Top = "REBIRTH 2 REQUIRED",
-		Bottom = "X2",
-		Color = Color3.fromRGB(90, 210, 255),
-	},
-
-	GenX4 = {
-		Top = "REBIRTH 4 REQUIRED",
-		Bottom = "X4",
-		Color = Color3.fromRGB(155, 115, 255),
-	},
-
-	GenX6 = {
-		Top = "LIMITED-TIME GIFT",
-		Bottom = "X6",
-		Color = Color3.fromRGB(255, 205, 75),
-	},
-
-	GenX8 = {
-		Top = "REBIRTH 8 REQUIRED",
-		Bottom = "X8",
-		Color = Color3.fromRGB(255, 125, 190),
-	},
-
-	GenX10 = {
-		Top = "REBIRTH 10 REQUIRED",
-		Bottom = "X10",
-		Color = Color3.fromRGB(255, 100, 100),
-	},
-
-	["GenX100 Admin XP"] = {
-		Top = "ADMIN XP • ROBUX",
-		Bottom = "100X XP",
-		Color = Color3.fromRGB(255, 190, 65),
-	},
-
-	["GenX1000 Admin XP"] = {
-		Top = "ADMIN XP • ROBUX",
-		Bottom = "1000X XP",
-		Color = Color3.fromRGB(255, 90, 90),
-	},
+	GenX1 = { Top = "NO REBIRTH", Bottom = "X1", Color = Color3.fromRGB(90, 255, 155) },
+	GenX2 = { Top = "REBIRTH 2 REQUIRED", Bottom = "X2", Color = Color3.fromRGB(90, 210, 255) },
+	GenX4 = { Top = "REBIRTH 4 REQUIRED", Bottom = "X4", Color = Color3.fromRGB(155, 115, 255) },
+	GenX6 = { Top = "LIMITED-TIME GIFT", Bottom = "X6", Color = Color3.fromRGB(255, 205, 75) },
+	GenX8 = { Top = "REBIRTH 8 REQUIRED", Bottom = "X8", Color = Color3.fromRGB(255, 125, 190) },
+	GenX10 = { Top = "REBIRTH 10 REQUIRED", Bottom = "X10", Color = Color3.fromRGB(255, 100, 100) },
+	["GenX100 Admin XP"] = { Top = "ADMIN PASS", Bottom = "X100", Color = Color3.fromRGB(255, 190, 65) },
+	["GenX1000 Admin XP"] = { Top = "ADMIN PASS", Bottom = "X1000", Color = Color3.fromRGB(255, 90, 90) },
 }
 
+local ADMIN_NAMES = {
+	["GenX100 Admin XP"] = true,
+	["GenX1000 Admin XP"] = true,
+}
+
+-- Which uploaded oil image (and tint) each tier uses once UiAssets has ids.
+local ICON_STYLE = {
+	GenX1 = { Variant = "Green", Tint = Color3.new(1, 1, 1) },
+	GenX2 = { Variant = "Green", Tint = Color3.fromRGB(130, 255, 220) },
+	GenX4 = { Variant = "Yellow", Tint = Color3.new(1, 1, 1) },
+	GenX6 = { Variant = "Yellow", Tint = Color3.fromRGB(255, 230, 120) },
+	GenX8 = { Variant = "Black", Tint = Color3.new(1, 1, 1) },
+	GenX10 = { Variant = "Black", Tint = Color3.new(1, 1, 1) },
+}
+
+local function multiplierOf(part)
+	return tonumber(part.Name:match("GenX(%d+)")) or 1
+end
+
+local function formatClock(seconds)
+	seconds = math.max(0, math.floor(seconds))
+	return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
 --------------------------------------------------
--- CREATE FLOATING UI
+-- X6 STATE (published by the server as player attributes)
+--------------------------------------------------
+
+local function x6Text()
+	local mode = player:GetAttribute("X6Mode")
+	local untilTime = player:GetAttribute("X6Until")
+	local remaining = typeof(untilTime) == "number"
+		and (untilTime - Workspace:GetServerTimeNow())
+		or 0
+
+	if mode == "Waiting" then
+		return "CLAIM IN " .. formatClock(remaining)
+	elseif mode == "Ready" then
+		return "READY! CLAIM IT"
+	elseif mode == "Active" then
+		return "ACTIVE " .. formatClock(remaining)
+	elseif mode == "Done" then
+		return "BACK TOMORROW"
+	end
+
+	return "LIMITED-TIME GIFT"
+end
+
+--------------------------------------------------
+-- ICONS (shared animation loop)
+--------------------------------------------------
+
+local icons = {} -- list of { Root, Glow, Admin, Phase, Sparks, Parent }
+
+local function createGeneratorIcon(part, info)
+	local old = part:FindFirstChild(ICON_NAME)
+	if old then
+		old:Destroy()
+	end
+
+	local multiplier = multiplierOf(part)
+	local isAdmin = ADMIN_NAMES[part.Name] == true
+
+	-- Diameter in studs: x1 = 2.4 ... x1000 = 6.0
+	local diameter = 2.4 + 1.2 * math.log10(math.max(multiplier, 1))
+	local labelTop = part.Size.Y / 2 + LABEL_LIFT + LABEL_HEIGHT / 2
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = ICON_NAME
+	billboard.Adornee = part
+	billboard.Size = UDim2.fromScale(diameter * 1.9, diameter * 1.9)
+	billboard.StudsOffsetWorldSpace = Vector3.new(0, labelTop + 0.5 + diameter / 2 + 0.5, 0)
+	billboard.AlwaysOnTop = false
+	billboard.MaxDistance = 220
+	billboard.LightInfluence = 0
+	billboard.Parent = part
+
+	local root = Instance.new("Frame")
+	root.BackgroundTransparency = 1
+	root.AnchorPoint = Vector2.new(0.5, 0.5)
+	root.Position = UDim2.fromScale(0.5, 0.5)
+	root.Size = UDim2.fromScale(0.53, 0.53)
+	root.Parent = billboard
+
+	-- Tier-coloured glow behind the icon
+	local glow = Instance.new("Frame")
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.Position = UDim2.fromScale(0.5, 0.5)
+	glow.Size = UDim2.fromScale(1.35, 1.35)
+	glow.BackgroundColor3 = info.Color
+	glow.BackgroundTransparency = 0.6
+	glow.Parent = root
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
+
+	-- The oil icon (image if uploaded, otherwise a drawn droplet)
+	local style = ICON_STYLE[part.Name] or { Variant = "Black", Tint = Color3.new(1, 1, 1) }
+	local imageId = UiAssets.OilImages[style.Variant]
+
+	if imageId ~= nil and imageId ~= "" then
+		local image = Instance.new("ImageLabel")
+		image.BackgroundTransparency = 1
+		image.Size = UDim2.fromScale(1, 1)
+		image.Image = imageId
+		image.ImageColor3 = style.Tint
+		image.ScaleType = Enum.ScaleType.Fit
+		image.Parent = root
+	else
+		local drop = Instance.new("Frame")
+		drop.Size = UDim2.fromScale(1, 1)
+		drop.BackgroundColor3 = Color3.fromRGB(38, 34, 52)
+		drop.Parent = root
+		Instance.new("UICorner", drop).CornerRadius = UDim.new(1, 0)
+
+		local rim = Instance.new("UIStroke")
+		rim.Color = info.Color
+		rim.Thickness = 3
+		rim.Parent = drop
+
+		local shine = Instance.new("Frame")
+		shine.BackgroundColor3 = CREAM
+		shine.BackgroundTransparency = 0.25
+		shine.Position = UDim2.fromScale(0.2, 0.18)
+		shine.Size = UDim2.fromScale(0.24, 0.16)
+		shine.Parent = drop
+		Instance.new("UICorner", shine).CornerRadius = UDim.new(1, 0)
+	end
+
+	-- Admin generators: orbiting sparkles
+	local sparks = {}
+	if isAdmin then
+		for index = 1, 6 do
+			local spark = Instance.new("TextLabel")
+			spark.BackgroundTransparency = 1
+			spark.AnchorPoint = Vector2.new(0.5, 0.5)
+			spark.Size = UDim2.fromScale(0.22, 0.22)
+			spark.Font = FONT
+			spark.Text = "*"
+			spark.TextScaled = true
+			spark.TextColor3 = Color3.fromRGB(255, 240, 160)
+			spark.Parent = root
+			sparks[index] = spark
+		end
+	end
+
+	table.insert(icons, {
+		Root = root,
+		Glow = glow,
+		Admin = isAdmin,
+		Phase = math.random() * math.pi * 2,
+		Sparks = sparks,
+		Parent = billboard,
+	})
+end
+
+RunService.RenderStepped:Connect(function()
+	local now = os.clock()
+
+	for index = #icons, 1, -1 do
+		local icon = icons[index]
+
+		if not icon.Parent.Parent then
+			table.remove(icons, index)
+		else
+			-- Smooth idle float (fractions of the icon, so it scales with it)
+			icon.Root.Position = UDim2.fromScale(0.5, 0.5 + math.sin(now * 1.8 + icon.Phase) * 0.035)
+			icon.Root.Rotation = math.sin(now * 1.1 + icon.Phase) * 4
+
+			icon.Glow.BackgroundTransparency = 0.6 + math.sin(now * 2.4 + icon.Phase) * 0.12
+
+			if icon.Admin then
+				-- Colour-cycling glow + orbiting sparkles
+				icon.Glow.BackgroundColor3 = Color3.fromHSV((now * 0.25 + icon.Phase) % 1, 0.7, 1)
+				icon.Glow.BackgroundTransparency = 0.45 + math.sin(now * 4 + icon.Phase) * 0.15
+
+				for sparkIndex, spark in ipairs(icon.Sparks) do
+					local angle = now * 1.6 + (sparkIndex / #icon.Sparks) * math.pi * 2
+					spark.Position = UDim2.fromScale(
+						0.5 + math.cos(angle) * 0.78,
+						0.5 + math.sin(angle) * 0.55
+					)
+					spark.TextTransparency = 0.2 + (math.sin(now * 5 + sparkIndex) * 0.5 + 0.5) * 0.5
+				end
+			end
+		end
+	end
+end)
+
+--------------------------------------------------
+-- LABEL
 --------------------------------------------------
 
 local function createGeneratorUI(part)
@@ -99,126 +263,128 @@ local function createGeneratorUI(part)
 	local info = generatorInfo[part.Name]
 
 	if not info then
-		warn(
-			"[XPGeneratorController] No configuration for:",
-			part:GetFullName()
-		)
+		warn("[XPGeneratorController] No configuration for:", part:GetFullName())
 		return
 	end
 
 	-- Avoid duplicate interfaces.
 	local existing = part:FindFirstChild(GUI_NAME)
-
 	if existing then
 		existing:Destroy()
 	end
 
-	--------------------------------------------------
-	-- BILLBOARD
-	--------------------------------------------------
-
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = GUI_NAME
 	billboard.Adornee = part
-	billboard.Size = UDim2.fromOffset(
-		GUI_WIDTH,
-		GUI_HEIGHT
-	)
-
-	-- Position above the actual MeshPart.
-	billboard.StudsOffsetWorldSpace = Vector3.new(
-		0,
-		part.Size.Y / 2 + 2.3,
-		0
-	)
-
+	billboard.Size = UDim2.fromScale(LABEL_WIDTH, LABEL_HEIGHT)
+	billboard.StudsOffsetWorldSpace = Vector3.new(0, part.Size.Y / 2 + LABEL_LIFT, 0)
 	billboard.AlwaysOnTop = false
-	billboard.MaxDistance = MAX_DISTANCE
+	billboard.MaxDistance = 220
 	billboard.LightInfluence = 0
-	billboard.Enabled = true
 	billboard.Parent = part
-
-	--------------------------------------------------
-	-- BACKGROUND
-	--------------------------------------------------
 
 	local background = Instance.new("Frame")
 	background.Name = "Background"
 	background.Size = UDim2.fromScale(1, 1)
-	background.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
-	background.BackgroundTransparency = 0.12
+	background.BackgroundColor3 = CREAM
 	background.BorderSizePixel = 0
 	background.Parent = billboard
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = background
+	Instance.new("UICorner", background).CornerRadius = UDim.new(0.5, 0)
 
 	local outline = Instance.new("UIStroke")
 	outline.Color = info.Color
-	outline.Thickness = 1.5
-	outline.Transparency = 0.12
+	outline.Thickness = 3
 	outline.Parent = background
-
-	--------------------------------------------------
-	-- TOP LABEL
-	--------------------------------------------------
-
-	local requirement = Instance.new("TextLabel")
-	requirement.Name = "Requirement"
-	requirement.BackgroundTransparency = 1
-	requirement.Position = UDim2.new(0, 7, 0, 5)
-	requirement.Size = UDim2.new(1, -14, 0, 21)
-
-	requirement.Font = Enum.Font.GothamBold
-	requirement.Text = info.Top
-	requirement.TextColor3 = Color3.fromRGB(245, 245, 255)
-	requirement.TextScaled = true
-	requirement.TextWrapped = false
-	requirement.TextXAlignment = Enum.TextXAlignment.Center
-	requirement.TextYAlignment = Enum.TextYAlignment.Center
-
-	requirement.Parent = background
-
-	local requirementLimit = Instance.new("UITextSizeConstraint")
-	requirementLimit.MinTextSize = 10
-	requirementLimit.MaxTextSize = 15
-	requirementLimit.Parent = requirement
-
-	--------------------------------------------------
-	-- MULTIPLIER LABEL
-	--------------------------------------------------
 
 	local multiplier = Instance.new("TextLabel")
 	multiplier.Name = "Multiplier"
 	multiplier.BackgroundTransparency = 1
-	multiplier.Position = UDim2.new(0, 6, 0, 25)
-	multiplier.Size = UDim2.new(1, -12, 0, 39)
-
-	multiplier.Font = Enum.Font.GothamBlack
+	multiplier.Position = UDim2.fromScale(0.04, 0.06)
+	multiplier.Size = UDim2.fromScale(0.42, 0.88)
+	multiplier.Font = FONT
 	multiplier.Text = info.Bottom
 	multiplier.TextColor3 = info.Color
 	multiplier.TextScaled = true
-	multiplier.TextXAlignment = Enum.TextXAlignment.Center
-	multiplier.TextYAlignment = Enum.TextYAlignment.Center
-
 	multiplier.Parent = background
 
-	local multiplierLimit = Instance.new("UITextSizeConstraint")
-	multiplierLimit.MinTextSize = 20
-	multiplierLimit.MaxTextSize = 32
-	multiplierLimit.Parent = multiplier
-
 	local textOutline = Instance.new("UIStroke")
-	textOutline.Color = Color3.fromRGB(0, 0, 0)
-	textOutline.Thickness = 1
-	textOutline.Transparency = 0.4
+	textOutline.Color = INK
+	textOutline.Thickness = 2
 	textOutline.Parent = multiplier
 
-	print(
-		"[XPGeneratorController] UI created:",
-		part.Name
-	)
+	local requirement = Instance.new("TextLabel")
+	requirement.Name = "Requirement"
+	requirement.BackgroundTransparency = 1
+	requirement.Position = UDim2.fromScale(0.47, 0.12)
+	requirement.Size = UDim2.fromScale(0.5, 0.76)
+	requirement.Font = FONT
+	requirement.Text = info.Top
+	requirement.TextColor3 = INK
+	requirement.TextScaled = true
+	requirement.TextWrapped = true
+	requirement.Parent = background
+
+	--------------------------------------------------
+	-- LIVE STATE (display only; server decides real access)
+	--
+	-- Locked    -> dimmed
+	-- Earning   -> "EARNING XP" while the server reports this generator
+	--              as the player's ActiveXPGenerator
+	-- GenX6     -> shows the claim timer
+	--------------------------------------------------
+
+	local requiredRebirths = DISPLAY_REBIRTH_REQUIREMENT[part.Name]
+	local isX6 = part.Name == "GenX6"
+
+	local function refreshState()
+		local rebirths = player:GetAttribute("Rebirths") or 0
+		local earning = player:GetAttribute("ActiveXPGenerator") == part.Name
+		local locked = requiredRebirths ~= nil and rebirths < requiredRebirths
+
+		if isX6 then
+			locked = player:GetAttribute("X6Mode") ~= "Active"
+		end
+
+		if earning then
+			requirement.Text = "EARNING XP"
+			requirement.TextColor3 = Color3.fromRGB(190, 105, 10)
+		else
+			requirement.Text = isX6 and x6Text() or info.Top
+			requirement.TextColor3 = INK
+		end
+
+		background.BackgroundTransparency = locked and 0.3 or 0
+		multiplier.TextTransparency = locked and 0.4 or 0
+	end
+
+	local connections = {
+		player:GetAttributeChangedSignal("Rebirths"):Connect(refreshState),
+		player:GetAttributeChangedSignal("ActiveXPGenerator"):Connect(refreshState),
+		player:GetAttributeChangedSignal("X6Mode"):Connect(refreshState),
+		player:GetAttributeChangedSignal("X6Until"):Connect(refreshState),
+	}
+
+	-- The X6 countdown ticks once a second.
+	local ticking = isX6
+	if isX6 then
+		task.spawn(function()
+			while ticking and billboard.Parent do
+				refreshState()
+				task.wait(0.5)
+			end
+		end)
+	end
+
+	billboard.Destroying:Once(function()
+		ticking = false
+		for _, connection in ipairs(connections) do
+			connection:Disconnect()
+		end
+	end)
+
+	refreshState()
+	createGeneratorIcon(part, info)
 end
 
 --------------------------------------------------
@@ -229,10 +395,6 @@ for _, instance in ipairs(generatorsFolder:GetDescendants()) do
 	createGeneratorUI(instance)
 end
 
---------------------------------------------------
--- GENERATORS ADDED LATER
---------------------------------------------------
-
 generatorsFolder.DescendantAdded:Connect(function(instance)
 	task.defer(function()
 		if instance:IsDescendantOf(generatorsFolder) then
@@ -240,9 +402,5 @@ generatorsFolder.DescendantAdded:Connect(function(instance)
 		end
 	end)
 end)
-
---------------------------------------------------
--- STARTUP
---------------------------------------------------
 
 print("[XPGeneratorController] Floating generator UI ready.")

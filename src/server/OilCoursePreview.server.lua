@@ -51,6 +51,7 @@ local oilRowTemplate =
 	)
 
 
+
 local course =
 	workspace:WaitForChild(
 		"Course"
@@ -68,7 +69,7 @@ local NUMBER_OF_ROWS =
 
 
 local ROW_SPACING =
-	27
+	39
 
 
 local PLATFORM_SEPARATION =
