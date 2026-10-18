@@ -32,6 +32,12 @@ BoostConfig.Boosts = {
 		Duration = 30 * 60,
 		PriceRobux = 4,
 	},
+	Captain = {
+		Label = "CAPTAIN x3",
+		Multiplier = 3, -- applies to oil AND wins (acts like extra rebirth power)
+		ProductId = 0, -- granted by the Captain Oil Server Pack only, never sold alone
+		Duration = 30 * 60,
+	},
 	XP4 = {
 		Label = "x4 XP",
 		Multiplier = 4,

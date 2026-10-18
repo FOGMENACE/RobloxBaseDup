@@ -1,20 +1,25 @@
 --------------------------------------------------
 -- GUTTER SERVICE
 --
--- SERVER ONLY. The oil course lane has two gutters (strips along its
--- side edges). While a player is RUNNING and their ball rolls into a
--- gutter, they lose a share of the oil collected so far:
+-- SERVER ONLY. The "gutter" is now a NEGATIVE PLATFORM inside the normal
+-- 12-row oil course instead of two long edge strips (at 50-240 studs/s a
+-- strip along the wall caught players no matter what they did).
+--
+-- Each run, GUTTER_ROWS of the course's rows swap ONE of their two
+-- platforms for a dark-red "GUTTER" platform. Rolling through it costs a
+-- share of the oil collected so far (same rule as before):
 --
 --     penalty fraction = pinsStillStanding / totalPins
 --
--- where the course has one "pin" per row, and a gutter in row N leaves
--- (totalRows - N) pins standing. With 12 rows: row 1 = 11/12 (huge),
--- row 8 = 4/12 (a third), row 12 = nothing.
+-- where the course has one "pin" per row, so a gutter in row N leaves
+-- (totalRows - N) pins standing. With 12 rows: row 2 = 10/12 (huge),
+-- row 8 = 4/12, row 12 = nothing. Because the other platform of the row
+-- stays a normal one, the player can always dodge it with a small move.
 --
--- Each row can penalise a run only once (staying in a gutter does not
--- keep draining oil), with a short cooldown on top.
+-- Rows 3, 6 and 9 belong to BallTierGates (upgrade / downgrade) and are
+-- never used here. Each gutter platform penalises once per run.
 --
--- Everything is computed here from the ball's real position and the
+-- Everything is computed here from the ball's real touch and the
 -- player's real CurrentOil; the client only gets a notification to
 -- display. Oil accounting follows OilCollectionService: the lifetime
 -- total (PlayerDataService) is reduced by the amount actually removed,
@@ -31,17 +36,15 @@ local PlayerDataService = require(
 		:WaitForChild("PlayerDataService")
 )
 
-local GUTTER_WIDTH = 2.6      -- studs of each side strip
-local CHECK_INTERVAL = 0.1
-local COOLDOWN = 1.5          -- seconds between penalties
+-- A run gets 0-3 gutters (most runs 0 or 1): they are a rare surprise.
+local GUTTER_COUNT_WEIGHTS = { [0] = 35, [1] = 38, [2] = 20, [3] = 7 }
+local CANDIDATE_ROWS = { 2, 4, 5, 7, 8, 10, 11 } -- not the tier rows 3, 6, 9
+local GUTTER_COLOR = Color3.fromRGB(96, 14, 34)
+local CREAM = Color3.fromRGB(255, 247, 232)
 
 local course = workspace:WaitForChild("Course")
-local leftBoundary = course:WaitForChild("LeftBoundary")
-local rightBoundary = course:WaitForChild("RightBoundary")
-local startWall = workspace:WaitForChild("StartWall")
-local finishWall = workspace:WaitForChild("FinishWall")
-local floorPart = course:WaitForChild("Floor")
 local playerBalls = workspace:WaitForChild("PlayerBalls")
+local rng = Random.new()
 
 local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not remotes then
@@ -57,88 +60,17 @@ if not gutterRemote then
 	gutterRemote.Parent = remotes
 end
 
---------------------------------------------------
--- LANE GEOMETRY
---------------------------------------------------
-
-local laneCenterX = (leftBoundary.Position.X + rightBoundary.Position.X) / 2
-local laneHalfWidth = math.abs(leftBoundary.Position.X - rightBoundary.Position.X) / 2
-local gutterEdge = laneHalfWidth - GUTTER_WIDTH -- |dx| beyond this is "in the gutter"
-
---------------------------------------------------
--- VISIBLE GUTTER STRIPS (decor only: no collision, no touch)
---------------------------------------------------
-
-local function ensureGutterStrip(name, sign)
-	if course:FindFirstChild(name) then
-		return
+-- The old edge strips are gone; remove any left in the place file.
+for _, name in ipairs({ "GutterLeft", "GutterRight" }) do
+	local old = course:FindFirstChild(name)
+	if old then
+		old:Destroy()
 	end
-
-	local zMin = math.min(startWall.Position.Z, finishWall.Position.Z)
-	local zMax = math.max(startWall.Position.Z, finishWall.Position.Z)
-	local length = zMax - zMin
-	local floorTop = floorPart.Position.Y + floorPart.Size.Y / 2
-
-	local strip = Instance.new("Part")
-	strip.Name = name
-	strip.Anchored = true
-	strip.CanCollide = false
-	strip.CanTouch = false
-	strip.CanQuery = false
-	strip.CastShadow = false
-	strip.Material = Enum.Material.Slate
-	strip.Color = Color3.fromRGB(46, 42, 58)
-	strip.Size = Vector3.new(GUTTER_WIDTH, 0.3, length)
-	strip.Position = Vector3.new(
-		laneCenterX + sign * (laneHalfWidth - GUTTER_WIDTH / 2),
-		floorTop + 0.05,
-		(zMin + zMax) / 2
-	)
-	strip.Parent = course
-end
-
-ensureGutterStrip("GutterLeft", 1)
-ensureGutterStrip("GutterRight", -1)
-
---------------------------------------------------
--- ROW LOOKUP
---------------------------------------------------
-
--- Returns rowNumber, totalRows for the row nearest the ball (by Z).
-local function getRow(player, ballZ)
-	local playerCourse = course:FindFirstChild("PlayerCourse_" .. player.UserId)
-	if not playerCourse then
-		return nil, nil
-	end
-
-	local bestRow, bestDistance, total = nil, math.huge, 0
-
-	for _, child in ipairs(playerCourse:GetChildren()) do
-		local rowNumber = child:GetAttribute("RowNumber")
-		if typeof(rowNumber) == "number" then
-			total += 1
-			local z = child:IsA("Model") and child:GetPivot().Position.Z
-				or (child:IsA("BasePart") and child.Position.Z)
-
-			if z then
-				local distance = math.abs(z - ballZ)
-				if distance < bestDistance then
-					bestDistance = distance
-					bestRow = rowNumber
-				end
-			end
-		end
-	end
-
-	return bestRow, total
 end
 
 --------------------------------------------------
 -- PENALTY
 --------------------------------------------------
-
-local penalised = {}    -- [player] = { [rowNumber] = true } for this run
-local lastPenalty = {}  -- [player] = os.clock()
 
 local function applyPenalty(player, row, totalRows)
 	local before = player:GetAttribute("CurrentOil")
@@ -178,76 +110,157 @@ local function applyPenalty(player, row, totalRows)
 end
 
 --------------------------------------------------
--- MONITOR
+-- BUILD THE GUTTER PLATFORMS FOR ONE RUN
 --------------------------------------------------
 
-local lastRunState = {}
+local function platformParts(platform)
+	local parts = {}
+	if platform:IsA("BasePart") then
+		table.insert(parts, platform)
+	end
+	for _, object in ipairs(platform:GetDescendants()) do
+		if object:IsA("BasePart") then
+			table.insert(parts, object)
+		end
+	end
+	return parts
+end
+
+local function convert(player, platform, row, totalRows)
+	local fraction = math.max(0, totalRows - row) / totalRows
+	local percent = math.floor(fraction * 100 + 0.5)
+	local used = false
+
+	-- Not oil any more: the oil collection handler skips collected platforms.
+	platform:SetAttribute("Collected", true)
+	platform:SetAttribute("GutterPlatform", true)
+	platform:SetAttribute("OilAmount", 0)
+	platform:SetAttribute("Positive", false)
+	platform:SetAttribute("Display", "GUTTER")
+
+	for _, part in ipairs(platformParts(platform)) do
+		part.Color = GUTTER_COLOR
+		part.Transparency = 0.2
+	end
+
+	for _, object in ipairs(platform:GetDescendants()) do
+		if object:IsA("TextLabel") then
+			object.Text = "GUTTER\n-" .. percent .. "%"
+			object.TextColor3 = CREAM
+		end
+	end
+
+	for _, part in ipairs(platformParts(platform)) do
+		part.Touched:Connect(function(hit)
+			if used then
+				return
+			end
+
+			if hit.Name ~= "PlayerBall_" .. tostring(player.UserId) or hit.Parent ~= playerBalls then
+				return
+			end
+
+			if player:GetAttribute("RunState") ~= "Running" then
+				return
+			end
+
+			used = true
+
+			for _, p in ipairs(platformParts(platform)) do
+				p.Transparency = 0.75
+			end
+
+			applyPenalty(player, row, totalRows)
+		end)
+	end
+end
+
+local function build(player, playerCourse)
+	local rows = {}
+	for _, child in ipairs(playerCourse:GetChildren()) do
+		local rowNumber = child:GetAttribute("RowNumber")
+		if typeof(rowNumber) == "number" then
+			rows[rowNumber] = child
+		end
+	end
+
+	local totalRows = 0
+	for _ in pairs(rows) do
+		totalRows += 1
+	end
+	if totalRows <= 0 then
+		return
+	end
+
+	local pool = {}
+	for _, rowNumber in ipairs(CANDIDATE_ROWS) do
+		if rows[rowNumber] then
+			table.insert(pool, rowNumber)
+		end
+	end
+
+	local gutters = 0
+	do
+		local roll = rng:NextNumber() * 100
+		local acc = 0
+		for count = 0, 3 do
+			acc += GUTTER_COUNT_WEIGHTS[count]
+			if roll <= acc then
+				gutters = count
+				break
+			end
+		end
+	end
+
+	for _ = 1, math.min(gutters, #pool) do
+		local pick = table.remove(pool, rng:NextInteger(1, #pool))
+		local row = rows[pick]
+
+		local left = row:FindFirstChild("OilPlatformL", true)
+		local right = row:FindFirstChild("OilPlatformR", true)
+		if not left or not right then
+			continue
+		end
+
+		-- Prefer replacing a negative platform so good ones stay good.
+		local target
+		if left:GetAttribute("Positive") == false and right:GetAttribute("Positive") ~= false then
+			target = left
+		elseif right:GetAttribute("Positive") == false and left:GetAttribute("Positive") ~= false then
+			target = right
+		else
+			target = rng:NextInteger(0, 1) == 1 and left or right
+		end
+
+		convert(player, target, pick, totalRows)
+	end
+end
+
+--------------------------------------------------
+-- MONITOR (run lifecycle)
+--------------------------------------------------
+
+local builtFor = {} -- [player] = the PlayerCourse model already processed
 
 task.spawn(function()
 	while true do
-		task.wait(CHECK_INTERVAL)
+		task.wait(0.25)
 
 		for _, player in ipairs(Players:GetPlayers()) do
-			local runState = player:GetAttribute("RunState")
+			if player:GetAttribute("RunState") == "Running" then
+				local playerCourse = course:FindFirstChild("PlayerCourse_" .. player.UserId)
 
-			-- A fresh run clears the per-row memory.
-			if runState == "Starting" and lastRunState[player] ~= "Starting" then
-				penalised[player] = nil
+				if playerCourse and builtFor[player] ~= playerCourse then
+					builtFor[player] = playerCourse
+					build(player, playerCourse)
+				end
 			end
-			lastRunState[player] = runState
-
-			if runState ~= "Running" then
-				continue
-			end
-
-			local ball = playerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
-			if not ball or not ball:IsA("BasePart") then
-				continue
-			end
-
-			local offset = math.abs(ball.Position.X - laneCenterX)
-			if offset <= gutterEdge then
-				continue
-			end
-
-			-- Nothing to lose: do not consume this row's one-time penalty.
-			local carried = player:GetAttribute("CurrentOil")
-			if typeof(carried) ~= "number" or carried <= 0 then
-				continue
-			end
-
-			local now = os.clock()
-			if lastPenalty[player] and now - lastPenalty[player] < COOLDOWN then
-				continue
-			end
-
-			local row, totalRows = getRow(player, ball.Position.Z)
-			if not row or not totalRows or totalRows <= 0 then
-				continue
-			end
-
-			penalised[player] = penalised[player] or {}
-			if penalised[player][row] then
-				continue
-			end
-
-			penalised[player][row] = true
-			lastPenalty[player] = now
-
-			applyPenalty(player, row, totalRows)
 		end
 	end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	penalised[player] = nil
-	lastPenalty[player] = nil
-	lastRunState[player] = nil
+	builtFor[player] = nil
 end)
 
-print(
-	"[GutterService] READY | lane center X:",
-	string.format("%.1f", laneCenterX),
-	"| gutter edge:",
-	string.format("%.1f", gutterEdge)
-)
+print("[GutterService] READY | gutter platforms per run: 0-3 (random)")

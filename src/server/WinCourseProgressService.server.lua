@@ -1417,6 +1417,9 @@ end
 --------------------------------------------------
 -- AWARD WINNINGS
 --------------------------------------------------
+-- [player] = total wins actually credited during the current WinCourse run
+local creditedThisRun = {}
+
 
 local function awardWinnings(
 	player,
@@ -1459,6 +1462,11 @@ local function awardWinnings(
 	if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
 		amount = math.floor(amount * boostMultiplier)
 	end
+
+	-- Remember the multipliers and the credited total for the result screen.
+	player:SetAttribute("WinRunRebirthMult", (okBonus and typeof(winsMultiplier) == "number") and winsMultiplier or 1)
+	player:SetAttribute("WinRunBoostMult", (okBoost and typeof(boostMultiplier) == "number") and boostMultiplier or 1)
+	creditedThisRun[player] = (creditedThisRun[player] or 0) + amount
 
 	player:SetAttribute(
 		"LastWinCourseWinnings",
@@ -1828,6 +1836,27 @@ local function finishRun(
 	-- RESULT
 	--------------------------------------------------
 
+	-- Result for the celebration screen (clients only display these).
+	player:SetAttribute("WinRunBase", math.floor(run.TotalWinAmount or 0))
+	player:SetAttribute("WinRunCredited", creditedThisRun[player] or 0)
+	player:SetAttribute("WinRunFinalTile", finalTile and finalTile.Amount or 0)
+	player:SetAttribute("WinRunFinalTileIndex", finalTile and finalTile.Index or 0)
+
+	-- Make the tile the ball LANDED ON obvious: its floor flashes.
+	local landedFloor = finalTile and finalTile.Model and finalTile.Model:FindFirstChild("Floor")
+	if landedFloor then
+		task.spawn(function()
+			local original = landedFloor.Material
+			for _ = 1, 5 do
+				landedFloor.Material = Enum.Material.Neon
+				task.wait(0.18)
+				landedFloor.Material = original
+				task.wait(0.18)
+			end
+		end)
+	end
+	player:SetAttribute("WinRunId", (player:GetAttribute("WinRunId") or 0) + 1)
+
 	winCourseRemote:FireClient(
 		player,
 		"WinCourseFinished",
@@ -1877,6 +1906,16 @@ local function finishRun(
 
 			WinningsAwarded =
 				run.WinningsAwarded == true,
+
+			CreditedWin =
+				creditedThisRun[player] or 0,
+
+			RebirthMultiplier =
+				player:GetAttribute("WinRunRebirthMult") or 1,
+
+			BoostMultiplier =
+				player:GetAttribute("WinRunBoostMult") or 1,
+
 		}
 	)
 
@@ -1965,6 +2004,20 @@ local function updateRollingRun(
 
 	local currentPosition =
 		ball.Position
+
+	-- Safety: if the ball ever drops below the course (for example the floor
+	-- generation falls behind), end the run gracefully so the player keeps
+	-- what was already collected instead of the ball being destroyed and
+	-- respawned back at the lobby.
+	if currentPosition.Y < ballSpawn.Position.Y - 20 then
+		finishRun(
+			player,
+			run,
+			"FELL_OFF_COURSE"
+		)
+
+		return
+	end
 
 
 	--------------------------------------------------
@@ -2655,6 +2708,8 @@ local function startTracking(
 	--------------------------------------------------
 	-- CREATE RUN
 	--------------------------------------------------
+
+	creditedThisRun[player] = 0
 
 	local run = {
 

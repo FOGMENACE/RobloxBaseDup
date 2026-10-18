@@ -96,7 +96,7 @@ local BOARDS = {
 		Title = "ROBUX SPENT",
 		Store = DataStoreService:GetOrderedDataStore("LB_RobuxSpent_v1"),
 		Format = function(value)
-			return "R$ " .. shortNumber(value)
+			return " " .. shortNumber(value)
 		end,
 		-- Written by RobuxLedger, never from player-reported numbers.
 		Read = nil,

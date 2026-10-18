@@ -78,7 +78,7 @@ local course =
 
 local START_POSITION =
 	Vector3.new(
-		-64.726, 63.444, 300.244
+		-64.726, 63.444, 333.244
 	)
 
 
@@ -699,6 +699,172 @@ end
 
 
 --------------------------------------------------
+-- VARIABLE TILE LENGTH
+--
+-- Small win numbers (1-40) get a SHORT box; the boxes grow with the number
+-- and stay at MAX_TILE_LENGTH from +65 on. The tile's pivot
+-- is its START edge, so a tile spans
+--   [GetTileStartDistance(i), GetTileStartDistance(i) + GetTileLength(i)).
+-- The Progress service credits the tile whose span contains the ball, so the
+-- tile the ball lands on is the tile it is paid for.
+--------------------------------------------------
+
+local TILE_WIDTH_SCALE = 1.5 -- must match the oil course widening
+local MIN_TILE_LENGTH = 40 -- the first tile is the smallest
+local MAX_TILE_LENGTH = 80 -- reached at FULL_TILE_AMOUNT, then constant
+local FULL_TILE_AMOUNT = 65
+local RAINBOW_TILE_AMOUNT = 80 -- +80 and up are the long rainbow tiles
+local RAINBOW_TILE_LENGTH = 130
+
+local function amountForIndex(index)
+	if index <= #WIN_AMOUNTS then
+		return WIN_AMOUNTS[index]
+	end
+	return 40 + (index - #WIN_AMOUNTS)
+end
+
+local function tileLengthForAmount(amount)
+	if amount >= RAINBOW_TILE_AMOUNT then
+		return RAINBOW_TILE_LENGTH -- long, so the ball rarely chains more of them
+	end
+	if amount >= FULL_TILE_AMOUNT then
+		return MAX_TILE_LENGTH
+	end
+	local alpha = (amount - 1) / (FULL_TILE_AMOUNT - 1)
+	return math.floor((MIN_TILE_LENGTH + (MAX_TILE_LENGTH - MIN_TILE_LENGTH) * alpha) * 2 + 0.5) / 2
+end
+
+local tileStarts = { 0 } -- tileStarts[i] = start distance of tile i
+
+local function tileStartDistance(index)
+	while #tileStarts < index do
+		local last = #tileStarts
+		tileStarts[last + 1] = tileStarts[last] + tileLengthForAmount(amountForIndex(last))
+	end
+	return tileStarts[index]
+end
+
+local function tileIndexAtDistance(distance)
+	local index = 1
+	while tileStartDistance(index + 1) <= distance do
+		index += 1
+	end
+	return index
+end
+
+-- Resizes a tile's Floor (and its trophy display) to this index's length,
+-- keeping the pivot (the START edge) where it is.
+local function shapeTile(tile, index)
+	local objects = getTileObjects(tile)
+	if not objects then
+		return
+	end
+
+	local length = tileLengthForAmount(amountForIndex(index))
+	local floor = objects.Floor
+	local trophy = objects.TrophyDisplay
+
+	local pivot = tile:GetPivot()
+	local dirL = pivot:VectorToObjectSpace(COURSE_DIRECTION)
+
+	local function alongAxis(part)
+		if math.abs(part.CFrame.RightVector:Dot(COURSE_DIRECTION)) > 0.5 then
+			return "X"
+		end
+		return "Z"
+	end
+
+	local floorAxis = alongAxis(floor)
+	local trophyAxis = alongAxis(trophy)
+
+	local floorRel = pivot:ToObjectSpace(floor.CFrame)
+	local trophyRel = pivot:ToObjectSpace(trophy.CFrame)
+
+	local oldFloorAlong = floorRel.Position:Dot(dirL)
+	local trophyAhead = trophyRel.Position:Dot(dirL) - oldFloorAlong
+
+	local floorSize = floor.Size
+	local overlap = floorSize[floorAxis] - TILE_SPACING
+	local newFloorLength = length + math.max(overlap, 0)
+
+	local f = math.clamp(length / TILE_SPACING, 0.6, 1.5)
+
+	-- the lane is wider than the original template (matches the oil course)
+	local lane = TILE_WIDTH_SCALE
+	floor.Size = Vector3.new(
+		floorAxis == "X" and newFloorLength or floorSize.X * lane,
+		floorSize.Y,
+		floorAxis == "Z" and newFloorLength or floorSize.Z * lane
+	)
+
+	local newFloorAlong = newFloorLength / 2
+	floor.CFrame = pivot * (floorRel + dirL * (newFloorAlong - oldFloorAlong))
+
+	local trophySize = trophy.Size
+	trophy.Size = Vector3.new(trophySize.X * f, trophySize.Y, trophySize.Z * f)
+	local newTrophyAlong = newFloorAlong + trophyAhead * f
+	trophy.CFrame = pivot * (trophyRel + dirL * (newTrophyAlong - trophyRel.Position:Dot(dirL)))
+
+	tile:SetAttribute("TileLength", length)
+	tile:SetAttribute("TileStart", tileStartDistance(index))
+end
+--------------------------------------------------
+-- RAINBOW SURFACE (win amounts 80+)
+--
+-- A rainbow gradient is drawn on the Floor's top face. The trophy display
+-- sits just above the floor, so the trophy and win amount stay on top.
+--------------------------------------------------
+
+local RAINBOW_FROM_AMOUNT = 80
+
+local function applyRainbowSurface(floor)
+	if floor:FindFirstChild("RainbowSurface") then
+		return
+	end
+
+	local surface = Instance.new("SurfaceGui")
+	surface.Name = "RainbowSurface"
+	surface.Face = Enum.NormalId.Top
+	surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	surface.PixelsPerStud = 8
+	surface.LightInfluence = 0
+	surface.Brightness = 1.2
+	surface.ZOffset = -5 -- draw behind the trophy display's gui
+	surface.Parent = floor
+
+	local band = Instance.new("Frame")
+	band.Size = UDim2.fromScale(1, 1)
+	band.BorderSizePixel = 0
+	band.BackgroundColor3 = Color3.new(1, 1, 1)
+	band.Parent = surface
+
+	local gradient = Instance.new("UIGradient")
+	gradient.Rotation = 90
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 70, 70)),
+		ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 170, 40)),
+		ColorSequenceKeypoint.new(0.34, Color3.fromRGB(255, 240, 60)),
+		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(80, 235, 110)),
+		ColorSequenceKeypoint.new(0.67, Color3.fromRGB(60, 210, 255)),
+		ColorSequenceKeypoint.new(0.84, Color3.fromRGB(150, 90, 255)),
+		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 80, 200)),
+	})
+	gradient.Parent = band
+
+	floor.Color = Color3.fromRGB(255, 255, 255)
+	floor:SetAttribute("Rainbow", true)
+
+	-- lift the trophy display a little so it always draws above the gradient
+	local trophy = floor.Parent and floor.Parent:FindFirstChild("TrophyDisplay")
+	if trophy then
+		trophy.CFrame = trophy.CFrame + Vector3.new(0, 0.12, 0)
+		local trophyGui = trophy:FindFirstChildOfClass("SurfaceGui")
+		if trophyGui then
+			trophyGui.ZOffset = 5
+		end
+	end
+end
+--------------------------------------------------
 -- POSITION COMPLETE TILE
 --
 -- ONLY THE COMPLETE MODEL MOVES.
@@ -713,6 +879,8 @@ local function positionTile(
 	tile,
 	index
 )
+
+	shapeTile(tile, index)
 
 	local templatePivot =
 		tile:GetPivot()
@@ -729,11 +897,7 @@ local function positionTile(
 		+
 		COURSE_DIRECTION
 		*
-		(
-			(index - 1)
-			*
-			TILE_SPACING
-		)
+		tileStartDistance(index)
 
 
 	tile:PivotTo(
@@ -833,6 +997,12 @@ local function configureTile(
 
 
 	--------------------------------------------------
+	-- RAINBOW 80+ (gradient surface)
+
+	if winAmount >= RAINBOW_FROM_AMOUNT then
+		applyRainbowSurface(objects.Floor)
+	end
+
 	-- RAINBOW 40
 	--------------------------------------------------
 
@@ -1348,7 +1518,7 @@ end
 -- Generates farther ahead of the ball.
 --------------------------------------------------
 
-local TILE_LOOKAHEAD_DISTANCE = 430 -- 10 tile spacings
+local TILE_LOOKAHEAD_DISTANCE = 1100 -- ~25 tile spacings (4+ s at top speed)
 
 function WinCourseGenerator.EnsureTilesThroughDistance(distance)
 
@@ -1370,9 +1540,7 @@ function WinCourseGenerator.EnsureTilesThroughDistance(distance)
 
 	-- Generate ten tiles beyond the requested distance.
 	local requiredIndex =
-		math.floor(
-			(distance + TILE_LOOKAHEAD_DISTANCE) / TILE_SPACING
-		) + 1
+		tileIndexAtDistance(distance + TILE_LOOKAHEAD_DISTANCE) + 1
 
 	local highestIndex = 0
 
@@ -1445,7 +1613,7 @@ end
 			"| Win:",
 			winAmount,
 			"| Distance:",
-			(index - 1) * TILE_SPACING
+			tileStartDistance(index)
 		)
 	end
 
@@ -1487,6 +1655,22 @@ function WinCourseGenerator.GetStartPosition()
 
 end
 
+
+function WinCourseGenerator.GetTileStartDistance(index)
+	return tileStartDistance(index)
+end
+
+function WinCourseGenerator.GetTileLength(index)
+	return tileLengthForAmount(amountForIndex(index))
+end
+
+function WinCourseGenerator.GetTileIndexAtDistance(distance)
+	return tileIndexAtDistance(math.max(0, distance))
+end
+
+function WinCourseGenerator.ShapeTile(tile, index)
+	shapeTile(tile, index)
+end
 
 --------------------------------------------------
 

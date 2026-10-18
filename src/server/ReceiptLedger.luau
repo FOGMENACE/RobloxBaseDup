@@ -85,4 +85,59 @@ function ReceiptLedger.Record(player, purchaseId)
 	return ok
 end
 
+--------------------------------------------------
+-- CONSUME (the durable purchase pattern, shared by every product)
+--
+--   1. already recorded?          -> done (return true)
+--   2. grant (once; remembered while pending)
+--   3. SAVE the player's data
+--   4. RECORD the purchase id
+--   5. only then confirm to the client
+--
+-- Returns true only when the receipt can be marked PurchaseGranted.
+-- `grantFunction()` must return true when the grant happened.
+-- `onConfirmed(player)` is optional and runs after step 4.
+--------------------------------------------------
+
+function ReceiptLedger.Consume(player, receiptInfo, grantFunction, onConfirmed)
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local PlayerDataService = require(
+		ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
+	)
+
+	local purchaseId = receiptInfo.PurchaseId
+
+	local recorded = ReceiptLedger.IsRecorded(player, purchaseId)
+	if recorded == nil then
+		return false -- DataStore down: Roblox retries later
+	end
+	if recorded then
+		return true
+	end
+
+	if not ReceiptLedger.IsPending(purchaseId) then
+		if not grantFunction() then
+			return false
+		end
+		ReceiptLedger.MarkPending(purchaseId)
+	end
+
+	if PlayerDataService.SavePlayer(player) ~= true then
+		warn("[ReceiptLedger] Save failed; receipt stays pending:", player.Name, purchaseId)
+		return false
+	end
+
+	if not ReceiptLedger.Record(player, purchaseId) then
+		return false
+	end
+
+	ReceiptLedger.ClearPending(purchaseId)
+
+	if onConfirmed then
+		task.spawn(onConfirmed, player)
+	end
+
+	return true
+end
+
 return ReceiptLedger

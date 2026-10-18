@@ -186,7 +186,7 @@ local list = create("ScrollingFrame", {
 	BackgroundColor3 = CREAM,
 	BackgroundTransparency = 0.15,
 	Position = UDim2.fromOffset(12, 58),
-	Size = UDim2.new(1, -24, 1, -112),
+	Size = UDim2.new(1, -24, 0, 388),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
@@ -205,9 +205,9 @@ create("UIPadding", {
 }, list)
 
 local statusLabel = create("TextLabel", {
-	AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, -10),
-	Size = UDim2.new(1, -24, 0, 34),
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 452),
+	Size = UDim2.new(1, -24, 0, 30),
 	BackgroundColor3 = INK,
 	Font = FONT,
 	Text = "Roll onto the pad any time to shop.",
@@ -263,8 +263,14 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 end)
 
-local function addPreview(holder, ballId)
+local function addPreview(holder, ballId, zIndex)
 	local template = ballModels and ballModels:FindFirstChild(ballId)
+	if not template and BallAccessories.HasDesign(ballId) then
+		-- designs without a BallModels mesh (Oil Barrel) get a plain sphere
+		template = Instance.new("Part")
+		template.Shape = Enum.PartType.Ball
+		template.Size = Vector3.new(2.8, 2.8, 2.8)
+	end
 	if not template then
 		create("TextLabel", {
 			BackgroundTransparency = 1,
@@ -278,6 +284,7 @@ local function addPreview(holder, ballId)
 
 	local viewport = create("ViewportFrame", {
 		BackgroundTransparency = 1,
+		ZIndex = zIndex or 1,
 		Size = UDim2.fromScale(1, 1),
 	}, holder)
 
@@ -288,13 +295,16 @@ local function addPreview(holder, ballId)
 
 	-- Premium balls show their unique accessories (cat, spikes, dragon...).
 	BallAccessories.Apply(model, ballId)
+	if ballId == "OilBarrel" then
+		model:SetAttribute("PreviewSpeed", 12) -- the barrel spins on its own axis
+	end
 	local hasDesign = BallAccessories.HasDesign(ballId)
 
 	local radius = math.max(model.Size.X, model.Size.Y, model.Size.Z)
 	local camera = create("Camera", {
 		-- Pull back a little for designs that reach beyond the ball.
 		CFrame = CFrame.lookAt(
-			Vector3.new(0, hasDesign and radius * 0.6 or 0, radius * (hasDesign and 3.3 or 2.2)),
+			Vector3.new(0, hasDesign and radius * 0.5 or 0, radius * (ballId == "OilBarrel" and 2.7 or (hasDesign and 3.3 or 2.2))),
 			Vector3.zero
 		),
 		FieldOfView = 35,
@@ -302,6 +312,36 @@ local function addPreview(holder, ballId)
 	viewport.CurrentCamera = camera
 
 	table.insert(spinners, model)
+end
+
+--------------------------------------------------
+-- EXCLUSIVE OFFER (floating over the bottom edge of the panel)
+--
+-- The Oil Barrel is only sold for Robux (Game Pass), so it is not a card
+-- in the list. While the player does not own it, a hovering 3D barrel with
+-- its price pokes out below the panel (no background frame).
+--------------------------------------------------
+
+local ExclusiveOffer = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
+
+local barrelOffer = ExclusiveOffer.Create(panel, {
+	BallId = "OilBarrel",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, 62),
+	Size = UDim2.fromOffset(430, 124),
+	ZIndex = 40,
+})
+
+local function updateBanner(balls)
+	local owned = false
+	for _, ball in ipairs(balls) do
+		if ball.BallId == "OilBarrel" then
+			owned = ball.Owned == true
+		end
+	end
+
+	-- hidden once the ball is owned (pass, Captain pack or calendar reward)
+	barrelOffer.Frame.Visible = not owned and not ExclusiveOffer.OwnsPass(barrelOffer.Entry.PassId)
 end
 
 --------------------------------------------------
@@ -421,12 +461,12 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 
 	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(114, 104),
-		Size = UDim2.new(1, -266, 0, 14),
+		Position = UDim2.fromOffset(114, 102),
+		Size = UDim2.new(1, -266, 0, 18),
 		Font = FONT,
-		Text = "SPEED",
-		TextColor3 = Color3.fromRGB(110, 70, 30),
-		TextSize = 11,
+		Text = tostring(math.floor(ball.ForwardSpeed or 0)) .. " SPEED",
+		TextColor3 = Color3.fromRGB(70, 40, 10),
+		TextSize = 14,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	}, card)
 
@@ -489,7 +529,7 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 		local robuxButton = makeButton(
 			actions,
 			2,
-			price and ("R$ " .. price) or "R$ BUY",
+			price and (" " .. price) or " BUY",
 			ROBUX,
 			true
 		)
@@ -565,9 +605,12 @@ local function refresh()
 	end
 
 	table.clear(shines)
+	updateBanner(balls)
 
 	for _, ball in ipairs(balls) do
-		buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice)
+		if not (ball.IsExclusive and not ball.Owned) then
+			buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice)
+		end
 	end
 end
 

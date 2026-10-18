@@ -177,6 +177,7 @@ local function nextUnownedBall(player)
 	for ballId, definition in pairs(BallDefinitions) do
 		if ballId ~= PlayerDataService.GetDefaultBallId()
 			and definition.IsTutorial ~= true
+			and definition.IsExclusive ~= true
 			and not PlayerDataService.OwnsBall(player, ballId) then
 			table.insert(candidates, { Id = ballId, Order = definition.DisplayOrder or 0 })
 		end

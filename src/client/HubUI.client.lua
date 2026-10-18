@@ -399,9 +399,48 @@ end
 
 local shopButton = makeHubButton(1, "ShopButton", "🎳", "STORE", PIN_RED, -3)
 local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE, 2)
+
+-- Percent to the next rebirth, floating over the REBIRTH button.
+local rebirthPercent = create("TextLabel", {
+	Name = "RebirthPercent",
+	AnchorPoint = Vector2.new(0, 0),
+	Position = UDim2.fromOffset(4, 4),
+	Size = UDim2.fromOffset(52, 20),
+	BackgroundColor3 = GREEN,
+	Font = FONT,
+	Text = "0%",
+	TextColor3 = CREAM,
+	TextSize = 15,
+	ZIndex = 7,
+}, rebirthButton.Button)
+round(rebirthPercent, 11)
+outline(rebirthPercent, INK, 2.5)
+
+local function refreshRebirthPercent()
+	local level = player:GetAttribute("Level") or 1
+	local required = math.max(player:GetAttribute("RebirthLevelRequirement") or 65, 1)
+	local progress = player:GetAttribute("LevelProgress") or 0
+	local fraction = math.clamp((level - 1 + (level >= required and 0 or progress)) / math.max(required - 1, 1), 0, 1)
+
+	if fraction >= 1 then
+		rebirthPercent.Text = "READY!"
+		rebirthPercent.BackgroundColor3 = PIN_RED
+		rebirthButton.Badge.Visible = true
+	else
+		rebirthPercent.Text = math.floor(fraction * 100) .. "%"
+		rebirthPercent.BackgroundColor3 = GREEN
+		rebirthButton.Badge.Visible = false
+	end
+end
+
+for _, name in ipairs({ "Level", "RebirthLevelRequirement", "LevelProgress" }) do
+	player:GetAttributeChangedSignal(name):Connect(refreshRebirthPercent)
+end
+refreshRebirthPercent()
 local giftButton = makeHubButton(3, "GiftButton", "🎁", "...", SKY, 3)
 local dailyButton = makeHubButton(4, "DailyButton", "📅", "...", GREEN, -2)
 local x6Button = makeHubButton(5, "X6Button", "X6", "...", Color3.fromRGB(255, 170, 40), 3)
+x6Button.Button.Visible = false -- X6 now arrives as a random timed popup (PopupsUI)
 local questsButton = makeHubButton(6, "QuestsButton", "📋", "QUESTS", Color3.fromRGB(255, 140, 80), -2)
 
 --------------------------------------------------
@@ -435,6 +474,15 @@ local function applyRewardPreview(holder, reward)
 	if reward.Type == "Ball" then
 		local models = ReplicatedStorage:FindFirstChild("BallModels")
 		local template = models and models:FindFirstChild(reward.BallId)
+		if not template then
+			-- designs without a BallModels mesh (Oil Barrel): a plain sphere
+			local BA = require(ReplicatedStorage:WaitForChild("BallAccessories"))
+			if BA.HasDesign(reward.BallId) then
+				template = Instance.new("Part")
+				template.Shape = Enum.PartType.Ball
+				template.Size = Vector3.new(2.8, 2.8, 2.8)
+			end
+		end
 		if template then
 			if emoji then
 				emoji.Visible = false
@@ -454,12 +502,15 @@ local function applyRewardPreview(holder, reward)
 
 			local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
 			BallAccessories.Apply(model, reward.BallId)
+			if reward.BallId == "OilBarrel" then
+				model:SetAttribute("PreviewSpeed", 12)
+			end
 			local hasDesign = BallAccessories.HasDesign(reward.BallId)
 
 			local radius = math.max(model.Size.X, model.Size.Y, model.Size.Z)
 			local camera = create("Camera", {
 				CFrame = CFrame.lookAt(
-					Vector3.new(0, hasDesign and radius * 0.6 or 0, radius * (hasDesign and 3.3 or 2.2)),
+					Vector3.new(0, hasDesign and radius * 0.5 or 0, radius * (reward.BallId == "OilBarrel" and 2.7 or (hasDesign and 3.3 or 2.2))),
 					Vector3.zero
 				),
 				FieldOfView = 35,
@@ -883,6 +934,43 @@ rebuildCalendar = function()
 		}, slot)
 		round(status, 8)
 
+		-- Exclusive ball reward (day 7): also offer it for Robux right here.
+		local exclusive = reward.Type == "Ball" and ShopConfig.ExclusiveBalls[reward.BallId]
+		if exclusive then
+			local OfferModule = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
+			local buy = create("TextButton", {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 0, 0),
+				Size = UDim2.fromOffset(100, 30),
+				BackgroundColor3 = Color3.fromRGB(0, 190, 112),
+				Font = FONT,
+				Text = " " .. exclusive.Price, -- literal robux glyph prefix
+				TextColor3 = Color3.new(1, 1, 1),
+				TextSize = 20,
+				AutoButtonColor = false,
+				ZIndex = 26,
+			}, slot)
+			round(buy, 12)
+			outline(buy, INK, 3)
+			TweenService:Create(
+				buy,
+				TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+				{ Position = UDim2.new(0.5, 0, 0, -7) }
+			):Play()
+
+			buy.Activated:Connect(function()
+				if exclusive.PassId ~= 0 then
+					MarketplaceService:PromptGamePassPurchase(player, exclusive.PassId)
+				end
+			end)
+
+			task.spawn(function()
+				if OfferModule.OwnsPass(exclusive.PassId) and buy.Parent then
+					buy:Destroy()
+				end
+			end)
+		end
+
 		if claimable then
 			slot.Activated:Connect(function()
 				giftClaim:FireServer("Daily")
@@ -952,7 +1040,7 @@ local shopPanel = create("Frame", {
 	Name = "ShopPanel",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(420, 360),
+	Size = UDim2.fromOffset(420, 470),
 	BackgroundColor3 = LANE,
 	Visible = false,
 	ZIndex = 20,
@@ -989,7 +1077,7 @@ round(shopClose, 10)
 local shopList = create("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(12, 56),
-	Size = UDim2.new(1, -24, 1, -68),
+	Size = UDim2.new(1, -24, 0, 336),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 4,
@@ -1002,9 +1090,125 @@ create("UIListLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, shopList)
 
+-- Captain Oil Server Pack (developer product). The client only asks; the
+-- server owns the id and every reward.
+do
+	local row = create("Frame", {
+		LayoutOrder = 15,
+		Size = UDim2.new(1, -8, 0, 124),
+		BackgroundColor3 = Color3.fromRGB(255, 214, 90),
+		ZIndex = 22,
+	}, shopList)
+	round(row, 12)
+	outline(row, INK, 3)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(255, 236, 140), Color3.fromRGB(255, 160, 50)),
+		Rotation = 90,
+	}, row)
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 6),
+		Size = UDim2.new(1, -176, 0, 24),
+		Font = FONT,
+		Text = "CAPTAIN OIL SERVER PACK",
+		TextColor3 = INK,
+		TextSize = 17,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 23,
+	}, row)
+
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 30),
+		Size = UDim2.new(1, -176, 0, 88),
+		Font = FONT,
+		Text = "YOU: 150,000 wins, the rainbow OIL BARREL ball, and x2 oil + x2 wins + x3 CAPTAIN boost for 1 hour." .. "\nEVERYONE in the server: 25,000 wins + boosts for 30 min!",
+		TextColor3 = Color3.fromRGB(110, 50, 20),
+		TextSize = 12,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 23,
+	}, row)
+
+	-- Rolling rainbow Oil Barrel + wins icon: shows what the pack includes.
+	do
+		local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
+
+		local viewport = create("ViewportFrame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -88, 0, 8),
+			Size = UDim2.fromOffset(60, 54),
+			BackgroundTransparency = 1,
+			ZIndex = 24,
+		}, row)
+
+		local barrel = Instance.new("Part")
+		barrel.Shape = Enum.PartType.Ball
+		barrel.Size = Vector3.new(2.8, 2.8, 2.8)
+		barrel.Anchored = true
+		barrel.CFrame = CFrame.new(0, 0, 0)
+		barrel.Parent = viewport
+		barrel:SetAttribute("PreviewSpeed", 9)
+
+		task.spawn(function()
+			BallAccessories.Apply(barrel, "OilBarrel")
+			BallAccessories.Pose(barrel, os.clock())
+		end)
+
+		local cam = Instance.new("Camera")
+		cam.FieldOfView = 34
+		cam.CFrame = CFrame.lookAt(Vector3.new(4.6, 3.4, 6.2), Vector3.new(0, -0.1, 0))
+		cam.Parent = viewport
+		viewport.CurrentCamera = cam
+
+		local conn
+		conn = RunService.RenderStepped:Connect(function()
+			if not viewport.Parent then
+				conn:Disconnect()
+				return
+			end
+			if row.Visible and shopPanel.Visible then
+				BallAccessories.Pose(barrel, os.clock())
+			end
+		end)
+
+		create("TextLabel", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -10, 0, 18),
+			Size = UDim2.fromOffset(76, 34),
+			BackgroundTransparency = 1,
+			Font = FONT,
+			Text = "🏆 150K",
+			TextColor3 = INK,
+			TextSize = 18,
+			ZIndex = 24,
+		}, row)
+	end
+	local buy = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -10, 1, -10),
+		Size = UDim2.fromOffset(142, 42),
+		BackgroundColor3 = GREEN,
+		Font = FONT,
+		Text = utf8.char(0xE002) .. " 2,799",
+		TextColor3 = CREAM,
+		TextSize = 18,
+		ZIndex = 23,
+	}, row)
+	round(buy, 10)
+	outline(buy, INK, 3)
+	Shine.Attach(buy, { Offset = 1 })
+
+	buy.Activated:Connect(function()
+		ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StorePrompt"):FireServer("Captain")
+	end)
+end
+
 for index, pass in ipairs(ShopConfig.GamePasses) do
 	local row = create("Frame", {
-		LayoutOrder = index,
+		LayoutOrder = index * 10,
 		Size = UDim2.new(1, -8, 0, 72),
 		BackgroundColor3 = INK_LIGHT,
 		ZIndex = 22,
@@ -1052,13 +1256,35 @@ for index, pass in ipairs(ShopConfig.GamePasses) do
 		ZIndex = 23,
 	}, row)
 	round(buy, 10)
+	buy.Size = UDim2.fromOffset(104, 36)
 
 	if available then
+		-- show the real price (read from Roblox; display only)
+		task.spawn(function()
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(pass.PassId, Enum.InfoType.GamePass)
+			end)
+			if buy.Parent and ok and typeof(info) == "table" and info.PriceInRobux then
+				buy.Text = utf8.char(0xE002) .. " " .. info.PriceInRobux
+			end
+		end)
+
 		buy.Activated:Connect(function()
 			MarketplaceService:PromptGamePassPurchase(player, pass.PassId)
 		end)
 	end
 end
+
+-- Hovering Oil Barrel offer: pokes out over the bottom edge of the Store.
+local ExclusiveOffer = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
+
+local storeBarrelOffer = ExclusiveOffer.Create(shopPanel, {
+	BallId = "OilBarrel",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, 58),
+	Size = UDim2.fromOffset(410, 124),
+	ZIndex = 40,
+})
 
 PanelManager.Register("Store", shopPanel)
 

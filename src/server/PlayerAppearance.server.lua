@@ -60,3 +60,51 @@ Players.PlayerAdded:Connect(setupPlayer)
 for _, player in ipairs(Players:GetPlayers()) do
 	setupPlayer(player)
 end
+
+--------------------------------------------------
+-- NO SPAWN FORCEFIELD
+--
+-- The spawn forcefield draws a shimmering shell around the (hidden)
+-- character. Nothing in this game can hurt the character, so remove it
+-- the moment it appears, and set every SpawnLocation to Duration 0.
+--------------------------------------------------
+
+local function stripForceField(character)
+	for _, object in ipairs(character:GetDescendants()) do
+		if object:IsA("ForceField") then
+			object:Destroy()
+		end
+	end
+
+	character.DescendantAdded:Connect(function(object)
+		if object:IsA("ForceField") then
+			object.Visible = false
+			task.defer(function()
+				if object.Parent then
+					object:Destroy()
+				end
+			end)
+		end
+	end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	if player.Character then
+		stripForceField(player.Character)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(stripForceField)
+end)
+
+for _, object in ipairs(workspace:GetDescendants()) do
+	if object:IsA("SpawnLocation") then
+		object.Duration = 0
+	end
+end
+workspace.DescendantAdded:Connect(function(object)
+	if object:IsA("SpawnLocation") then
+		object.Duration = 0
+	end
+end)

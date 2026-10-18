@@ -80,7 +80,7 @@ local course = workspace:WaitForChild("Course")
 --------------------------------------------------
 
 local NUMBER_OF_ROWS = 12
-local ROW_SPACING = 39
+local ROW_SPACING = 42
 local PLATFORM_SEPARATION = 5
 
 local START_POSITION = Vector3.new(
@@ -109,8 +109,8 @@ local rng = Random.new()
 -- COLORS
 --------------------------------------------------
 
-local POSITIVE_COLOR = Color3.fromRGB(60, 220, 90)
-local NEGATIVE_COLOR = Color3.fromRGB(220, 50, 50)
+local POSITIVE_COLOR = Color3.fromRGB(40, 222, 72)
+local NEGATIVE_COLOR = Color3.fromRGB(236, 42, 52)
 
 
 --------------------------------------------------
@@ -657,7 +657,8 @@ local function configurePlatformVisuals(platform, isPositive)
 
 	for _, part in ipairs(parts) do
 		part.Color = color
-		part.Transparency = 0.15
+		part.Material = Enum.Material.SmoothPlastic
+		part.Transparency = 0.3
 		part.Anchored = true
 		part.CanCollide = false
 		part.CanTouch = true
@@ -736,6 +737,31 @@ end
 -- ROLL NORMAL OIL
 --------------------------------------------------
 
+-- Digits scale with the player's rebirths (a new player sees small numbers,
+-- a high-rebirth player bigger ones) and every course also rolls its own
+-- "luck" so rounds are not all equally rich. Server-side only; the
+-- collection service still reads the amount stored on the platform.
+local oilScale = 1
+
+local function computeOilScale(player)
+	local rebirths = tonumber(player:GetAttribute("Rebirths")) or 0
+	local base = math.clamp(0.3 + rebirths * 0.07, 0.3, 1.6)
+
+	local roll = rng:NextNumber()
+	local luck
+	if roll < 0.25 then
+		luck = 0.6 -- lean round
+	elseif roll < 0.6 then
+		luck = 0.85
+	elseif roll < 0.9 then
+		luck = 1.15
+	else
+		luck = 1.5 -- jackpot round
+	end
+
+	return base * luck
+end
+
 local function rollOilAmount(definition)
 	local kind = getDefinitionKind(definition)
 
@@ -746,7 +772,7 @@ local function rollOilAmount(definition)
 	local minimum = math.floor(definition.MinOil)
 	local maximum = math.floor(definition.MaxOil)
 
-	return rng:NextInteger(minimum, maximum)
+	return math.max(20, math.floor(rng:NextInteger(minimum, maximum) * oilScale + 0.5))
 end
 
 
@@ -1138,6 +1164,9 @@ function OilCourseGenerator.Generate(player)
 	playerCourse:SetAttribute("PlatformSeparation", PLATFORM_SEPARATION)
 	playerCourse:SetAttribute("PositiveChance", POSITIVE_CHANCE)
 	playerCourse:SetAttribute("NegativeChance", NEGATIVE_CHANCE)
+
+	oilScale = computeOilScale(player)
+	playerCourse:SetAttribute("OilScale", oilScale)
 	playerCourse:SetAttribute("PositivePlatforms", 0)
 	playerCourse:SetAttribute("NegativePlatforms", 0)
 

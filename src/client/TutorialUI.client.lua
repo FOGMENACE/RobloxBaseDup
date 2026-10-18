@@ -56,13 +56,13 @@ local gui = create("ScreenGui", {
 
 local banner = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 122),
-	Size = UDim2.fromOffset(680, 64),
+	Position = UDim2.new(0.5, 0, 0, 84),
+	Size = UDim2.fromOffset(520, 44),
 	BackgroundColor3 = LANE,
 	Font = FONT,
 	Text = "",
 	TextColor3 = INK,
-	TextSize = 17,
+	TextSize = 14,
 	TextWrapped = true,
 	Visible = false,
 }, gui)
@@ -222,7 +222,7 @@ local function updateBanner(step)
 	end
 
 	banner.Text = textFor(step)
-	banner.Visible = true
+	banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
 	fitBanner()
 	local finalScale = bannerScale.Scale
 	bannerScale.Scale = finalScale * 0.85
@@ -292,4 +292,11 @@ RunService.RenderStepped:Connect(function()
 	)
 	distanceLabel.Text = math.floor(distance) .. " studs"
 	distanceLabel.Visible = ballOnScreen
+end)
+
+-- Keep the banner out of the way while rolling (only shown in the lobby).
+player:GetAttributeChangedSignal("RunState"):Connect(function()
+	if shownStep ~= nil and shownStep < DONE and shownStep >= 1 then
+		banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	end
 end)

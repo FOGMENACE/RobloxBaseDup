@@ -218,6 +218,100 @@ boostPrompt.OnServerEvent:Connect(function(player, key)
 	end)
 end)
 
+--------------------------------------------------
+-- CAPTAIN OIL SERVER PACK + SKIP REBIRTH
+--------------------------------------------------
+
+local StoreConfig = require(ServerScriptService:WaitForChild("StoreConfig"))
+local BadgeAwards = require(ServerScriptService:WaitForChild("BadgeAwards"))
+
+local storePrompt = getOrCreate("StorePrompt")
+local captainAnnounce = getOrCreate("CaptainAnnounce")
+
+local function grantBoosts(player, seconds)
+	BoostService.Grant(player, "Oil2x", seconds)
+	BoostService.Grant(player, "Wins2x", seconds)
+	BoostService.Grant(player, "Captain", seconds)
+end
+
+local captain = StoreConfig.Captain
+
+PurchaseService.RegisterProduct(captain.ProductId, function(player, receiptInfo)
+	if not player or not player:IsDescendantOf(Players) then
+		return false
+	end
+
+	return ReceiptLedger.Consume(player, receiptInfo, function()
+		-- The captain: the biggest reward and the longest boost.
+		if not PlayerDataService.AddWins(player, captain.BuyerWins) then
+			return false
+		end
+		grantBoosts(player, captain.BuyerBoostSeconds)
+
+		-- exclusive reward: the rainbow Oil Barrel ball (buyer only)
+		PlayerDataService.AddOwnedBall(player, "OilBarrel")
+
+		-- Everyone else in the server: a thank-you from the captain.
+		for _, other in ipairs(Players:GetPlayers()) do
+			if other ~= player then
+				PlayerDataService.AddWins(other, captain.OthersWins)
+				grantBoosts(other, captain.ServerBoostSeconds)
+				task.spawn(PlayerDataService.SavePlayer, other)
+			end
+		end
+
+		return true
+	end, function(buyer)
+		-- Confirmed (granted, saved, recorded): badge + announcement.
+		BadgeAwards.Award(buyer, "Captain")
+		captainAnnounce:FireAllClients(
+			buyer.DisplayName,
+			captain.OthersWins,
+			math.floor(captain.ServerBoostSeconds / 60)
+		)
+		purchaseConfirmed:FireClient(buyer, "CAPTAIN OIL SERVER PACK")
+	end)
+end)
+
+-- Skip Rebirth: a rebirth without the level requirement.
+local rebirthSkip = StoreConfig.RebirthSkip
+
+PurchaseService.RegisterProduct(rebirthSkip.ProductId, function(player, receiptInfo)
+	if not player or not player:IsDescendantOf(Players) then
+		return false
+	end
+
+	return ReceiptLedger.Consume(player, receiptInfo, function()
+		return PlayerDataService.ForceRebirth(player)
+	end, function(buyer)
+		purchaseConfirmed:FireClient(buyer, "SKIP REBIRTH")
+	end)
+end)
+
+-- The client only sends a key; ids and prices stay on the server.
+storePrompt.OnServerEvent:Connect(function(player, key)
+	if rateLimited(player) or typeof(key) ~= "string" then
+		return
+	end
+
+	local productId
+	if key == "Captain" then
+		productId = captain.ProductId
+	elseif key == "RebirthSkip" then
+		-- no point selling a skip the player cannot use
+		if (PlayerDataService.GetRebirths(player) or 0) >= 1000 then
+			return
+		end
+		productId = rebirthSkip.ProductId
+	else
+		return
+	end
+
+	pcall(function()
+		MarketplaceService:PromptProductPurchase(player, productId)
+	end)
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	quotes[player] = nil
 	lastRequest[player] = nil

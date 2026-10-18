@@ -82,3 +82,28 @@ For 14 players the room was deepened from 46 to 83 studs. Z extents, before -> a
 | `WinCourseGenerator` START_POSITION z (code) | 135.584 | 300.244 |
 
 `GutterService` sizes its strips from the floor / FinishWall, so it follows automatically. If you change `ROW_SPACING` again, move `FinishWall`, extend the three lane parts and shift the WinCourse start by the same amount (11 x change).
+
+## Lobby layout swap (Studio-only change + code)
+
+`Workspace.BowlingShop` (the ball shop model, including `BallShopInteractionPoint`) was moved from the west side (x -84) to the east side (pivot x -46.2, z -210.2) and turned about 40% toward the middle of the room. Its sign and posts (built by `LobbyDecor`) moved with it. The podium (`PodiumService`) now stands where the shop was (-84, -208) and faces the middle; the mailbox (`FeedbackMailbox`) stands beside the west bowling-pin stand.
+
+## Oil course extended by 33 studs (row spacing 39 -> 42)
+
+Studio-only objects changed to match `ROW_SPACING = 42` (OilCourseGenerator + OilCoursePreview) and the new
+WinCourse start z = 333.244 (WinCourseGenerator `START_POSITION`):
+
+- `Workspace.FinishWall`: moved +33 studs in Z (309.4 -> 342.4).
+- `Workspace.Course.Floor`: length (Size.X) +33 and Position.Z +16.5 (centre 57.8 -> 74.3).
+- `Workspace.Course.LeftBoundary` / `RightBoundary`: length (Size.X) +33 and Position.Z +16.5.
+
+These were edited in the open place file (not Rojo-synced): SAVE/PUBLISH the place from Studio to keep them.
+Win tiles now have variable length (40 studs at +1, growing to 80 studs at +65, constant after; +80 and up are 130-stud rainbow tiles); positions come from
+`WinCourseGenerator.GetTileStartDistance(index)`.
+
+## Wider, lower oil course + look (Studio-only edits, SAVE the place)
+
+- `ServerStorage.Templates.OilRow`: platforms 17.16 wide x 9.29 tall at x = centre +/- 9.17; `OilPlatformStand` 37.86 wide x 10.18 tall (the "mid-change" size, matching the wider course).
+- `Workspace.Course.Floor` width x1.5 (35.7); `LeftBoundary`/`RightBoundary` moved out x1.5; `StartWall`/`FinishWall` width x1.5.
+- `StarterGui.WinCourseUI`: `CountdownTick` volume 0.3, `WinCourseGo` volume 0.28 and speed 0.92 (were ~3.9 / ~3.5).
+- `Lighting.Atmosphere`: pastel pink/purple (Color 255,214,236, Decay 170,130,255, Haze 1.4, Glare 0.25), ClockTime 16.6.
+  The Sky textures were NOT changed (a Creator Store "skybox" pack I tried contained scripts and was deleted).

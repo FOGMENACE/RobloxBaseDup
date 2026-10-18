@@ -14,8 +14,23 @@
 local ShopConfig = {}
 
 ShopConfig.GamePasses = {
+	{ Name = "STARTER PACK", Description = "One-time bundle: 10,000 wins + x2 oil and x2 wins for 20 minutes.", PassId = 2036403334 },
 	{ Name = "X100 LESSONS", Description = "Earn 100x XP on the Admin x100 generator.", PassId = 2039936926 },
 	{ Name = "X1000 MOST WANTED LESSONS", Description = "Earn 1000x XP on the Admin x1000 generator.", PassId = 2036355132 },
+}
+
+-- Exclusive balls sold ONLY for Robux as a Game Pass (never for wins).
+-- PassId 0 = "coming soon": the buy button stays disabled. Paste the real
+-- Game Pass id here and the server (ExclusiveBallService) and both shop
+-- screens pick it up. The ball is also given by the Captain Oil Server
+-- Pack and by the day-7 calendar reward.
+ShopConfig.ExclusiveBalls = {
+	OilBarrel = {
+		BallId = "OilBarrel",
+		DisplayName = "OIL BARREL",
+		PassId = 2036487321,
+		Price = 499,
+	},
 }
 
 ShopConfig.RobuxPrices = {

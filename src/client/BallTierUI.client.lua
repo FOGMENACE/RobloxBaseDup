@@ -54,8 +54,8 @@ local flash = create("Frame", {
 	ZIndex = 1,
 }, gui)
 
-local upSound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.55, PlaybackSpeed = 1.25 }, gui)
-local downSound = create("Sound", { SoundId = "rbxasset://sounds/uuhhh.mp3", Volume = 0.6 }, gui)
+local upSound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.25, PlaybackSpeed = 1.25 }, gui)
+local downSound = create("Sound", { SoundId = "rbxasset://sounds/uuhhh.mp3", Volume = 0.25 }, gui)
 
 --------------------------------------------------
 -- CURRENT BALL CHIP
@@ -63,18 +63,18 @@ local downSound = create("Sound", { SoundId = "rbxasset://sounds/uuhhh.mp3", Vol
 
 local chip = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 84),
-	Size = UDim2.fromOffset(240, 30),
-	BackgroundColor3 = CREAM,
+	Position = UDim2.new(0.5, 0, 0, 104),
+	Size = UDim2.fromOffset(240, 22),
+	BackgroundTransparency = 1, -- no box, so the lane ahead stays visible
 	Font = FONT,
 	Text = "",
-	TextColor3 = INK,
-	TextSize = 16,
+	TextColor3 = CREAM,
+	TextTransparency = 0.1,
+	TextSize = 15,
 	Visible = false,
 	ZIndex = 5,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 15) }, chip)
-create("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, chip)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, chip)
 local chipScale = create("UIScale", { Scale = 1 }, chip)
 
 local function refreshChip()
@@ -108,7 +108,7 @@ refreshChip()
 local function particles(symbol, color, rising)
 	local viewport = gui.AbsoluteSize
 
-	for index = 1, 12 do
+	for index = 1, 4 do
 		local piece = create("TextLabel", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
@@ -120,7 +120,7 @@ local function particles(symbol, color, rising)
 			Font = FONT,
 			Text = symbol,
 			TextColor3 = color,
-			TextSize = 30 + math.random() * 16,
+			TextSize = 22 + math.random() * 8,
 			ZIndex = 8,
 		}, gui)
 		create("UIStroke", { Color = INK, Thickness = 2 }, piece)
@@ -143,54 +143,56 @@ local function particles(symbol, color, rising)
 	end
 end
 
+-- Compact toast just under the oil meter (never over the lane ahead).
 local function banner(title, subtitle, color)
 	local holder = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.3),
-		Size = UDim2.fromOffset(560, 130),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 134),
+		Size = UDim2.fromOffset(300, 46),
 		BackgroundColor3 = color,
+		BackgroundTransparency = 0.12,
 		ZIndex = 9,
 	}, gui)
-	create("UICorner", { CornerRadius = UDim.new(0, 18) }, holder)
-	create("UIStroke", { Color = INK, Thickness = 5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, holder)
-	local scale = create("UIScale", { Scale = 0.3 }, holder)
+	create("UICorner", { CornerRadius = UDim.new(0, 14) }, holder)
+	create("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, holder)
+	local scale = create("UIScale", { Scale = 0.5 }, holder)
 
-	local fit = math.clamp(gui.AbsoluteSize.X / 700, 0.6, 1)
+	local fit = math.clamp(gui.AbsoluteSize.X / 900, 0.7, 1)
 
 	local titleLabel = create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, 6),
-		Size = UDim2.new(1, 0, 0, 64),
+		Position = UDim2.fromOffset(0, 2),
+		Size = UDim2.new(1, 0, 0, 24),
 		Font = FONT,
 		Text = title,
 		TextColor3 = CREAM,
-		TextSize = 46,
+		TextSize = 20,
 		ZIndex = 10,
 	}, holder)
-	create("UIStroke", { Color = INK, Thickness = 3 }, titleLabel)
+	create("UIStroke", { Color = INK, Thickness = 2 }, titleLabel)
 
 	create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, 72),
-		Size = UDim2.new(1, 0, 0, 38),
+		Position = UDim2.fromOffset(0, 25),
+		Size = UDim2.new(1, 0, 0, 18),
 		Font = FONT,
 		Text = subtitle,
 		TextColor3 = INK,
-		TextSize = 28,
+		TextSize = 13,
 		ZIndex = 10,
 	}, holder)
 
 	TweenService:Create(
 		scale,
-		TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 		{ Scale = fit }
 	):Play()
 
-	task.delay(1.9, function()
+	task.delay(1.1, function()
 		local out = TweenService:Create(
 			holder,
-			TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ Position = UDim2.fromScale(0.5, 0.2), BackgroundTransparency = 1 }
+			TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ Position = UDim2.new(0.5, 0, 0, 118), BackgroundTransparency = 1 }
 		)
 		out.Completed:Once(function()
 			holder:Destroy()
@@ -198,7 +200,9 @@ local function banner(title, subtitle, color)
 		out:Play()
 		for _, descendant in ipairs(holder:GetDescendants()) do
 			if descendant:IsA("TextLabel") then
-				TweenService:Create(descendant, TweenInfo.new(0.35), { TextTransparency = 1 }):Play()
+				TweenService:Create(descendant, TweenInfo.new(0.3), { TextTransparency = 1 }):Play()
+			elseif descendant:IsA("UIStroke") then
+				TweenService:Create(descendant, TweenInfo.new(0.3), { Transparency = 1 }):Play()
 			end
 		end
 	end)
@@ -241,19 +245,19 @@ task.spawn(function()
 		if kind == "Up" then
 			banner("BALL UPGRADE!", oldName .. "  >  " .. newName, GREEN)
 			particles("^", GREEN, true)
-			flashScreen(GREEN, 0.35)
+			flashScreen(GREEN, 0.1)
 			upSound:Play()
 
 		elseif kind == "Down" then
 			local holder = banner("BALL DOWNGRADE", oldName .. "  >  " .. newName, PURPLE)
 			particles("v", RED, false)
-			flashScreen(PURPLE, 0.45)
+			flashScreen(PURPLE, 0.12)
 			shake(holder)
 			downSound:Play()
 
 		elseif kind == "MaxUp" then
 			banner("BEST BALL!", newName .. " cannot go higher", GOLD)
-			flashScreen(GOLD, 0.25)
+			flashScreen(GOLD, 0.08)
 			upSound:Play()
 
 		elseif kind == "MinDown" then

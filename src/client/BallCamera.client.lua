@@ -129,9 +129,9 @@ local LOBBY_ZOOM_LEVELS = {
 	--------------------------------------------------
 
 	{
-		distance = 24,
-		height = 10,
-		fov = 80
+		distance = 21,
+		height = 9,
+		fov = 74
 	}
 
 }
@@ -212,16 +212,16 @@ local CAMERA_SMOOTHNESS =
 --------------------------------------------------
 
 local COURSE_DISTANCE =
-	16
+	17
 
 local COURSE_HEIGHT =
-	14
+	12
 
 local COURSE_LOOK_AHEAD =
-	20
+	11
 
 local COURSE_LOOK_HEIGHT =
-	4
+	0.5
 
 local COURSE_FOV =
 	70
@@ -361,6 +361,10 @@ UserInputService.InputBegan:Connect(
 			lastMousePosition =
 				UserInputService:GetMouseLocation()
 
+			-- Keep the cursor where it was right-clicked while orbiting
+			-- (the camera turns from the mouse DELTA, not the position).
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+
 		end
 
 	end
@@ -382,6 +386,8 @@ UserInputService.InputEnded:Connect(
 
 			lastMousePosition =
 				nil
+
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
 		end
 
@@ -505,6 +511,8 @@ UserInputService.InputChanged:Connect(
 			lastMousePosition =
 				nil
 
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
 			return
 
 		end
@@ -532,10 +540,7 @@ UserInputService.InputChanged:Connect(
 		-- DELTA
 		--------------------------------------------------
 
-		local delta =
-			currentMousePosition
-			-
-			lastMousePosition
+		local delta = Vector2.new(input.Delta.X, input.Delta.Y)
 
 
 		lastMousePosition =
@@ -721,6 +726,43 @@ local function updateLobbyCamera(
 	-- vertically.
 	--------------------------------------------------
 
+
+	--------------------------------------------------
+	-- NEVER UNDER THE LOBBY FLOOR
+	--
+	-- Orbiting down must not pass through the floor: find the floor
+	-- under the ball and keep the camera a little above it.
+	--------------------------------------------------
+
+	local floorParams = RaycastParams.new()
+	floorParams.FilterType = Enum.RaycastFilterType.Exclude
+	floorParams.FilterDescendantsInstances = { playerBalls, player.Character }
+
+	local floorHit = workspace:Raycast(
+		ballPosition + Vector3.new(0, 2, 0),
+		Vector3.new(0, -30, 0),
+		floorParams
+	)
+
+	local lowestY = (floorHit and floorHit.Position.Y or (ballPosition.Y - 2)) + 1.4
+
+	if cameraPosition.Y < lowestY then
+		cameraPosition = Vector3.new(cameraPosition.X, lowestY, cameraPosition.Z)
+	end
+
+	-- Stay inside the lobby room (walls, ceiling): the camera never leaves
+	-- through a wall when the ball is near one. The lane opening at the
+	-- start wall stays reachable because the ball itself is clamped only by
+	-- its own position, not the camera's.
+	local LOBBY_X_MIN, LOBBY_X_MAX = -104.6, -25.2
+	local LOBBY_Z_MIN, LOBBY_Z_MAX = -277.4, -197.9
+	local ceilingY = (floorHit and floorHit.Position.Y or (ballPosition.Y - 2)) + 26
+
+	cameraPosition = Vector3.new(
+		math.clamp(cameraPosition.X, LOBBY_X_MIN, LOBBY_X_MAX),
+		math.min(cameraPosition.Y, ceilingY),
+		math.clamp(cameraPosition.Z, LOBBY_Z_MIN, LOBBY_Z_MAX)
+	)
 
 	--------------------------------------------------
 	-- LOOK AT BALL
@@ -1104,7 +1146,7 @@ print(
 )
 
 print(
-	"[BallCamera] Lobby camera floor = DISABLED"
+	"[BallCamera] Lobby camera floor = ENABLED (never under the floor)"
 )
 
 print(

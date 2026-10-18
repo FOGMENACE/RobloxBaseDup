@@ -1,26 +1,34 @@
 --------------------------------------------------
 -- QUEST SERVICE (SERVER ONLY)
 --
--- Three daily quests per player (shared/QuestConfig). Progress comes only
--- from server-side signals (RunState, Level, WinCourse winnings, collected
--- platforms); the client cannot report progress. Claims are validated
--- here, the claimed flag is saved BEFORE the reward is granted, and the
--- state lives in its own DataStore ("DailyQuests_v1"), keyed by UTC day
--- so quests reset at UTC midnight.
+-- DAILY: three quests per player (shared/QuestConfig.Pool), reset at UTC
+-- midnight, optional paid "Skip Quest" (Developer Product).
+-- WEEKLY: seven milestones fed by the same signals, reset Monday 00:00 UTC.
+--
+-- Progress comes only from server-side signals (RunState, Level, WinCourse
+-- winnings, collected platforms); the client cannot report progress.
+-- Claims are validated here and the claimed flag is saved BEFORE the
+-- reward is granted. Daily state: DataStore "DailyQuests_v1". Weekly
+-- state: "WeeklyMilestones_v1".
 --------------------------------------------------
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService = game:GetService("DataStoreService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local QuestConfig = require(ReplicatedStorage:WaitForChild("QuestConfig"))
+local StoreConfig = require(ServerScriptService:WaitForChild("StoreConfig"))
 local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
+local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
+local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
 local PlayerDataService = require(
 	ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
 )
 
-local store = DataStoreService:GetDataStore("DailyQuests_v1")
+local dailyStore = DataStoreService:GetDataStore("DailyQuests_v1")
+local weeklyStore = DataStoreService:GetDataStore("WeeklyMilestones_v1")
 
 local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not remotes then
@@ -42,24 +50,36 @@ end
 
 local stateFunction = getOrCreate("RemoteFunction", "QuestsState")
 local claimFunction = getOrCreate("RemoteFunction", "QuestsClaim")
+local weeklyClaimFunction = getOrCreate("RemoteFunction", "WeeklyClaim")
 local updateEvent = getOrCreate("RemoteEvent", "QuestsUpdate")
+local skipPromptEvent = getOrCreate("RemoteEvent", "QuestSkipPrompt")
+local purchaseConfirmed = getOrCreate("RemoteEvent", "PurchaseConfirmed")
 
--- [player] = { Day, Quests = { {Id, Target, Reward, Progress, Claimed} }, BonusClaimed, Dirty, Loaded }
+-- [player] = { Day, Quests, BonusClaimed, Dirty, Loaded,
+--              Weekly = { Week, Counters, Claimed, Dirty, Loaded } }
 local states = {}
 local busy = {}
+local pendingSkip = {} -- [player] = { Index, Time }
+
+local PENDING_SECONDS = 10 * 60
 
 local function today()
 	return math.floor(os.time() / 86400)
 end
 
-local function key(player)
+-- Weeks start Monday 00:00 UTC (the Unix epoch was a Thursday).
+local function thisWeek()
+	return math.floor((os.time() - 4 * 86400) / (7 * 86400))
+end
+
+local function dailyKey(player)
 	return "u_" .. player.UserId
 end
 
--- Wins paid for a quest, scaled up by rebirths (+25% each, capped).
-local function payout(player, quest)
+-- Wins paid for a reward, scaled up by rebirths (+25% each, capped).
+local function payout(player, base)
 	local rebirths = math.min(PlayerDataService.GetRebirths(player) or 0, 20)
-	return math.floor(quest.Reward * (1 + 0.25 * rebirths))
+	return math.floor(base * (1 + 0.25 * rebirths))
 end
 
 local function rewardFor(entry, tier, target)
@@ -89,6 +109,14 @@ local function rollQuests(player, day)
 	return quests
 end
 
+local function freshWeekly()
+	return {
+		Week = thisWeek(),
+		Counters = { Runs = 0, Levels = 0, WinCourse = 0, Platforms = 0 },
+		Claimed = {},
+	}
+end
+
 local function allClaimed(state)
 	for _, quest in ipairs(state.Quests) do
 		if not quest.Claimed then
@@ -106,8 +134,22 @@ local function publicState(state, player)
 			Title = string.format(entry and entry.Title or quest.Id, quest.Target),
 			Target = quest.Target,
 			Progress = math.min(quest.Progress, quest.Target),
-			Reward = payout(player, quest),
+			Reward = payout(player, quest.Reward),
 			Claimed = quest.Claimed,
+		}
+	end
+
+	local weekly = {}
+	local w = state.Weekly
+	for index, milestone in ipairs(QuestConfig.Weekly) do
+		local count = w and w.Counters[milestone.Id] or 0
+		weekly[index] = {
+			Title = string.format(milestone.Title, milestone.Target),
+			Target = milestone.Target,
+			Progress = math.min(count, milestone.Target),
+			Reward = payout(player, milestone.Reward),
+			BoostMinutes = milestone.Boost and math.floor(milestone.Boost / 60) or 0,
+			Claimed = w ~= nil and w.Claimed[index] == true,
 		}
 	end
 
@@ -116,6 +158,8 @@ local function publicState(state, player)
 		BonusWins = QuestConfig.BonusWins,
 		BonusClaimed = state.BonusClaimed,
 		AllDone = allClaimed(state),
+		Weekly = weekly,
+		WeekEndsAt = (thisWeek() + 1) * 7 * 86400 + 4 * 86400,
 	}
 end
 
@@ -126,14 +170,14 @@ local function push(player)
 	end
 end
 
-local function save(player)
+local function saveDaily(player)
 	local state = states[player]
 	if not state then
 		return false
 	end
 
 	local ok = pcall(function()
-		store:SetAsync(key(player), {
+		dailyStore:SetAsync(dailyKey(player), {
 			Day = state.Day,
 			Quests = state.Quests,
 			BonusClaimed = state.BonusClaimed,
@@ -144,9 +188,32 @@ local function save(player)
 	return ok
 end
 
+local function saveWeekly(player)
+	local state = states[player]
+	local w = state and state.Weekly
+	if not w then
+		return false
+	end
+
+	local ok = pcall(function()
+		weeklyStore:SetAsync(dailyKey(player), {
+			Week = w.Week,
+			Counters = w.Counters,
+			Claimed = w.Claimed,
+		})
+	end)
+
+	w.Dirty = not ok
+	return ok
+end
+
 local function load(player)
 	local ok, value = pcall(function()
-		return store:GetAsync(key(player))
+		return dailyStore:GetAsync(dailyKey(player))
+	end)
+
+	local okW, weeklyValue = pcall(function()
+		return weeklyStore:GetAsync(dailyKey(player))
 	end)
 
 	if not player.Parent then
@@ -164,6 +231,26 @@ local function load(player)
 
 	-- A failed read must never overwrite saved progress later.
 	state.Loaded = ok
+
+	local weekly
+	if okW and typeof(weeklyValue) == "table" and weeklyValue.Week == thisWeek()
+		and typeof(weeklyValue.Counters) == "table" then
+		weekly = {
+			Week = weeklyValue.Week,
+			Counters = {
+				Runs = tonumber(weeklyValue.Counters.Runs) or 0,
+				Levels = tonumber(weeklyValue.Counters.Levels) or 0,
+				WinCourse = tonumber(weeklyValue.Counters.WinCourse) or 0,
+				Platforms = tonumber(weeklyValue.Counters.Platforms) or 0,
+			},
+			Claimed = typeof(weeklyValue.Claimed) == "table" and weeklyValue.Claimed or {},
+		}
+	else
+		weekly = freshWeekly()
+	end
+	weekly.Loaded = okW
+	state.Weekly = weekly
+
 	states[player] = state
 	push(player)
 end
@@ -178,11 +265,16 @@ local function addProgress(player, id, amount)
 		return
 	end
 
-	-- day rollover while playing
+	-- day / week rollover while playing
 	if state.Day ~= today() then
 		state.Day = today()
 		state.Quests = rollQuests(player, state.Day)
 		state.BonusClaimed = false
+	end
+	if state.Weekly and state.Weekly.Week ~= thisWeek() then
+		local loaded = state.Weekly.Loaded
+		state.Weekly = freshWeekly()
+		state.Weekly.Loaded = loaded
 	end
 
 	local changed = false
@@ -192,9 +284,18 @@ local function addProgress(player, id, amount)
 			changed = true
 		end
 	end
-
 	if changed then
 		state.Dirty = true
+	end
+
+	local w = state.Weekly
+	if w and w.Counters[id] ~= nil then
+		w.Counters[id] += amount
+		w.Dirty = true
+		changed = true
+	end
+
+	if changed then
 		push(player)
 	end
 end
@@ -265,8 +366,8 @@ claimFunction.OnServerInvoke = function(player, index)
 			reason = "NOT_DONE"
 		else
 			quest.Claimed = true
-			if save(player) then
-				PlayerDataService.AddWins(player, payout(player, quest))
+			if saveDaily(player) then
+				PlayerDataService.AddWins(player, payout(player, quest.Reward))
 				PlayerDataService.SavePlayer(player)
 				ok, reason = true, "OK"
 			else
@@ -281,7 +382,7 @@ claimFunction.OnServerInvoke = function(player, index)
 			reason = "NOT_DONE"
 		else
 			state.BonusClaimed = true
-			if save(player) then
+			if saveDaily(player) then
 				PlayerDataService.AddWins(player, QuestConfig.BonusWins)
 				BoostService.Grant(player, "XP4", QuestConfig.BonusBoostSeconds)
 				PlayerDataService.SavePlayer(player)
@@ -297,6 +398,150 @@ claimFunction.OnServerInvoke = function(player, index)
 	push(player)
 	return ok, reason
 end
+
+-- Weekly milestone claim (index 1..7).
+weeklyClaimFunction.OnServerInvoke = function(player, index)
+	local state = states[player]
+	local w = state and state.Weekly
+	if not w or busy[player] or typeof(index) ~= "number" then
+		return false, "BUSY"
+	end
+
+	index = math.floor(index)
+	local milestone = QuestConfig.Weekly[index]
+	if not milestone then
+		return false, "INVALID"
+	end
+
+	if w.Week ~= thisWeek() then
+		return false, "NOT_DONE"
+	end
+	if w.Claimed[index] == true then
+		return false, "CLAIMED"
+	end
+	if (w.Counters[milestone.Id] or 0) < milestone.Target then
+		return false, "NOT_DONE"
+	end
+
+	busy[player] = true
+	w.Claimed[index] = true
+
+	local ok, reason
+	if saveWeekly(player) then
+		PlayerDataService.AddWins(player, payout(player, milestone.Reward))
+		if milestone.Boost then
+			BoostService.Grant(player, "XP4", milestone.Boost)
+		end
+		PlayerDataService.SavePlayer(player)
+		ok, reason = true, "OK"
+	else
+		w.Claimed[index] = nil
+		ok, reason = false, "SAVE_FAILED"
+	end
+
+	busy[player] = nil
+	push(player)
+	return ok, reason
+end
+
+--------------------------------------------------
+-- SKIP QUEST (Developer Product, R$ 29)
+--
+-- The client asks for a quest index; the server validates it, remembers
+-- it and opens the purchase prompt. The grant happens in the receipt
+-- handler through the durable ReceiptLedger flow.
+--------------------------------------------------
+
+skipPromptEvent.OnServerEvent:Connect(function(player, index, kind)
+	local state = states[player]
+	if not state or typeof(index) ~= "number" then
+		return
+	end
+
+	index = math.floor(index)
+	kind = (kind == "Weekly") and "Weekly" or "Daily"
+
+	if kind == "Weekly" then
+		local w = state.Weekly
+		local milestone = QuestConfig.Weekly[index]
+		if not w or not milestone or w.Claimed[index] == true
+			or (w.Counters[milestone.Id] or 0) >= milestone.Target then
+			return
+		end
+	else
+		local quest = state.Quests[index]
+		if not quest or quest.Claimed or quest.Progress >= quest.Target then
+			return
+		end
+	end
+
+	pendingSkip[player] = { Index = index, Kind = kind, Time = os.time() }
+
+	pcall(function()
+		MarketplaceService:PromptProductPurchase(player, StoreConfig.QuestSkip.ProductId)
+	end)
+end)
+
+PurchaseService.RegisterProduct(StoreConfig.QuestSkip.ProductId, function(player, receiptInfo)
+	local state = player and states[player]
+	if not state then
+		return false -- not loaded yet: Roblox will retry
+	end
+
+	return ReceiptLedger.Consume(player, receiptInfo, function()
+		local pending = pendingSkip[player]
+		local done = false
+
+		if pending and os.time() - pending.Time <= PENDING_SECONDS then
+			if pending.Kind == "Weekly" then
+				local w = state.Weekly
+				local milestone = QuestConfig.Weekly[pending.Index]
+				if w and milestone and w.Claimed[pending.Index] ~= true
+					and (w.Counters[milestone.Id] or 0) < milestone.Target then
+					-- jump the counter to the target (a shared counter also helps
+					-- other milestones of the same kind, which is expected)
+					w.Counters[milestone.Id] = milestone.Target
+					w.Dirty = true
+					saveWeekly(player)
+					done = true
+				end
+			else
+				local quest = state.Quests[pending.Index]
+				if quest and not quest.Claimed and quest.Progress < quest.Target then
+					quest.Progress = quest.Target
+					state.Dirty = true
+					saveDaily(player)
+					done = true
+				end
+			end
+		end
+
+		-- the chosen quest was finished meanwhile: use another unfinished daily
+		if not done then
+			for _, quest in ipairs(state.Quests) do
+				if not quest.Claimed and quest.Progress < quest.Target then
+					quest.Progress = quest.Target
+					state.Dirty = true
+					saveDaily(player)
+					done = true
+					break
+				end
+			end
+		end
+
+		if not done then
+			-- nothing left to skip: pay the player a quest's worth of wins instead
+			PlayerDataService.AddWins(player, payout(player, 300))
+		end
+
+		pendingSkip[player] = nil
+		return true
+	end, function(buyer)
+		push(buyer)
+		purchaseConfirmed:FireClient(buyer, "QUEST SKIP")
+	end)
+end)
+
 
 --------------------------------------------------
 -- LIFECYCLE
@@ -314,11 +559,17 @@ end
 
 Players.PlayerRemoving:Connect(function(player)
 	local state = states[player]
-	if state and state.Dirty and state.Loaded then
-		save(player)
+	if state then
+		if state.Dirty and state.Loaded then
+			saveDaily(player)
+		end
+		if state.Weekly and state.Weekly.Dirty and state.Weekly.Loaded then
+			saveWeekly(player)
+		end
 	end
 	states[player] = nil
 	busy[player] = nil
+	pendingSkip[player] = nil
 end)
 
 task.spawn(function()
@@ -326,7 +577,10 @@ task.spawn(function()
 		task.wait(45)
 		for player, state in pairs(states) do
 			if state.Dirty and state.Loaded then
-				task.spawn(save, player)
+				task.spawn(saveDaily, player)
+			end
+			if state.Weekly and state.Weekly.Dirty and state.Weekly.Loaded then
+				task.spawn(saveWeekly, player)
 			end
 		end
 	end
@@ -335,7 +589,10 @@ end)
 game:BindToClose(function()
 	for player, state in pairs(states) do
 		if state.Dirty and state.Loaded then
-			save(player)
+			saveDaily(player)
+		end
+		if state.Weekly and state.Weekly.Dirty and state.Weekly.Loaded then
+			saveWeekly(player)
 		end
 	end
 end)

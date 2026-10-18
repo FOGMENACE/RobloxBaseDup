@@ -21,6 +21,19 @@ QuestConfig.Pool = {
 	{ Id = "Platforms", Title = "Roll through %d oil platforms", Targets = { 6, 12, 20 }, Reward = 150 },
 }
 
+-- Weekly milestones (counters reset every Monday 00:00 UTC). Seven rungs,
+-- free to everyone. Reward = wins (scaled by rebirths like daily quests);
+-- Boost = optional x4 XP seconds.
+QuestConfig.Weekly = {
+	{ Id = "Runs", Title = "Finish %d runs", Target = 10, Reward = 400 },
+	{ Id = "Platforms", Title = "Roll through %d oil platforms", Target = 40, Reward = 500 },
+	{ Id = "Levels", Title = "Gain %d levels", Target = 10, Reward = 700 },
+	{ Id = "Runs", Title = "Finish %d runs", Target = 30, Reward = 1200 },
+	{ Id = "WinCourse", Title = "Win %d wins on the WinCourse", Target = 3000, Reward = 1500 },
+	{ Id = "Platforms", Title = "Roll through %d oil platforms", Target = 150, Reward = 2500 },
+	{ Id = "Runs", Title = "Finish %d runs", Target = 70, Reward = 5000, Boost = 15 * 60 },
+}
+
 -- Bonus for claiming all of today's quests.
 QuestConfig.BonusWins = 500
 QuestConfig.BonusBoostSeconds = 5 * 60 -- x4 XP

@@ -27,7 +27,44 @@
 --------------------------------------------------
 
 local CollectionService = game:GetService("CollectionService")
+local AssetService = game:GetService("AssetService")
+
+-- Oil Barrel model (uploaded assets). The mesh is loaded at runtime with
+-- AssetService, so the repo needs no binary copy of it. Native size is the
+-- mesh's own bounding box; OIL_BARREL_SCALE sizes it for a radius-2 ball.
+local OIL_BARREL_MESH = 105517155573112
+local OIL_BARREL_TEXTURE = "rbxassetid://105669825602431"
+local OIL_BARREL_NATIVE = Vector3.new(5.785, 5.783, 9.582)
+local OIL_BARREL_SCALE = 0.55
+
+local barrelMesh = nil -- MeshPart template, filled in by the task below
+local barrelMeshFailed = false
+
+task.spawn(function()
+	local ok, part = pcall(function()
+		return AssetService:CreateMeshPartAsync(Content.fromAssetId(OIL_BARREL_MESH))
+	end)
+
+	if ok and part then
+		part.TextureID = OIL_BARREL_TEXTURE
+		barrelMesh = part
+	else
+		barrelMeshFailed = true
+		warn("[BallAccessories] Oil Barrel mesh could not load, using the parts barrel:", part)
+	end
+end)
+
+-- Waits briefly for the mesh; nil means "use the parts-built barrel".
+local function waitForBarrelMesh()
+	local waited = 0
+	while not barrelMesh and not barrelMeshFailed and waited < 4 do
+		task.wait(0.1)
+		waited += 0.1
+	end
+	return barrelMesh
+end
 local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
 
 local IS_CLIENT = RunService:IsClient()
 
@@ -89,12 +126,21 @@ end
 
 -- spec: Name, Kind (Ball/Block/Cylinder/Pyramid/Wedge), Size, CF, Color,
 --       Mat, Transp, Mode, Orbit = {Radius, Speed, Height, Phase, Tilt, Bob, Flap}
+-- Set by Apply(..., true) while swapping accessories onto a ball that is
+-- already rolling: new parts are then anchored and un-welded, because
+-- joining new parts to a live physics assembly makes the client freeze the
+-- ball for ~0.25 s. Every client already positions anchored accessories by
+-- hand each frame (see Pose).
+local detachMode = false
+
 local function make(ball, spec)
 	local scale = scaleOf(ball)
 	local kind = spec.Kind or "Block"
 
 	local part
-	if kind == "Wedge" then
+	if spec.Template then
+		part = spec.Template:Clone()
+	elseif kind == "Wedge" then
 		part = Instance.new("WedgePart")
 	else
 		part = Instance.new("Part")
@@ -112,14 +158,17 @@ local function make(ball, spec)
 	part.Color = spec.Color or CREAM
 	part.Material = spec.Mat or Enum.Material.SmoothPlastic
 	part.Transparency = spec.Transp or 0
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
+	if part:IsA("Part") or part:IsA("WedgePart") then
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+	end
 	part.Massless = true
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = false
 	part.CastShadow = false
-	part.Anchored = ball.Anchored
+	part.Anchored = ball.Anchored or detachMode
+	part.Reflectance = spec.Refl or 0
 
 	if kind == "Pyramid" then
 		local mesh = Instance.new("SpecialMesh")
@@ -153,6 +202,7 @@ local function make(ball, spec)
 		weld.C0 = ball.CFrame:ToObjectSpace(worldOffsetCFrame(ball, spec.CF, scale))
 	end
 
+	weld.Enabled = not detachMode
 	weld.Parent = part
 	part.CFrame = ball.CFrame * weld.C0
 	part.Parent = ball
@@ -633,6 +683,153 @@ designs.SingleKnot = function(ball)
 	end
 end
 
+----------------------------------------------------------------
+-- OILBARREL (exclusive): a glossy rainbow oil barrel rolling on its side
+--
+-- The invisible physics sphere keeps the rolling; every visible part is
+-- posed by Pose() in "Barrel" mode: it turns toward the direction of
+-- travel and spins about its side axis. "OIL" is printed on three label
+-- plates around the barrel, and sparks scrape off the bottom while it
+-- rolls fast (their Rate is driven from Pose by the ball's speed).
+----------------------------------------------------------------
+designs.OilBarrel = function(ball)
+	local function b(extra)
+		extra = extra or {}
+		extra.Mode = "Barrel"
+		return extra
+	end
+
+	-- the physics sphere stays (so rolling and collisions are unchanged)
+	-- but is invisible
+	ball.Transparency = 1
+
+	local function procedural()
+	local rainbow = {
+		rgb(236, 60, 72), rgb(255, 146, 40), rgb(255, 214, 54), rgb(70, 206, 100),
+		rgb(54, 196, 236), rgb(82, 112, 240), rgb(172, 90, 238),
+	}
+	local radius = 1.75
+	local bandLength = 0.62
+	local count = #rainbow
+
+	for index, color in ipairs(rainbow) do
+		local x = (index - (count + 1) / 2) * bandLength
+		P(ball, "Band" .. index, "Cylinder", Vector3.new(bandLength + 0.01, radius * 2, radius * 2), at(x, 0, 0), color, b({ Refl = 0.14 }))
+	end
+
+	-- dark metal hoops
+	for _, x in ipairs({ -1.95, -1.1, 1.1, 1.95 }) do
+		P(ball, "Hoop", "Cylinder", Vector3.new(0.16, radius * 2 + 0.14, radius * 2 + 0.14), at(x, 0, 0), rgb(50, 52, 70), b({ Mat = Enum.Material.Metal }))
+	end
+
+	-- lids with a bung
+	for _, side in ipairs({ -1, 1 }) do
+		P(ball, "Lid", "Cylinder", Vector3.new(0.12, radius * 2 - 0.3, radius * 2 - 0.3), at(side * 2.2, 0, 0), rgb(205, 208, 222), b({ Mat = Enum.Material.Metal, Refl = 0.2 }))
+		P(ball, "Bung", "Cylinder", Vector3.new(0.2, 0.55, 0.55), at(side * 2.27, 0.55, 0), rgb(70, 72, 92), b())
+	end
+
+	-- three "OIL" label plates around the barrel
+	for k = 0, 2 do
+		local phi = k * (2 * math.pi / 3)
+		local d = Vector3.new(0, math.cos(phi), math.sin(phi))
+		local t = Vector3.new(0, -math.sin(phi), math.cos(phi))
+		local cf = CFrame.fromMatrix(d * (radius + 0.03), Vector3.xAxis, t, -d)
+
+		local plate = P(ball, "Label", "Block", Vector3.new(2.0, 1.25, 0.06), cf, CREAM, b())
+
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = Enum.NormalId.Front
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 80
+		gui.LightInfluence = 0.2
+		gui.Parent = plate
+
+		local text = Instance.new("TextLabel")
+		text.BackgroundTransparency = 1
+		text.Size = UDim2.fromScale(1, 1)
+		text.Font = Enum.Font.FredokaOne
+		text.Text = "OIL"
+		text.TextScaled = true
+		text.TextColor3 = rgb(30, 28, 44)
+		text.Parent = gui
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = rgb(255, 255, 255)
+		stroke.Thickness = 2
+		stroke.Parent = text
+	end
+	end -- procedural
+
+	-- the real model when it loaded, otherwise the parts-built barrel
+	local template = waitForBarrelMesh()
+	if template then
+		P(
+			ball,
+			"Body",
+			"Block",
+			OIL_BARREL_NATIVE * OIL_BARREL_SCALE,
+			CFrame.Angles(0, math.pi / 2, 0),
+			Color3.new(1, 1, 1),
+			b({ Template = template, Refl = 0.1 })
+		)
+	else
+		procedural()
+	end
+
+	-- where the barrel touches the ground: sparks + a little rainbow glitter
+	local spark = P(ball, "SparkPoint", "Block", Vector3.new(0.3, 0.3, 0.3), at(0, -1.8, 0.2), INK, { Mode = "BarrelYaw", Transp = 1 })
+
+	-- Train-track sparks: short, hot streaks thrown back and up from the
+	-- metal-on-lane contact, arcing down under gravity. White-hot core fading
+	-- to orange and a dark rusty red (corroded steel), no star sparkles.
+	emitter(spark, {
+		Name = "Sparks",
+		Texture = SMOKE, -- soft blob, stretched into a streak by VelocityParallel + Squash
+		Orientation = Enum.ParticleOrientation.VelocityParallel,
+		Rate = 0,
+		Lifetime = NumberRange.new(0.12, 0.26),
+		Speed = NumberRange.new(16, 30),
+		SpreadAngle = Vector2.new(14, 24),
+		Acceleration = Vector3.new(0, -85, 0),
+		Drag = 0.4,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, rgb(255, 252, 214)),
+			ColorSequenceKeypoint.new(0.25, rgb(255, 176, 56)),
+			ColorSequenceKeypoint.new(0.7, rgb(214, 84, 24)),
+			ColorSequenceKeypoint.new(1, rgb(110, 40, 22)),
+		}),
+		Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.75),
+			NumberSequenceKeypoint.new(1, 0.12),
+		}),
+		Squash = NumberSequence.new(-0.9),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.7, 0.1),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		LightEmission = 1,
+		EmissionDirection = Enum.NormalId.Front,
+	})
+
+	-- a few slow glowing embers that float off the streaks
+	emitter(spark, {
+		Name = "Embers",
+		Texture = SMOKE,
+		Rate = 10,
+		Lifetime = NumberRange.new(0.5, 0.9),
+		Speed = NumberRange.new(3, 8),
+		SpreadAngle = Vector2.new(70, 70),
+		Acceleration = Vector3.new(0, -6, 0),
+		Color = ColorSequence.new(rgb(255, 150, 50), rgb(160, 60, 24)),
+		Size = NumberSequence.new(0.14, 0),
+		Transparency = NumberSequence.new(0.1, 1),
+		LightEmission = 1,
+		EmissionDirection = Enum.NormalId.Top,
+	})
+end
+
+--------------------------------------------------
 --------------------------------------------------
 -- PUBLIC API
 --------------------------------------------------
@@ -641,7 +838,7 @@ function BallAccessories.HasDesign(ballId)
 	return designs[ballId] ~= nil
 end
 
-function BallAccessories.Apply(ball, ballId)
+function BallAccessories.Apply(ball, ballId, detached)
 	local design = designs[ballId]
 	if not design or not ball or ball:GetAttribute("AccessoriesApplied") then
 		return
@@ -649,7 +846,9 @@ function BallAccessories.Apply(ball, ballId)
 
 	ball:SetAttribute("AccessoriesApplied", true)
 
+	detachMode = detached == true
 	local ok, err = pcall(design, ball)
+	detachMode = false
 	if not ok then
 		warn("[BallAccessories] Could not build", ballId, err)
 		return
@@ -682,10 +881,43 @@ function BallAccessories.SetScale(ball)
 	end
 end
 
+-- Barrel designs (OilBarrel): the barrel keeps its own heading (it turns
+-- toward where the ball travels) and spins about its side axis as the ball
+-- covers ground, like a barrel rolling on its side.
+local barrelStates = setmetatable({}, { __mode = "k" })
+local barrelSparkClock = setmetatable({}, { __mode = "k" })
+
+local function barrelFrame(ball, now)
+	local state = barrelStates[ball]
+	if not state then
+		state = { Yaw = 0, Spin = 0, Last = now }
+		barrelStates[ball] = state
+	end
+
+	local dt = math.clamp(now - state.Last, 0, 0.1)
+	state.Last = now
+
+	local velocity = ball.AssemblyLinearVelocity
+	local flat = Vector3.new(velocity.X, 0, velocity.Z)
+	local previewSpeed = ball:GetAttribute("PreviewSpeed")
+	local speed = typeof(previewSpeed) == "number" and previewSpeed or flat.Magnitude
+
+	if flat.Magnitude > 3 then
+		local target = math.atan2(flat.X, flat.Z)
+		local delta = (target - state.Yaw + math.pi) % (2 * math.pi) - math.pi
+		state.Yaw += delta * math.min(1, dt * 8)
+	end
+
+	state.Spin += speed * dt / (1.75 * scaleOf(ball))
+
+	return CFrame.Angles(0, state.Yaw, 0), CFrame.Angles(state.Spin, 0, 0), speed
+end
+
 -- Animate Upright / Orbit parts. `now` is a time in seconds.
 function BallAccessories.Pose(ball, now)
 	local scale = scaleOf(ball)
 	local center = ball.Position
+	local yawCF, spinCF, barrelSpeed = nil, nil, nil
 
 	for _, child in ipairs(ball:GetChildren()) do
 		if child:IsA("BasePart") then
@@ -746,6 +978,33 @@ function BallAccessories.Pose(ball, now)
 					end
 				end
 
+			elseif mode == "Barrel" or mode == "BarrelYaw" then
+				local weld = child:FindFirstChild("AccWeld")
+				local baseCF = child:GetAttribute("BaseC0")
+
+				if weld and typeof(baseCF) == "CFrame" then
+					-- detach from the (rolling) ball on this client and place
+					-- the part straight from the ball position every frame
+					if IS_CLIENT and not child.Anchored then
+						weld.Enabled = false
+						child.Anchored = true
+					end
+
+					if not yawCF then
+						yawCF, spinCF, barrelSpeed = barrelFrame(ball, now)
+					end
+
+					local turn = (mode == "Barrel") and (yawCF * spinCF) or yawCF
+					local world = CFrame.new(center) * turn
+						* CFrame.new(baseCF.Position * scale) * (baseCF - baseCF.Position)
+
+					weld.C0 = ball.CFrame:ToObjectSpace(world)
+
+					if child.Anchored then
+						child.CFrame = world
+					end
+				end
+
 			elseif mode == "Rolling" and child.Anchored then
 				-- An anchored ball (rack, shop preview) has no physics to
 				-- carry its welded parts, so follow it by hand.
@@ -753,6 +1012,48 @@ function BallAccessories.Pose(ball, now)
 				if weld then
 					child.CFrame = ball.CFrame * weld.C0
 				end
+			end
+		end
+	end
+
+	-- Train-track sparks: little hot streaks thrown back and up from the
+	-- metal-on-lane contact. Real small parts (crisp, unlike a soft
+	-- particle), made on this client only, arcing down under gravity and
+	-- cooling from white-hot to rusty red. Purely visual.
+	if barrelSpeed and IS_CLIENT then
+		local spark = ball:FindFirstChild("Acc_SparkPoint")
+		local now2 = os.clock()
+		local last = barrelSparkClock[ball] or 0
+
+		if spark and barrelSpeed > 12 and now2 - last > 0.025 then
+			barrelSparkClock[ball] = now2
+
+			local count = barrelSpeed > 40 and 3 or 2
+			for _ = 1, count do
+				local streak = Instance.new("Part")
+				streak.Name = "TrackSpark"
+				streak.Size = Vector3.new(0.06, 0.06, 0.5 + math.random() * 0.45)
+				streak.Material = Enum.Material.Neon
+				streak.Color = (math.random() < 0.55) and rgb(255, 214, 120)
+					or ((math.random() < 0.6) and rgb(255, 130, 40) or rgb(190, 64, 26))
+				streak.Anchored = false
+				streak.CanCollide = false
+				streak.CanTouch = false
+				streak.CanQuery = false
+				streak.CastShadow = false
+				streak.Massless = true
+
+				local back = -(ball.AssemblyLinearVelocity * Vector3.new(1, 0, 1))
+				back = back.Magnitude > 1 and back.Unit or Vector3.new(0, 0, -1)
+				local side = Vector3.new(-back.Z, 0, back.X)
+				local velocity = back * (14 + math.random() * 22)
+					+ side * ((math.random() - 0.5) * 12)
+					+ Vector3.new(0, 7 + math.random() * 12, 0)
+
+				streak.CFrame = CFrame.lookAt(spark.Position, spark.Position + velocity)
+				streak.AssemblyLinearVelocity = velocity
+				streak.Parent = workspace
+				Debris:AddItem(streak, 0.32 + math.random() * 0.12)
 			end
 		end
 	end

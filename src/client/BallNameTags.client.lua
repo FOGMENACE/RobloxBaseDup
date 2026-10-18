@@ -1,0 +1,160 @@
+--------------------------------------------------
+-- BALL NAME TAGS (client, visual)
+--
+-- A tag above every player's ball:  [REBIRTHS] DisplayName  (no "x").
+-- The bracketed number is coloured by the player's rebirth zone.
+--
+-- The tag lives on its own invisible anchored part that follows only the
+-- ball's POSITION every frame (smoothed, always upright), so it never
+-- rolls, spins or bounces with the ball. Text comes from replicated
+-- server data (Rebirths attribute, Player.DisplayName).
+--------------------------------------------------
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local playerBalls = workspace:WaitForChild("PlayerBalls")
+
+local ZONES = {
+	{ From = 0, Color = Color3.fromRGB(150, 235, 90) }, -- lime
+	{ From = 5, Color = Color3.fromRGB(80, 220, 230) }, -- aqua
+	{ From = 10, Color = Color3.fromRGB(100, 150, 255) }, -- blue
+	{ From = 20, Color = Color3.fromRGB(190, 120, 255) },
+	{ From = 40, Color = Color3.fromRGB(255, 200, 70) },
+	{ From = 75, Color = Color3.fromRGB(255, 90, 130) },
+}
+
+local function zoneColor(rebirths)
+	local color = ZONES[1].Color
+	for _, zone in ipairs(ZONES) do
+		if rebirths >= zone.From then
+			color = zone.Color
+		end
+	end
+	return color
+end
+
+local function hex(color)
+	return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
+end
+
+local folder = workspace:FindFirstChild("BallNameTags")
+if folder then
+	folder:Destroy()
+end
+folder = Instance.new("Folder")
+folder.Name = "BallNameTags"
+folder.Parent = workspace
+
+local tags = {} -- [ball] = { Anchor, Label, Player, Height, Smoothed }
+
+local function setText(entry)
+	local player = entry.Player
+	local rebirths = math.floor(player:GetAttribute("Rebirths") or 0)
+	local name = player.DisplayName:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+
+	entry.Label.RichText = true
+	entry.Label.Text = string.format('<font color="%s">[%d]</font> %s', hex(zoneColor(rebirths)), rebirths, name)
+end
+
+local function remove(ball)
+	local entry = tags[ball]
+	if entry then
+		entry.Anchor:Destroy()
+		tags[ball] = nil
+	end
+end
+
+local function add(ball)
+	if not ball:IsA("BasePart") or tags[ball] then
+		return
+	end
+
+	local userId = tonumber(ball.Name:match("^PlayerBall_(%d+)$"))
+	local player = userId and Players:GetPlayerByUserId(userId)
+	if not player then
+		return
+	end
+
+	local anchor = Instance.new("Part")
+	anchor.Name = "Tag_" .. userId
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanTouch = false
+	anchor.CanQuery = false
+	anchor.CastShadow = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+	anchor.Parent = folder
+
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(240, 36)
+	gui.AlwaysOnTop = false
+	gui.MaxDistance = 140
+	gui.LightInfluence = 0
+	gui.Parent = anchor
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Parent = gui
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 2.5
+	stroke.Color = Color3.fromRGB(20, 18, 30)
+	stroke.Parent = label
+
+	local entry = {
+		Anchor = anchor,
+		Label = label,
+		Player = player,
+		Height = ball.Size.Y / 2 + 2.6,
+		Smoothed = ball.Position.Y,
+	}
+	tags[ball] = entry
+
+	setText(entry)
+	player:GetAttributeChangedSignal("Rebirths"):Connect(function()
+		if tags[ball] == entry then
+			setText(entry)
+		end
+	end)
+
+	ball.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			remove(ball)
+		end
+	end)
+end
+
+playerBalls.ChildAdded:Connect(function(ball)
+	task.defer(add, ball)
+end)
+for _, ball in ipairs(playerBalls:GetChildren()) do
+	add(ball)
+end
+
+-- Follow the ball's position only. Height is smoothed so little bounces on
+-- the lane do not make the tag jitter.
+RunService.RenderStepped:Connect(function(deltaTime)
+	local alpha = 1 - math.exp(-14 * deltaTime)
+
+	for ball, entry in pairs(tags) do
+		if ball.Parent then
+			local position = ball.Position
+			entry.Smoothed += (position.Y - entry.Smoothed) * alpha
+			entry.Anchor.CFrame = CFrame.new(position.X, entry.Smoothed + entry.Height, position.Z)
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	for ball, entry in pairs(tags) do
+		if entry.Player == player then
+			remove(ball)
+		end
+	end
+end)

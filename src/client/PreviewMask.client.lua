@@ -62,10 +62,10 @@ end
 
 local course = workspace:WaitForChild("Course")
 
-for _, name in ipairs({ "LobbyCourse", "WinCoursePreview" }) do
-	task.spawn(function()
-		watch(course:WaitForChild(name))
-	end)
-end
+-- The whole course folder: the lobby previews, the win preview AND the
+-- leftover rows of the last run, so no real numbers show before StartWall.
+task.spawn(function()
+	watch(course)
+end)
 
 player:GetAttributeChangedSignal("RunState"):Connect(applyAll)

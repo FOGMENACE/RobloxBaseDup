@@ -530,6 +530,41 @@ local BallDefinitions = {
 		DisplayOrder =
 			19,
 	},
+
+
+	--------------------------------------------------
+	-- EXCLUSIVE: OIL BARREL
+	--
+	-- Not for sale with wins or a Developer Product. Owned through the
+	-- Game Pass, the Captain Oil Server Pack, or the day-7 calendar
+	-- reward (all granted by the server). WinsCost is a huge placeholder
+	-- so the normal wins purchase can never succeed, and
+	-- IsExclusive = true makes BallService refuse it outright.
+	--------------------------------------------------
+
+	OilBarrel = {
+
+		DisplayName =
+			"Oil Barrel",
+
+		ForwardSpeed =
+			150,
+
+		HorizontalSpeed =
+			150,
+
+		WinsCost =
+			999999999,
+
+		RequiredRebirths =
+			0,
+
+		DisplayOrder =
+			20,
+
+		IsExclusive =
+			true,
+	},
 }
 
 

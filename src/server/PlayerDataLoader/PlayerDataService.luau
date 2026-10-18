@@ -486,8 +486,6 @@ local function updatePlayerValues(player, data)
     end
 
     for name, value in pairs({
-        Level = data.Level,
-        GlobalLevel = data.GlobalLevel,
         Wins = data.Wins,
         Rebirths = data.Rebirths,
     }) do
@@ -513,10 +511,8 @@ local function createLeaderstats(player, data)
     end
 
     for _, name in ipairs({
-        "Level",
-        "GlobalLevel",
-        "Wins",
         "Rebirths",
+        "Wins",
     }) do
         local stat = leaderstats:FindFirstChild(name)
 
@@ -1062,6 +1058,30 @@ function PlayerDataService.GrantRebirth(player)
 end
 
 --------------------------------------------------
+-- FORCE REBIRTH (paid "Skip Rebirth" product only)
+--
+-- Same effect as a normal rebirth (XP and level reset, next requirement,
+-- saved) but WITHOUT the level requirement. Only the purchase handler in
+-- ProductService may call this.
+--------------------------------------------------
+
+function PlayerDataService.ForceRebirth(player)
+    local data = loadedData[player]
+
+    if not data or shuttingDown or data.Rebirths >= MAX_REBIRTHS then
+        return false
+    end
+
+    data.Rebirths += 1
+    data.RebirthLevelRequirement = getRequiredRebirthLevel(data.Rebirths)
+    data.XP = 0
+    data.Level = 1
+
+    updatePlayerValues(player, data)
+    return true
+end
+
+--------------------------------------------------
 -- SAVE PLAYER
 --------------------------------------------------
 
@@ -1143,6 +1163,95 @@ end
 --------------------------------------------------
 -- SHUTDOWN
 --------------------------------------------------
+--------------------------------------------------
+-- ADMIN API (called ONLY by server/AdminService)
+--
+-- Resets progression fields to valid defaults for ONE explicit UserId.
+-- Receipt / idempotency records live in other DataStores
+-- (ProcessedReceipts_v1) and are never touched here. Every reset first
+-- stores a full backup copy in "PlayerDataBackup_v1".
+--------------------------------------------------
+
+local backupStore = DataStoreService:GetDataStore("PlayerDataBackup_v1")
+
+local function freshDefaults()
+    local fresh = copyData(DEFAULT_DATA)
+    fresh.OwnedBalls = { [DEFAULT_BALL_ID] = true }
+    return fresh
+end
+
+local function backup(userId, previous)
+    local key = tostring(userId) .. "_" .. tostring(os.time())
+    local ok, err = pcall(function()
+        backupStore:SetAsync(key, previous or { Empty = true })
+    end)
+
+    if not ok then
+        warn("[PlayerDataService] Backup failed:", userId, err)
+    end
+
+    return ok and key or nil
+end
+
+-- Read a user's saved record (does not change anything).
+function PlayerDataService.AdminRead(userId)
+    local ok, value = pcall(function()
+        return playerDataStore:GetAsync("Player_" .. tostring(userId))
+    end)
+
+    if not ok then
+        return nil, value
+    end
+
+    return value
+end
+
+-- Online player: back up, replace in-memory data, update attributes, save.
+function PlayerDataService.AdminResetOnline(player)
+    local data = loadedData[player]
+
+    if not data or shuttingDown then
+        return false, "NOT_LOADED"
+    end
+
+    local key = backup(player.UserId, copyData(data))
+    if not key then
+        return false, "BACKUP_FAILED"
+    end
+
+    loadedData[player] = freshDefaults()
+    updatePlayerValues(player, loadedData[player])
+
+    local saved = PlayerDataService.SavePlayer(player)
+    return saved, saved and key or "SAVE_FAILED"
+end
+
+-- Offline player: back up and overwrite the stored record atomically.
+function PlayerDataService.AdminResetOffline(userId)
+    local backupKey = nil
+    local ok, err = pcall(function()
+        playerDataStore:UpdateAsync("Player_" .. tostring(userId), function(old)
+            backupKey = backup(userId, old)
+            if not backupKey then
+                return nil -- abort: never overwrite without a backup
+            end
+            return freshDefaults()
+        end)
+    end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    return backupKey ~= nil, backupKey or "BACKUP_FAILED"
+end
+
+-- Forget a player's in-memory data WITHOUT saving it (used right after a
+-- reset so a stale session cannot write the old progression back).
+function PlayerDataService.AdminForget(player)
+    loadedData[player] = nil
+end
+
 
 function PlayerDataService.BeginShutdown()
     shuttingDown = true

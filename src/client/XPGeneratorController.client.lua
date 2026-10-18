@@ -100,13 +100,11 @@ local function x6Text()
 		or 0
 
 	if mode == "Waiting" then
-		return "CLAIM IN " .. formatClock(remaining)
+		return "LIMITED-TIME GIFT"
 	elseif mode == "Ready" then
 		return "READY! CLAIM IT"
 	elseif mode == "Active" then
 		return "ACTIVE " .. formatClock(remaining)
-	elseif mode == "Done" then
-		return "BACK TOMORROW"
 	end
 
 	return "LIMITED-TIME GIFT"

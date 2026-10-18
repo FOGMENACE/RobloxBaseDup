@@ -96,7 +96,7 @@ for key, style in pairs(STYLES) do
 			Position = UDim2.fromOffset(0, 52),
 			Size = UDim2.new(1, 0, 0, 22),
 			Font = FONT,
-			Text = "R$ " .. boost.PriceRobux .. " ONLY!",
+			Text = " " .. boost.PriceRobux .. " ONLY!",
 			TextColor3 = Color3.fromRGB(255, 240, 120),
 			TextSize = 15,
 		}, holder)
@@ -130,7 +130,7 @@ task.spawn(function()
 				entry.Price.Text = entry.Name .. " ACTIVE"
 			else
 				entry.Label.Text = entry.Name
-				entry.Price.Text = "R$ " .. entry.Rate .. " ONLY!"
+				entry.Price.Text = " " .. entry.Rate .. " ONLY!"
 			end
 		end
 		task.wait(0.5)

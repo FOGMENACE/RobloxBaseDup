@@ -995,6 +995,63 @@ local function createPlayerBall(
 	end
 
 	--------------------------------------------------
+	-- IN-PLACE SWAP (mid-run tier gates)
+	--
+	-- Re-creating the ball made the client see a ~0.25 s freeze while the
+	-- new instance replicated. A tier swap therefore keeps the SAME ball
+	-- part (same physics, velocity and controller) and only changes its
+	-- mesh, texture, size and accessories.
+	--------------------------------------------------
+
+	if options and options.InPlace == true
+		and typeof(options.BallId) == "string"
+		and getBallDefinition(options.BallId) then
+
+		local current = playerBalls:FindFirstChild(getPlayerBallName(player))
+		local swapTemplate = getBallTemplate(options.BallId)
+
+		if current and current:IsA("MeshPart") and swapTemplate and swapTemplate:IsA("MeshPart") then
+			local okMesh = pcall(function()
+				-- ApplyMesh freezes the ball on the client for ~0.25 s; all tier balls share one sphere mesh, so only apply it when the mesh really differs.
+				if current.MeshId ~= swapTemplate.MeshId then current:ApplyMesh(swapTemplate) end
+			end)
+
+			if okMesh then
+				local oldHeight = current.Size.Y
+				for _, child in ipairs(current:GetChildren()) do
+					if child.Name:sub(1, 4) == "Acc_" then
+						child:Destroy()
+					end
+				end
+				current:SetAttribute("AccessoriesApplied", nil)
+
+				current.TextureID = swapTemplate.TextureID
+				current.Color = swapTemplate.Color
+				current.Material = swapTemplate.Material
+				current.Reflectance = swapTemplate.Reflectance
+				current.Transparency = swapTemplate.Transparency
+				-- Writing Size (even float noise) freezes the ball on the client for ~0.25 s, so only change it for a really different size (all tier balls are 4 studs).
+				local sizeChanged = (current.Size - swapTemplate.Size).Magnitude > 0.05
+				if sizeChanged then current.Size = swapTemplate.Size end
+				current:SetAttribute("BallId", options.BallId)
+
+				-- a bigger ball must not sink into the lane
+				local lift = (current.Size.Y - oldHeight) / 2
+				if sizeChanged and lift > 0 then
+					current.CFrame = current.CFrame + Vector3.new(0, lift, 0)
+				end
+
+				require(
+					game:GetService("ReplicatedStorage"):WaitForChild("BallAccessories")
+				).Apply(current, options.BallId, true)
+
+				return current
+			end
+		end
+		-- anything unexpected: fall through to the normal re-create path
+	end
+
+	--------------------------------------------------
 	-- REMOVE OLD BALL
 	--------------------------------------------------
 
@@ -1358,6 +1415,7 @@ swapRunBall.Event:Connect(
 				CFrame = cframe,
 				Velocity = velocity,
 				CarrySpeed = carrySpeed,
+				InPlace = ballId ~= nil and typeof(cframe) == "CFrame" and typeof(carrySpeed) == "number",
 			}
 		)
 

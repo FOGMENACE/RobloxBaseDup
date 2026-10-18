@@ -69,7 +69,7 @@ local NUMBER_OF_ROWS =
 
 
 local ROW_SPACING =
-	39
+	42
 
 
 local PLATFORM_SEPARATION =

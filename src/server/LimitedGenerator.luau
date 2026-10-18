@@ -1,40 +1,37 @@
 --------------------------------------------------
 -- LIMITED GENERATOR (GenX6) - SERVER ONLY MODULE
 --
--- The x6 generator only pays out while the player has an ACTIVE boost,
--- and a boost has to be claimed by clicking CLAIM in the hub:
+-- The x6 generator only pays out while the player has an ACTIVE boost.
+-- Offers repeat all session long (no daily cap):
 --
---   chance 1: becomes claimable 14 minutes after the player's first
---             join of the day
---   chance 2: becomes claimable 7 minutes after chance 1's boost ends
---   after the last chance: "back tomorrow" (resets at UTC midnight)
---
--- Each boost lasts CHANCES[n].Duration seconds.
+--   Waiting : a random 7 - 14 minute wait
+--   Ready   : a FREE claim popup is offered for CLAIM_WINDOW seconds
+--             (missed? the next offer is rescheduled with a new wait)
+--   Active  : the boost lasts BOOST_SECONDS, then the cycle restarts
 --
 -- Protections:
 --   * all timers are server time (os.time), never client-supplied
---   * progress is saved in its own DataStore ("LimitedGen_v1") with
---     absolute timestamps, so leaving and rejoining never resets a wait
---     or grants a second boost
+--   * state is saved in its own DataStore ("LimitedGen_v1") with absolute
+--     timestamps, so leaving and rejoining never skips a wait or grants
+--     a second boost
 --   * a claim is validated against the real state and saved BEFORE the
 --     boost starts; the physics code asks IsActive() every frame (a
 --     cached, non-yielding read)
 --
--- Edit CHANCES to change the waits or durations.
+-- Edit the constants below to change the waits or durations.
 --------------------------------------------------
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 
-local CHANCES = {
-	{ Wait = 14 * 60, Duration = 3 * 60 },
-	{ Wait = 7 * 60, Duration = 3 * 60 },
-}
-
-local DAY_SECONDS = 24 * 60 * 60
+local WAIT_MIN = 7 * 60
+local WAIT_MAX = 14 * 60
+local CLAIM_WINDOW = 120
+local BOOST_SECONDS = 3 * 60
 
 local store = DataStoreService:GetDataStore("LimitedGen_v1")
+local rng = Random.new()
 
 local LimitedGenerator = {}
 
@@ -68,26 +65,23 @@ local resultRemote = getOrCreate("X6Result")
 -- STATE
 --------------------------------------------------
 
-local states = {} -- [player] = { Day, Used, NextReady, ActiveUntil, Loaded, Busy }
+local states = {} -- [player] = { NextReady, ReadyUntil, ActiveUntil, Loaded, Busy }
 
-local function today()
-	return math.floor(os.time() / DAY_SECONDS)
+local function newOffer(from)
+	local nextReady = from + rng:NextInteger(WAIT_MIN, WAIT_MAX)
+	return nextReady, nextReady + CLAIM_WINDOW
 end
 
 local function freshRecord()
-	return {
-		Day = today(),
-		Used = 0,
-		NextReady = os.time() + CHANCES[1].Wait,
-		ActiveUntil = 0,
-	}
+	local nextReady, readyUntil = newOffer(os.time())
+	return { NextReady = nextReady, ReadyUntil = readyUntil, ActiveUntil = 0 }
 end
 
 local function keyFor(player)
 	return "X6_" .. tostring(player.UserId)
 end
 
--- Waiting / Ready / Active / Done
+-- Waiting / Ready / Active
 local function modeOf(state)
 	local now = os.time()
 
@@ -95,15 +89,15 @@ local function modeOf(state)
 		return "Active"
 	end
 
-	if state.Used >= #CHANCES then
-		return "Done"
-	end
-
 	if now < state.NextReady then
 		return "Waiting"
 	end
 
-	return "Ready"
+	if now < state.ReadyUntil then
+		return "Ready"
+	end
+
+	return "Missed" -- the updater loop reschedules this right away
 end
 
 local function untilOf(state, mode)
@@ -111,14 +105,17 @@ local function untilOf(state, mode)
 		return state.ActiveUntil
 	elseif mode == "Waiting" then
 		return state.NextReady
-	elseif mode == "Done" then
-		return (today() + 1) * DAY_SECONDS
+	elseif mode == "Ready" then
+		return state.ReadyUntil
 	end
 	return 0
 end
 
 local function publish(player, state)
 	local mode = modeOf(state)
+	if mode == "Missed" then
+		mode = "Waiting"
+	end
 	local untilTime = untilOf(state, mode)
 
 	if player:GetAttribute("X6Mode") ~= mode then
@@ -132,9 +129,8 @@ end
 local function save(player, state)
 	local ok, err = pcall(function()
 		store:SetAsync(keyFor(player), {
-			Day = state.Day,
-			Used = state.Used,
 			NextReady = state.NextReady,
+			ReadyUntil = state.ReadyUntil,
 			ActiveUntil = state.ActiveUntil,
 		})
 	end)
@@ -144,6 +140,11 @@ local function save(player, state)
 	end
 
 	return ok
+end
+
+local function reschedule(player, state)
+	state.NextReady, state.ReadyUntil = newOffer(os.time())
+	save(player, state)
 end
 
 local function loadPlayer(player)
@@ -161,14 +162,16 @@ local function loadPlayer(player)
 		return
 	end
 
-	if typeof(value) == "table" and tonumber(value.Day) == today() then
-		state.Day = value.Day
-		state.Used = tonumber(value.Used) or 0
-		state.NextReady = tonumber(value.NextReady) or state.NextReady
+	if typeof(value) == "table" and tonumber(value.NextReady) and tonumber(value.ReadyUntil) then
+		state.NextReady = tonumber(value.NextReady)
+		state.ReadyUntil = tonumber(value.ReadyUntil)
 		state.ActiveUntil = tonumber(value.ActiveUntil) or 0
 	else
-		-- A new day: fresh chances, and remember them right away.
 		save(player, state)
+	end
+
+	if modeOf(state) == "Missed" then
+		reschedule(player, state)
 	end
 
 	state.Loaded = true
@@ -194,13 +197,6 @@ claimRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 
-	-- Day rollover while the player stayed in the server.
-	if state.Day ~= today() then
-		local fresh = freshRecord()
-		state.Day, state.Used = fresh.Day, fresh.Used
-		state.NextReady, state.ActiveUntil = fresh.NextReady, fresh.ActiveUntil
-	end
-
 	if modeOf(state) ~= "Ready" then
 		resultRemote:FireClient(player, false, "Not ready yet.")
 		publish(player, state)
@@ -209,24 +205,16 @@ claimRemote.OnServerEvent:Connect(function(player)
 
 	state.Busy = true
 
-	local chance = CHANCES[state.Used + 1]
-	local nextChance = CHANCES[state.Used + 2]
 	local now = os.time()
-
-	local updated = {
-		Day = state.Day,
-		Used = state.Used + 1,
-		ActiveUntil = now + chance.Duration,
-		NextReady = nextChance and (now + chance.Duration + nextChance.Wait) or math.huge,
-	}
+	local activeUntil = now + BOOST_SECONDS
+	local nextReady, readyUntil = newOffer(activeUntil)
 
 	-- Save first; the boost only starts if the claim was recorded.
 	local ok = pcall(function()
 		store:SetAsync(keyFor(player), {
-			Day = updated.Day,
-			Used = updated.Used,
-			NextReady = updated.NextReady == math.huge and 0 or updated.NextReady,
-			ActiveUntil = updated.ActiveUntil,
+			NextReady = nextReady,
+			ReadyUntil = readyUntil,
+			ActiveUntil = activeUntil,
 		})
 	end)
 
@@ -236,13 +224,13 @@ claimRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 
-	state.Used = updated.Used
-	state.ActiveUntil = updated.ActiveUntil
-	state.NextReady = updated.NextReady
+	state.ActiveUntil = activeUntil
+	state.NextReady = nextReady
+	state.ReadyUntil = readyUntil
 	state.Busy = false
 
 	publish(player, state)
-	resultRemote:FireClient(player, true, chance.Duration)
+	resultRemote:FireClient(player, true, BOOST_SECONDS)
 end)
 
 --------------------------------------------------
@@ -261,18 +249,15 @@ Players.PlayerRemoving:Connect(function(player)
 	states[player] = nil
 end)
 
--- Keep the published attributes current (and roll the day over).
+-- Keep the published attributes current and reschedule missed offers.
 task.spawn(function()
 	while true do
 		task.wait(1)
 
 		for player, state in pairs(states) do
 			if state.Loaded and player.Parent then
-				if state.Day ~= today() and modeOf(state) ~= "Active" then
-					local fresh = freshRecord()
-					state.Day, state.Used = fresh.Day, fresh.Used
-					state.NextReady, state.ActiveUntil = fresh.NextReady, fresh.ActiveUntil
-					save(player, state)
+				if modeOf(state) == "Missed" then
+					reschedule(player, state)
 				end
 
 				publish(player, state)

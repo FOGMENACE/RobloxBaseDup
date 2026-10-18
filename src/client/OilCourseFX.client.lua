@@ -5,7 +5,7 @@
 --   * oil gates breathe (gentle transparency pulse) until collected
 --   * collecting a gate pops a burst of sparks at the ball: green for a
 --     gain, red for a loss, gold for multipliers, blue for dividers
---   * speed streaks rush past the screen edges while rolling fast
+--   * (speed lines now live in SpeedFX.client.lua)
 -- The collection state comes from the gate's own attributes (set by the
 -- server); nothing here changes gameplay.
 --------------------------------------------------
@@ -118,49 +118,6 @@ local function getOwnBall()
 end
 
 --------------------------------------------------
--- SPEED STREAKS
---------------------------------------------------
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "OilCourseFX"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.DisplayOrder = 3
-gui.Parent = playerGui
-
-local streakTimer = 0
-local random = Random.new()
-
-local function spawnStreak(speed)
-	local fromLeft = random:NextInteger(0, 1) == 0
-	local startX = fromLeft and random:NextNumber(0.0, 0.22) or random:NextNumber(0.78, 1.0)
-	local length = random:NextInteger(60, 130) + math.floor(speed)
-
-	local streak = Instance.new("Frame")
-	streak.AnchorPoint = Vector2.new(0.5, 0.5)
-	streak.Position = UDim2.fromScale(startX, random:NextNumber(0.05, 0.95))
-	streak.Size = UDim2.fromOffset(2, length)
-	streak.BackgroundColor3 = CREAM
-	streak.BackgroundTransparency = 0.82
-	streak.BorderSizePixel = 0
-	streak.Rotation = fromLeft and -8 or 8
-	streak.Parent = gui
-
-	local tween = TweenService:Create(
-		streak,
-		TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{
-			Position = UDim2.fromScale(startX + (fromLeft and 0.05 or -0.05), streak.Position.Y.Scale + 0.3),
-			BackgroundTransparency = 1,
-		}
-	)
-	tween.Completed:Once(function()
-		streak:Destroy()
-	end)
-	tween:Play()
-end
-
---------------------------------------------------
 -- LOOP
 --------------------------------------------------
 
@@ -191,23 +148,6 @@ RunService.RenderStepped:Connect(function(deltaTime)
 					0,
 					1
 				)
-			end
-		end
-	end
-
-	-- Speed streaks while rolling fast in the oil course.
-	local runState = player:GetAttribute("RunState")
-	local ball = getOwnBall()
-
-	if ball and (runState == "Running") then
-		local speed = ball.AssemblyLinearVelocity.Magnitude
-		if speed > 30 then
-			streakTimer += deltaTime
-			local interval = math.clamp(0.34 - speed / 500, 0.06, 0.34)
-
-			if streakTimer >= interval then
-				streakTimer = 0
-				spawnStreak(speed)
 			end
 		end
 	end

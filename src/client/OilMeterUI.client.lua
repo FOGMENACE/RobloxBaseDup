@@ -48,52 +48,97 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 8,
 }, playerGui)
 
+local BASE_TILT = -2.5
+
 local panel = create("Frame", {
 	Name = "Panel",
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, -90),
-	Size = UDim2.fromOffset(300, 64),
-	BackgroundColor3 = INK,
-	BackgroundTransparency = 0.1,
+	Size = UDim2.fromOffset(430, 58),
+	BackgroundTransparency = 1,
+	Rotation = BASE_TILT,
 	Visible = false,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 14) }, panel)
-create("UIStroke", { Color = LANE, Thickness = 2 }, panel)
 local scale = create("UIScale", { Scale = 1 }, panel)
 
-local title = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(12, 4),
-	Size = UDim2.new(0.6, 0, 0, 22),
-	Font = Enum.Font.GothamBlack,
-	Text = "OIL",
-	TextColor3 = CREAM,
-	TextSize = 16,
-	TextXAlignment = Enum.TextXAlignment.Left,
+-- slanted bar (deep bowling-purple with a glossy top), like a speed-game gauge
+local bar = create("Frame", {
+	Position = UDim2.fromOffset(34, 8),
+	Size = UDim2.new(1, -40, 1, -14),
+	BackgroundColor3 = Color3.fromRGB(46, 30, 96),
+	ClipsDescendants = true,
 }, panel)
+create("UICorner", { CornerRadius = UDim.new(0, 12) }, bar)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 5 }, bar)
 
-
-local track = create("Frame", {
-	Position = UDim2.fromOffset(12, 34),
-	Size = UDim2.new(1, -24, 0, 18),
-	BackgroundColor3 = Color3.fromRGB(48, 50, 72),
-}, panel)
-create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+local track = bar -- (kept name: the fill lives inside the bar)
 
 local fill = create("Frame", {
 	Size = UDim2.fromScale(0, 1),
-	BackgroundColor3 = OIL,
-}, track)
-create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
+	BackgroundColor3 = Color3.fromRGB(150, 90, 235),
+}, bar)
+create("UIGradient", {
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(196, 130, 255)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(140, 70, 235)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(98, 44, 190)),
+	}),
+	Rotation = 90,
+}, fill)
+
+-- gloss on the upper half
+create("Frame", {
+	Size = UDim2.new(1, 0, 0.42, 0),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.82,
+	BorderSizePixel = 0,
+	ZIndex = 2,
+}, bar)
+
+-- barrel icon, tilted, overlapping the left end of the bar
+local icon = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromOffset(34, 26),
+	Size = UDim2.fromOffset(64, 64),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.FredokaOne,
+	Text = "🛢️",
+	TextSize = 50,
+	TextColor3 = INK,
+	Rotation = -14,
+	ZIndex = 5,
+}, panel)
+
+local title = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(74, 6),
+	Size = UDim2.fromOffset(150, 46),
+	Font = Enum.Font.FredokaOne,
+	Text = "OIL",
+	TextColor3 = CREAM,
+	TextSize = 30,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 5,
+}, panel)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 4 }, title)
 
 local valueLabel = create("TextLabel", {
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -12, 0.5, -6),
+	Size = UDim2.fromOffset(220, 60),
 	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 1),
-	Font = Enum.Font.GothamBold,
+	Font = Enum.Font.FredokaOne,
 	Text = "",
-	TextColor3 = CREAM,
-	TextSize = 12,
-}, track)
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 46,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	ZIndex = 6,
+}, panel)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 5 }, valueLabel)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(235, 205, 255)),
+	Rotation = 90,
+}, valueLabel)
 
 local function formatNumber(value)
 	value = math.floor(tonumber(value) or 0)
@@ -119,7 +164,7 @@ local function setShown(visible)
 		TweenService:Create(
 			panel,
 			TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ Position = UDim2.new(0.5, 0, 0, 12) }
+			{ Position = UDim2.new(0.5, 0, 0, 40) }
 		):Play()
 	else
 		local tween = TweenService:Create(
@@ -145,7 +190,22 @@ local function bump(target, amount)
 	):Play()
 end
 
+-- The bar slants harder for a moment whenever oil comes in, then springs back.
+local function kickTilt(degrees)
+	panel.Rotation = BASE_TILT - degrees
+	TweenService:Create(
+		panel,
+		TweenInfo.new(0.55, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
+		{ Rotation = BASE_TILT }
+	):Play()
+end
+
 local lastCurrentOil = 0
+
+-- While the multiplier animation runs (WinCelebration fires OilMeterAnim) the
+-- meter shows the oil BEFORE the multipliers and counts up as each one lands.
+-- The real CurrentOil (already multiplied by the server) is shown at the end.
+local displayOverride = nil
 
 local function flyDroplet()
 	local center = gui.AbsoluteSize / 2
@@ -201,6 +261,7 @@ local function refresh()
 		local remaining = math.clamp(1 - travelled / budget, 0, 1)
 
 		title.Text = "OIL LEFT"
+		displayOverride = nil
 		valueLabel.Text = string.format("%d%%", math.floor(remaining * 100))
 		TweenService:Create(
 			fill,
@@ -219,11 +280,14 @@ local function refresh()
 		-- Oil course (and the finish countdown): show oil collected.
 		local oil = player:GetAttribute("CurrentOil") or 0
 		title.Text = "OIL"
-		valueLabel.Text = formatNumber(oil)
+		if displayOverride == nil then
+			valueLabel.Text = formatNumber(oil)
+		end
 		fill.Size = UDim2.fromScale(1, 1)
 
 		if oil > lastCurrentOil then
 			flyDroplet()
+			kickTilt(math.clamp(5 + (oil - lastCurrentOil) / 300, 5, 12))
 		end
 		lastCurrentOil = oil
 		hideToken += 1
@@ -329,6 +393,45 @@ end
 refresh()
 
 --------------------------------------------------
+-- MULTIPLIER ANIMATION HOOK (driven by WinCelebration)
+--   Begin(base)      show `base` instead of the real oil
+--   Multiply(factor) count the shown number up to base * factor
+--   End()            back to the real, server-owned number
+--------------------------------------------------
+
+local animEvent = create("BindableEvent", { Name = "OilMeterAnim" }, gui)
+
+animEvent.Event:Connect(function(command, value)
+	if command == "Begin" and typeof(value) == "number" then
+		displayOverride = value
+		valueLabel.Text = formatNumber(value)
+
+	elseif command == "Multiply" and typeof(value) == "number" and displayOverride then
+		local from = displayOverride
+		local to = from * value
+		displayOverride = to
+
+		local duration = math.clamp(0.5 + math.log10(math.max(value, 1)) * 0.3, 0.5, 1.4)
+		local started = os.clock()
+		bump(scale, 1.15)
+		kickTilt(12)
+		while os.clock() - started < duration and displayOverride == to do
+			local t = (os.clock() - started) / duration
+			valueLabel.Text = formatNumber(from + (to - from) * (t * t * (1.6 - 0.6 * t)))
+			panel.Rotation = BASE_TILT - 7 * math.sin(t * math.pi * 4) * (1 - t)
+			task.wait()
+		end
+		if displayOverride == to then
+			valueLabel.Text = formatNumber(to)
+		end
+
+	elseif command == "End" then
+		displayOverride = nil
+		refresh()
+	end
+end)
+
+--------------------------------------------------
 -- GUTTER PENALTY FEEDBACK
 --
 -- The server (GutterService) decides and applies the penalty; this
@@ -399,7 +502,7 @@ task.spawn(function()
 			end)
 		end
 		task.delay(0.3, function()
-			panel.Rotation = 0
+			panel.Rotation = BASE_TILT
 		end)
 	end)
 end)

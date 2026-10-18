@@ -415,7 +415,7 @@ end)
 
 local bonusPill = create("Frame", {
 	Name = "XPBonusPill",
-	Position = UDim2.fromOffset(366, -44),
+	Position = UDim2.fromOffset(366, -60),
 	Size = UDim2.fromOffset(174, 40),
 	BackgroundColor3 = CREAM,
 }, hud)
@@ -463,12 +463,68 @@ player:GetAttributeChangedSignal("Rebirths"):Connect(refreshBonusPill)
 player:GetAttributeChangedSignal("PassXPMultiplier"):Connect(refreshBonusPill)
 refreshBonusPill()
 
-local function fitHud()
+--------------------------------------------------
+-- SOFT SHADOWS under the main bottom panels (depth, "premium" feel)
+--------------------------------------------------
+
+for _, entry in ipairs({ { "GlobalBadge", 44 }, { "LevelPanel", 20 }, { "OilChip", 20 } }) do
+	local panel = hud:FindFirstChild(entry[1])
+	if panel then
+		local shadow = create("Frame", {
+			Name = entry[1] .. "Shadow",
+			Position = panel.Position + UDim2.fromOffset(0, 6),
+			Size = panel.Size,
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.62,
+			ZIndex = 0,
+		}, hud)
+		round(shadow, entry[2])
+	end
+end
+
+--------------------------------------------------
+-- FIT + COMPACT MODE
+--
+-- While rolling (RunState is not Waiting) the HUD shrinks and the XP kit
+-- row and bonus pill hide, so the bottom of the screen stays clear and the
+-- ball is never covered.
+--------------------------------------------------
+
+local running = false
+
+local function applyHudScale(animated)
 	local viewport = gui.AbsoluteSize
-	hudScale.Scale = math.clamp(viewport.X / 620, 0.5, 1.15)
+	local target = math.clamp(viewport.X / 620, 0.5, 1.15) * (running and 0.76 or 1)
+
+	if animated then
+		TweenService:Create(hudScale, TweenInfo.new(0.3, Enum.EasingStyle.Quad), { Scale = target }):Play()
+	else
+		hudScale.Scale = target
+	end
+end
+
+local function fitHud()
+	applyHudScale(false)
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitHud)
 fitHud()
+
+local function refreshCompact()
+	local state = player:GetAttribute("RunState")
+	local nowRunning = state ~= nil and state ~= "Waiting"
+
+	if nowRunning ~= running then
+		running = nowRunning
+		kitRow.Visible = not running
+		bonusPill.Visible = not running
+		TweenService:Create(hud, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+			Position = running and UDim2.new(0.5, 0, 1, 190) or UDim2.new(0.5, 0, 1, -10),
+		}):Play()
+		applyHudScale(true)
+	end
+end
+player:GetAttributeChangedSignal("RunState"):Connect(refreshCompact)
+refreshCompact()
 
 --------------------------------------------------
 -- BOTTOM-LEFT REBIRTH PANEL
@@ -481,108 +537,87 @@ local rebirthPanel = create("TextButton", {
 	AnchorPoint = Vector2.new(0, 1),
 	-- On touch devices the left-bottom corner belongs to the thumbstick.
 	Position = touch and UDim2.new(0, 10, 1, -190) or UDim2.new(0, 10, 1, -10),
-	Size = UDim2.fromOffset(300, 124),
+	Size = UDim2.fromOffset(270, 132),
 	BackgroundColor3 = CREAM,
 	Text = "",
 	AutoButtonColor = false,
 }, gui)
-round(rebirthPanel, 14)
+round(rebirthPanel, 18)
 outline(rebirthPanel, 4)
 local rebirthScale = create("UIScale", { Scale = 1 }, rebirthPanel)
 Shine.Attach(rebirthPanel, { Offset = 2.2 })
 
--- Percentage to the next rebirth, on top of the panel.
-local percentLabel = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(10, 4),
-	Size = UDim2.new(1, -20, 0, 22),
-	Font = FONT,
-	Text = "0% TO NEXT REBIRTH",
-	TextColor3 = INK,
-	TextSize = 17,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, rebirthPanel)
-
-local rebirthIconHolder = create("Frame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(8, 30),
-	Size = UDim2.fromOffset(52, 52),
-}, rebirthPanel)
-addOilIcon(rebirthIconHolder, UDim2.fromScale(1, 1))
-
--- Kept under the old name: shows the rebirth count title.
+-- Header: which rebirth you are on.
 local multiplierLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(66, 28),
-	Size = UDim2.new(1, -74, 0, 22),
+	Position = UDim2.fromOffset(0, 5),
+	Size = UDim2.new(1, 0, 0, 18),
 	Font = FONT,
 	Text = "REBIRTH 0",
-	TextColor3 = INK,
-	TextSize = 19,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = Color3.fromRGB(110, 70, 160),
+	TextSize = 15,
 }, rebirthPanel)
 
-local nextLabel = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(66, 50),
-	Size = UDim2.new(1, -74, 0, 14),
-	Font = FONT,
-	Text = "",
-	TextColor3 = Color3.fromRGB(110, 70, 30),
-	TextSize = 11,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, rebirthPanel)
-
--- Two multiplier chips next to the rebirth: OIL / WINS (XP is shown in the bonus pill instead)
-local function makeChip(index, caption, color)
-	local chip = create("Frame", {
-		Position = UDim2.fromOffset(70 + (index - 1) * 110, 66),
-		Size = UDim2.fromOffset(104, 22),
-		BackgroundColor3 = color,
+-- Two big tiles: TROPHY = wins multiplier (left), BARREL = oil multiplier (right).
+local function makeTile(x, tint)
+	local tile = create("Frame", {
+		Position = UDim2.fromOffset(x, 26),
+		Size = UDim2.fromOffset(120, 100),
+		BackgroundColor3 = tint,
 	}, rebirthPanel)
-	round(chip, 11)
-	outline(chip, 2)
+	round(tile, 14)
+	outline(tile, 3)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(215, 215, 225)),
+		Rotation = 90,
+	}, tile)
 
-	local label = create("TextLabel", {
-		BackgroundTransparency = 1,
-		Size = UDim2.fromScale(1, 1),
-		Font = FONT,
-		Text = caption,
-		TextColor3 = CREAM,
-		TextSize = 15,
-	}, chip)
-	create("UIStroke", { Color = INK, Thickness = 1.5 }, label)
-
-	return label, create("UIScale", { Scale = 1 }, chip)
+	local scale = create("UIScale", { Scale = 1 }, tile)
+	return tile, scale
 end
 
-local oilChip2, oilChipScale = makeChip(1, "🛢️ x1", Color3.fromRGB(110, 90, 160))
-local winsChip, winsChipScale = makeChip(2, "🏆 x1", Color3.fromRGB(88, 196, 110))
+local winsTile, winsChipScale = makeTile(140, Color3.fromRGB(255, 236, 160))
+local oilTile, oilChipScale = makeTile(10, Color3.fromRGB(196, 186, 235))
 
-local rebirthTrack = create("Frame", {
-	Position = UDim2.fromOffset(10, 96),
-	Size = UDim2.new(1, -20, 0, 18),
-	BackgroundColor3 = Color3.fromRGB(70, 66, 90),
-}, rebirthPanel)
-round(rebirthTrack, 9)
-outline(rebirthTrack, 2)
-
-local rebirthFill = create("Frame", {
-	Size = UDim2.fromScale(0, 1),
-	BackgroundColor3 = LANE,
-}, rebirthTrack)
-round(rebirthFill, 9)
-
-local rebirthLabel = create("TextLabel", {
+-- trophy image (left)
+create("ImageLabel", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 4),
+	Size = UDim2.fromOffset(58, 58),
 	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 1),
+	Image = UiAssets.TrophyImage,
+	ScaleType = Enum.ScaleType.Fit,
+}, winsTile)
+
+-- barrel (right): a big emoji (renders crisply at this size)
+create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 2),
+	Size = UDim2.fromOffset(62, 60),
+	BackgroundTransparency = 1,
 	Font = FONT,
-	Text = "",
-	TextColor3 = CREAM,
-	TextSize = 11,
-	ZIndex = 3,
-}, rebirthTrack)
-create("UIStroke", { Color = INK, Thickness = 1.5 }, rebirthLabel)
+	Text = "🛢️",
+	TextSize = 50,
+	TextColor3 = INK,
+}, oilTile)
+
+local function multiplierText(tile, textColor)
+	local label = create("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -4),
+		Size = UDim2.new(1, -8, 0, 34),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = "x1",
+		TextColor3 = textColor,
+		TextSize = 30,
+	}, tile)
+	create("UIStroke", { Color = INK, Thickness = 2.5 }, label)
+	return label
+end
+
+local winsChip = multiplierText(winsTile, Color3.fromRGB(255, 255, 255))
+local oilChip2 = multiplierText(oilTile, Color3.fromRGB(255, 255, 255))
 
 -- Opens the existing rebirth panel (owned by RebirthUIClient).
 rebirthPanel.Activated:Connect(function()
@@ -722,7 +757,7 @@ local function refreshLevel()
 end
 
 local function refreshGlobal()
-	local value = player:GetAttribute("GlobalLevel")
+	local value = player:GetAttribute("RebirthLevelRequirement")
 	if typeof(value) == "number" then
 		local text = tostring(math.floor(value))
 		if globalLabel.Text ~= text then
@@ -752,36 +787,17 @@ local lastRebirths = nil
 
 local function refreshRebirth()
 	local rebirths = player:GetAttribute("Rebirths") or 0
-	local level = player:GetAttribute("Level") or 1
-	local required = player:GetAttribute("RebirthLevelRequirement") or 65
 
 	-- Display only: the server applies these same rules (RebirthBonuses).
 	local oilMultiplier = RebirthBonuses.OilMultiplier(rebirths)
 	local winsMultiplier = RebirthBonuses.WinsMultiplier(rebirths)
 
 	multiplierLabel.Text = "REBIRTH " .. rebirths
-	oilChip2.Text = "🛢️ x" .. formatNumber(oilMultiplier)
-	winsChip.Text = "🏆 x" .. formatNumber(winsMultiplier)
-
-	-- What the next rebirth adds
-	local nextWins = RebirthBonuses.WinsMultiplier(rebirths + 1)
-	nextLabel.Text = "NEXT: 🛢️ x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths + 1))
-		.. (nextWins > winsMultiplier and (" + 🏆 x" .. formatNumber(nextWins)) or "")
-
-	local fraction = math.clamp(level / math.max(required, 1), 0, 1)
-	TweenService:Create(
-		rebirthFill,
-		TweenInfo.new(0.35, Enum.EasingStyle.Quad),
-		{ Size = UDim2.fromScale(fraction, 1) }
-	):Play()
-
-	percentLabel.Text = fraction >= 1
-		and "READY! TAP TO REBIRTH"
-		or (math.floor(fraction * 100) .. "% TO NEXT REBIRTH")
-	rebirthLabel.Text = "LV " .. math.floor(level) .. " / " .. required
+	oilChip2.Text = "x" .. formatNumber(oilMultiplier)
+	winsChip.Text = "x" .. formatNumber(winsMultiplier)
 
 	if lastRebirths ~= nil and rebirths > lastRebirths then
-		-- A rebirth just happened: pop the panel and every chip that grew.
+		-- A rebirth just happened: pop the panel and both tiles.
 		bump(rebirthScale, 1.15)
 		bump(oilChipScale, 1.3)
 		bump(winsChipScale, 1.3)
@@ -792,7 +808,7 @@ end
 for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgress" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshLevel)
 end
-player:GetAttributeChangedSignal("GlobalLevel"):Connect(refreshGlobal)
+player:GetAttributeChangedSignal("RebirthLevelRequirement"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("CurrentOil"):Connect(refreshOil)
 for _, name in ipairs({ "Rebirths", "RebirthLevelRequirement", "Level" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshRebirth)

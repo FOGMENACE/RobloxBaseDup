@@ -1,38 +1,34 @@
---!strict
 -- RebirthUIClient
--- Location: StarterPlayer > StarterPlayerScripts
--- Client-side UI. Server remains authoritative for rebirths.
+-- Client-side UI only. The server stays authoritative: it checks the level
+-- requirement, resets XP / level and applies the new multipliers.
+--
+-- Layout (top to bottom): title, progress card (level x / y with a percent
+-- bar), rewards card (multipliers NOW -> AFTER rebirth), the REBIRTH button
+-- and a status line. The hub's REBIRTH button toggles the panel through
+-- the client-only BindableEvent "ToggleRebirthPanel".
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
 local RebirthBonuses = require(ReplicatedStorage:WaitForChild("RebirthBonuses"))
 local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
-local TweenService = game:GetService("TweenService")
+local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
+local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
---------------------------------------------------
--- CONFIGURATION
---------------------------------------------------
-
-local COLORS = {
-	Background = Color3.fromRGB(28, 20, 48),
-	Panel = Color3.fromRGB(47, 33, 76),
-	Pink = Color3.fromRGB(255, 65, 173),
-	Purple = Color3.fromRGB(151, 79, 255),
-	Cyan = Color3.fromRGB(53, 235, 255),
-	Yellow = Color3.fromRGB(255, 220, 65),
-	Green = Color3.fromRGB(75, 255, 135),
-	White = Color3.fromRGB(255, 255, 255),
-	Muted = Color3.fromRGB(190, 180, 215),
-	Red = Color3.fromRGB(255, 85, 100),
-}
-
-local FONT = Enum.Font.GothamBlack
+local INK = Color3.fromRGB(24, 22, 34)
+local CREAM = Color3.fromRGB(255, 247, 232)
+local GREEN = Color3.fromRGB(88, 196, 110)
+local GREY = Color3.fromRGB(110, 110, 130)
+local RED = Color3.fromRGB(235, 70, 70)
+local GOLD = Color3.fromRGB(255, 226, 90)
+local FONT = Enum.Font.FredokaOne
 
 --------------------------------------------------
--- REMOTE EVENT
+-- REMOTE
 --------------------------------------------------
 
 local rebirthSystem = ReplicatedStorage:WaitForChild("RebirthSystem")
@@ -43,287 +39,336 @@ if not rebirthRemote or not rebirthRemote:IsA("RemoteEvent") then
 end
 
 --------------------------------------------------
--- CLEAN UP OLD UI
+-- HELPERS
 --------------------------------------------------
 
-local oldUI = playerGui:FindFirstChild("RebirthUI")
-
-if oldUI then
-	oldUI:Destroy()
-end
-
---------------------------------------------------
--- UI HELPERS
---------------------------------------------------
-
-local function make(className, properties, parent)
-	local object = Instance.new(className)
-
-	for property, value in pairs(properties) do
-		object[property] = value
+local function create(className, props, parent)
+	local inst = Instance.new(className)
+	for key, value in pairs(props) do
+		inst[key] = value
 	end
-
-	object.Parent = parent
-	return object
+	inst.Parent = parent
+	return inst
 end
 
-local function corner(parent, radius)
-	make("UICorner", {
-		CornerRadius = UDim.new(0, radius),
-	}, parent)
+local function round(inst, radius)
+	create("UICorner", { CornerRadius = UDim.new(0, radius) }, inst)
 end
 
-local function stroke(parent, color, thickness)
-	return make("UIStroke", {
-		Color = color,
-		Thickness = thickness or 2,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-	}, parent)
+local function stroke(inst, thickness, color)
+	create("UIStroke", { Color = color or INK, Thickness = thickness }, inst)
 end
 
-local function label(parent, name, text, size, position)
-	return make("TextLabel", {
-		Name = name,
-		BackgroundTransparency = 1,
-		Position = position,
-		Size = size,
-		Text = text,
-		TextColor3 = COLORS.White,
-		TextScaled = true,
-		Font = FONT,
-	}, parent)
+local function label(props, parent)
+	props.BackgroundTransparency = 1
+	props.Font = FONT
+	local strokeThickness = props.StrokeThickness or 2.5
+	props.StrokeThickness = nil
+	local textLabel = create("TextLabel", props, parent)
+	if strokeThickness > 0 then
+		stroke(textLabel, strokeThickness)
+	end
+	return textLabel
+end
+
+local function formatNumber(value)
+	local text = tostring(math.floor(value))
+	return (text:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
 end
 
 --------------------------------------------------
--- SCREEN GUI
+-- ROOT
 --------------------------------------------------
 
-local screen = make("ScreenGui", {
+local old = playerGui:FindFirstChild("RebirthUI")
+if old then
+	old:Destroy()
+end
+
+local gui = create("ScreenGui", {
 	Name = "RebirthUI",
 	ResetOnSpawn = false,
-	IgnoreGuiInset = false,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 20,
 }, playerGui)
 
---------------------------------------------------
--- OPEN BUTTON
---------------------------------------------------
-
-local openButton = make("TextButton", {
-	Name = "OpenRebirth",
-	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 18, 0.5, 0),
-	Size = UDim2.fromOffset(150, 54),
-	BackgroundColor3 = COLORS.Pink,
-	Text = "♻ REBIRTH",
-	TextColor3 = COLORS.White,
-	TextScaled = true,
-	Font = FONT,
-	AutoButtonColor = false,
-}, screen)
-
-corner(openButton, 16)
-stroke(openButton, COLORS.Yellow, 3)
-
---------------------------------------------------
--- MAIN PANEL
---------------------------------------------------
-
-local panel = make("Frame", {
+local panel = create("Frame", {
 	Name = "MainPanel",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromScale(0.42, 0.56),
-	BackgroundColor3 = COLORS.Background,
+	Size = UDim2.fromOffset(470, 590),
+	BackgroundColor3 = Color3.fromRGB(46, 36, 96),
 	Visible = false,
-}, screen)
+}, gui)
+round(panel, 22)
+stroke(panel, 5)
 
-panel.Size = UDim2.new(
-	0.42, 0,
-	0, 420
-)
+local panelScale = create("UIScale", { Scale = 1 }, panel)
 
-make("UISizeConstraint", {
-	MinSize = Vector2.new(310, 390),
-	MaxSize = Vector2.new(560, 500),
-}, panel)
-
-corner(panel, 24)
-stroke(panel, COLORS.Purple, 4)
+local function fit()
+	local viewport = gui.AbsoluteSize
+	panelScale.Scale = math.clamp(math.min(viewport.X / 520, viewport.Y / 660), 0.5, 1.1)
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+fit()
 
 --------------------------------------------------
--- HEADER
+-- TITLE
 --------------------------------------------------
 
-local header = make("Frame", {
-	Name = "Header",
-	Size = UDim2.new(1, 0, 0, 74),
-	BackgroundColor3 = COLORS.Purple,
+label({
+	Position = UDim2.fromOffset(18, 10),
+	Size = UDim2.new(1, -80, 0, 40),
+	Text = "REBIRTH",
+	TextColor3 = GOLD,
+	TextSize = 32,
+	TextXAlignment = Enum.TextXAlignment.Left,
 }, panel)
 
-corner(header, 20)
+label({
+	Position = UDim2.fromOffset(18, 48),
+	Size = UDim2.new(1, -36, 0, 20),
+	Text = "Reset your level for permanent bonuses.",
+	TextColor3 = CREAM,
+	TextSize = 15,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	StrokeThickness = 2,
+}, panel)
 
-label(
-	header,
-	"Title",
-	"REBIRTH?! 💀",
-	UDim2.new(1, -70, 0, 38),
-	UDim2.fromOffset(12, 7)
-)
-
-label(
-	header,
-	"Subtitle",
-	"RESET THE GRIND. GET STRONGER.",
-	UDim2.new(1, -20, 0, 19),
-	UDim2.new(0, 10, 0, 47)
-)
-
-local closeButton = make("TextButton", {
-	Name = "Close",
+local closeButton = create("TextButton", {
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -8, 0, 8),
-	Size = UDim2.fromOffset(34, 34),
-	BackgroundColor3 = COLORS.Red,
+	Position = UDim2.new(1, -14, 0, 14),
+	Size = UDim2.fromOffset(36, 36),
+	BackgroundColor3 = RED,
+	Font = FONT,
 	Text = "X",
-	TextColor3 = COLORS.White,
-	TextScaled = true,
-	Font = FONT,
-}, header)
-
-corner(closeButton, 10)
-
---------------------------------------------------
--- LEVEL INFORMATION
---------------------------------------------------
-
-label(
-	panel,
-	"RebirthLevelTitle",
-	"YOUR REBIRTH LEVEL",
-	UDim2.new(1, -32, 0, 24),
-	UDim2.fromOffset(16, 88)
-)
-
-local levelLabel = label(
-	panel,
-	"Level",
-	"LEVEL 1",
-	UDim2.new(1, -32, 0, 44),
-	UDim2.fromOffset(16, 116)
-)
-
-levelLabel.TextColor3 = COLORS.Cyan
-
-local requirementLabel = label(
-	panel,
-	"Requirement",
-	"REACH LEVEL 65",
-	UDim2.new(1, -32, 0, 28),
-	UDim2.fromOffset(16, 162)
-)
-
-requirementLabel.TextColor3 = COLORS.Yellow
-
---------------------------------------------------
--- PROGRESS BAR
---------------------------------------------------
-
-local barBackground = make("Frame", {
-	Name = "ProgressBackground",
-	Position = UDim2.fromOffset(22, 202),
-	Size = UDim2.new(1, -44, 0, 26),
-	BackgroundColor3 = Color3.fromRGB(67, 56, 88),
-	ClipsDescendants = true,
+	TextColor3 = CREAM,
+	TextSize = 18,
 }, panel)
+round(closeButton, 10)
+stroke(closeButton, 3)
 
-corner(barBackground, 12)
+--------------------------------------------------
+-- PROGRESS CARD
+--------------------------------------------------
 
-local barFill = make("Frame", {
-	Name = "ProgressFill",
+local progressCard = create("Frame", {
+	Position = UDim2.fromOffset(18, 82),
+	Size = UDim2.new(1, -36, 0, 128),
+	BackgroundColor3 = Color3.fromRGB(30, 24, 66),
+}, panel)
+round(progressCard, 16)
+
+local levelLabel = label({
+	Position = UDim2.fromOffset(16, 8),
+	Size = UDim2.new(1, -32, 0, 40),
+	Text = "LEVEL 1 / 65",
+	TextColor3 = CREAM,
+	TextSize = 30,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, progressCard)
+
+local barTrack = create("Frame", {
+	Position = UDim2.fromOffset(16, 56),
+	Size = UDim2.new(1, -32, 0, 30),
+	BackgroundColor3 = Color3.fromRGB(70, 66, 100),
+}, progressCard)
+round(barTrack, 15)
+stroke(barTrack, 3)
+
+local barFill = create("Frame", {
 	Size = UDim2.fromScale(0, 1),
-	BackgroundColor3 = COLORS.Green,
-}, barBackground)
+	BackgroundColor3 = GREEN,
+}, barTrack)
+round(barFill, 15)
 
-corner(barFill, 12)
+local percentLabel = label({
+	Size = UDim2.fromScale(1, 1),
+	Text = "0%",
+	TextColor3 = CREAM,
+	TextSize = 18,
+	ZIndex = 3,
+}, barTrack)
 
-local progressLabel = label(
-	barBackground,
-	"ProgressText",
-	"0%",
-	UDim2.fromScale(1, 1),
-	UDim2.fromScale(0, 0)
-)
-
-progressLabel.ZIndex = 3
-
---------------------------------------------------
--- GLOBAL LEVEL AND REBIRTH COUNT
---------------------------------------------------
-
-local statsLabel = label(
-	panel,
-	"Stats",
-	"GLOBAL LEVEL 1  |  REBIRTHS 0",
-	UDim2.new(1, -30, 0, 28),
-	UDim2.fromOffset(15, 241)
-)
-
-statsLabel.TextColor3 = COLORS.White
-
-local rewardLabel = label(
-	panel,
-	"Reward",
-	"NEXT GOAL: +15 LEVELS",
-	UDim2.new(1, -30, 0, 25),
-	UDim2.fromOffset(15, 273)
-)
-
-rewardLabel.TextColor3 = COLORS.Pink
+local hintLabel = label({
+	Position = UDim2.fromOffset(16, 94),
+	Size = UDim2.new(1, -32, 0, 24),
+	Text = "",
+	TextColor3 = Color3.fromRGB(200, 190, 235),
+	TextSize = 14,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	StrokeThickness = 2,
+}, progressCard)
 
 --------------------------------------------------
--- REBIRTH BUTTON
+-- REWARDS CARD (NOW -> AFTER)
 --------------------------------------------------
 
-local rebirthButton = make("TextButton", {
-	Name = "RebirthButton",
-	Position = UDim2.new(0, 22, 0, 313),
-	Size = UDim2.new(1, -44, 0, 62),
-	BackgroundColor3 = COLORS.Green,
-	Text = "REBIRTH NOW 🔥",
-	TextColor3 = COLORS.Background,
-	TextScaled = true,
+local rewardCard = create("Frame", {
+	Position = UDim2.fromOffset(18, 222),
+	Size = UDim2.new(1, -36, 0, 168),
+	BackgroundColor3 = Color3.fromRGB(30, 24, 66),
+}, panel)
+round(rewardCard, 16)
+
+local function column(x, title, tint)
+	local holder = create("Frame", {
+		Position = UDim2.fromOffset(x, 10),
+		Size = UDim2.fromOffset(170, 148),
+		BackgroundColor3 = tint,
+		BackgroundTransparency = 0.82,
+	}, rewardCard)
+	round(holder, 14)
+
+	label({
+		Size = UDim2.new(1, 0, 0, 24),
+		Position = UDim2.fromOffset(0, 4),
+		Text = title,
+		TextColor3 = CREAM,
+		TextSize = 16,
+		StrokeThickness = 2,
+	}, holder)
+
+	-- wins (trophy)
+	create("ImageLabel", {
+		Position = UDim2.fromOffset(14, 34),
+		Size = UDim2.fromOffset(44, 44),
+		BackgroundTransparency = 1,
+		Image = UiAssets.TrophyImage,
+		ScaleType = Enum.ScaleType.Fit,
+	}, holder)
+	local winsText = label({
+		Position = UDim2.fromOffset(64, 34),
+		Size = UDim2.fromOffset(98, 44),
+		Text = "x1",
+		TextColor3 = CREAM,
+		TextSize = 30,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, holder)
+
+	-- oil (barrel)
+	label({
+		Position = UDim2.fromOffset(12, 86),
+		Size = UDim2.fromOffset(48, 48),
+		Text = "🛢️",
+		TextColor3 = INK,
+		TextSize = 36,
+		StrokeThickness = 0,
+	}, holder)
+	local oilText = label({
+		Position = UDim2.fromOffset(64, 86),
+		Size = UDim2.fromOffset(98, 48),
+		Text = "x1",
+		TextColor3 = CREAM,
+		TextSize = 30,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, holder)
+
+	return winsText, oilText
+end
+
+local nowWins, nowOil = column(14, "NOW", Color3.fromRGB(200, 200, 230))
+local nextWins, nextOil = column(268, "AFTER REBIRTH", GREEN)
+
+label({
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 6),
+	Size = UDim2.fromOffset(60, 60),
+	Text = ">>",
+	TextColor3 = GOLD,
+	TextSize = 34,
+}, rewardCard)
+
+--------------------------------------------------
+-- REBIRTH BUTTON + STATUS
+--------------------------------------------------
+
+local rebirthButton = create("TextButton", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 404),
+	Size = UDim2.fromOffset(300, 62),
+	BackgroundColor3 = GREY,
 	Font = FONT,
+	Text = "NOT READY YET",
+	TextColor3 = CREAM,
+	TextSize = 26,
 	AutoButtonColor = false,
 }, panel)
+round(rebirthButton, 16)
+stroke(rebirthButton, 4)
+Shine.Attach(rebirthButton, { Offset = 0.5 })
 
-corner(rebirthButton, 18)
-stroke(rebirthButton, COLORS.White, 2)
+local statusLabel = label({
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 476),
+	Size = UDim2.new(1, -30, 0, 28),
+	Text = "",
+	TextColor3 = CREAM,
+	TextSize = 15,
+	StrokeThickness = 2,
+}, panel)
 
-local statusLabel = label(
-	panel,
-	"Status",
-	"KEEP GRINDING 💪",
-	UDim2.new(1, -30, 0, 24),
-	UDim2.fromOffset(15, 378)
-)
-
-statusLabel.TextColor3 = COLORS.Muted
 
 --------------------------------------------------
--- UI OPEN / CLOSE
+-- AUTO REBIRTH (free toggle) + SKIP REBIRTH (R$ 46)
 --------------------------------------------------
 
-PanelManager.Register("Rebirth", panel)
+local autoButton = create("TextButton", {
+	Position = UDim2.fromOffset(18, 516),
+	Size = UDim2.fromOffset(204, 50),
+	BackgroundColor3 = RED,
+	Font = FONT,
+	Text = "AUTO REBIRTH: OFF",
+	TextColor3 = CREAM,
+	TextSize = 16,
+	AutoButtonColor = false,
+}, panel)
+round(autoButton, 14)
+stroke(autoButton, 3)
 
-openButton.Activated:Connect(function()
-	PanelManager.Toggle("Rebirth")
+local skipButton = create("TextButton", {
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -18, 0, 516),
+	Size = UDim2.fromOffset(222, 50),
+	BackgroundColor3 = Color3.fromRGB(235, 140, 60),
+	Font = FONT,
+	Text = "SKIP REBIRTH   46",
+	TextColor3 = CREAM,
+	TextSize = 16,
+	AutoButtonColor = false,
+}, panel)
+round(skipButton, 14)
+stroke(skipButton, 3)
+Shine.Attach(skipButton, { Offset = 1.2 })
+
+local function refreshAuto()
+	local on = player:GetAttribute("AutoRebirth") == true
+	autoButton.Text = on and "AUTO REBIRTH: ON" or "AUTO REBIRTH: OFF"
+	autoButton.BackgroundColor3 = on and GREEN or RED
+end
+
+autoButton.Activated:Connect(function()
+	local on = player:GetAttribute("AutoRebirth") == true
+	ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AutoRebirthToggle"):FireServer(not on)
 end)
 
--- The hub (HubUI) now owns the entry button. It fires this client-only
--- BindableEvent to toggle the panel; the old floating button is hidden.
-openButton.Visible = false
+skipButton.Activated:Connect(function()
+	ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StorePrompt"):FireServer("RebirthSkip")
+	statusLabel.Text = "Opening the skip purchase..."
+	statusLabel.TextColor3 = GOLD
+end)
 
+player:GetAttributeChangedSignal("AutoRebirth"):Connect(refreshAuto)
+--------------------------------------------------
+-- OPEN / CLOSE
+--------------------------------------------------
+
+PanelManager.Register("Rebirth", panel, fit)
+
+closeButton.Activated:Connect(function()
+	PanelManager.Close("Rebirth")
+end)
+
+-- The hub (HubUI) owns the entry button and fires this event.
 local oldToggle = playerGui:FindFirstChild("ToggleRebirthPanel")
 if oldToggle then
 	oldToggle:Destroy()
@@ -337,88 +382,62 @@ toggleEvent.Event:Connect(function()
 	PanelManager.Toggle("Rebirth")
 end)
 
-closeButton.Activated:Connect(function()
-	PanelManager.Close("Rebirth")
-end)
-
 --------------------------------------------------
--- READ SERVER-AUTHORITATIVE ATTRIBUTES
+-- READ SERVER ATTRIBUTES
 --------------------------------------------------
 
 local busy = false
 
 local function refreshUI()
-	local level = player:GetAttribute("Level") or 1
-	local globalLevel = player:GetAttribute("GlobalLevel") or 1
+	local level = math.floor(player:GetAttribute("Level") or 1)
 	local rebirths = player:GetAttribute("Rebirths") or 0
+	local requirement = math.max(player:GetAttribute("RebirthLevelRequirement") or 65, 2)
+	local levelProgress = player:GetAttribute("LevelProgress") or 0
+	local canRebirth = player:GetAttribute("RebirthMaxReached") == true
+	skipButton.Visible = not canRebirth
 
-	local requirement =
-		player:GetAttribute("RebirthLevelRequirement") or 65
+	-- Level 1 is the start (0%); the requirement level is 100%. Inside the
+	-- current level the XP bar adds the fractional part.
+	local fraction = (level - 1 + (level >= requirement and 0 or math.clamp(levelProgress, 0, 1))) / (requirement - 1)
+	fraction = math.clamp(fraction, 0, 1)
+	local percent = canRebirth and 100 or math.min(99, math.floor(fraction * 100))
 
-	local progress =
-		player:GetAttribute("LevelProgress") or 0
-
-	local canRebirth =
-		player:GetAttribute("RebirthMaxReached") == true
-
-	levelLabel.Text = "LEVEL " .. tostring(level)
-
-	requirementLabel.Text =
-		"REACH LEVEL " .. tostring(requirement) .. "  -  " .. tostring(math.floor(math.clamp(progress, 0, 1) * 100)) .. "% DONE"
-
-	statsLabel.Text =
-		"GLOBAL LEVEL " .. tostring(globalLevel)
-		.. "  |  REBIRTHS " .. tostring(rebirths)
-
-	rewardLabel.Text =
-		"NEXT REBIRTH: 🛢️ x" .. tostring(RebirthBonuses.OilMultiplier(rebirths + 1)) .. "  🏆 x" .. tostring(RebirthBonuses.WinsMultiplier(rebirths + 1))
-
-	progress = math.clamp(progress, 0, 1)
-
-	progressLabel.Text =
-		tostring(math.floor(progress * 100)) .. "%"
+	levelLabel.Text = "LEVEL " .. level .. " / " .. requirement
+	percentLabel.Text = percent .. "%"
+	hintLabel.Text = canRebirth and "You are ready to rebirth!"
+		or ("Reach level " .. requirement .. " to rebirth.")
 
 	TweenService:Create(
 		barFill,
 		TweenInfo.new(0.25, Enum.EasingStyle.Quad),
-		{
-			Size = UDim2.fromScale(progress, 1),
-		}
+		{ Size = UDim2.fromScale(canRebirth and 1 or fraction, 1) }
 	):Play()
+
+	-- multipliers now vs after the next rebirth (XP bonus is shown on the HUD pill)
+	nowWins.Text = "x" .. formatNumber(RebirthBonuses.WinsMultiplier(rebirths))
+	nowOil.Text = "x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths))
+	nextWins.Text = "x" .. formatNumber(RebirthBonuses.WinsMultiplier(rebirths + 1))
+	nextOil.Text = "x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths + 1))
 
 	if busy then
 		rebirthButton.Text = "REBIRTHING..."
-		rebirthButton.BackgroundColor3 = COLORS.Muted
-		rebirthButton.Active = false
+		rebirthButton.BackgroundColor3 = GREY
 	elseif canRebirth then
-		rebirthButton.Text = "REBIRTH NOW 🔥"
-		rebirthButton.BackgroundColor3 = COLORS.Green
-		rebirthButton.Active = true
-		statusLabel.Text = "YOU'RE READY! 🤑"
-		statusLabel.TextColor3 = COLORS.Green
+		rebirthButton.Text = "REBIRTH NOW!"
+		rebirthButton.BackgroundColor3 = GREEN
+		if statusLabel.Text == "" or statusLabel.Text:find("grind") then
+			statusLabel.Text = "Resets level and XP. You keep wins, balls and oil."
+			statusLabel.TextColor3 = CREAM
+		end
 	else
-		rebirthButton.Text = "NOT READY YET 💀"
-		rebirthButton.BackgroundColor3 = COLORS.Muted
-		rebirthButton.Active = false
-		statusLabel.Text = "KEEP GRINDING 💪"
-		statusLabel.TextColor3 = COLORS.Muted
+		rebirthButton.Text = "NOT READY YET"
+		rebirthButton.BackgroundColor3 = GREY
+		statusLabel.Text = "Keep rolling - every level counts!"
+		statusLabel.TextColor3 = Color3.fromRGB(200, 190, 235)
 	end
 end
 
---------------------------------------------------
--- LIVE ATTRIBUTE UPDATES
---------------------------------------------------
-
-local attributes = {
-	"Level",
-	"GlobalLevel",
-	"Rebirths",
-	"RebirthLevelRequirement",
-	"LevelProgress",
-	"RebirthMaxReached",
-}
-
-for _, attribute in ipairs(attributes) do
+for _, attribute in ipairs({ "Level", "Rebirths", "RebirthLevelRequirement", "LevelProgress", "RebirthMaxReached" }) do
 	player:GetAttributeChangedSignal(attribute):Connect(refreshUI)
 end
 
@@ -432,18 +451,16 @@ rebirthButton.Activated:Connect(function()
 	end
 
 	if player:GetAttribute("RebirthMaxReached") ~= true then
-		statusLabel.Text = "NOT READY YET 💀"
-		statusLabel.TextColor3 = COLORS.Red
+		statusLabel.Text = "Not ready yet - reach the level first."
+		statusLabel.TextColor3 = RED
 		return
 	end
 
 	busy = true
 	refreshUI()
+	statusLabel.Text = "Processing rebirth..."
+	statusLabel.TextColor3 = GOLD
 
-	statusLabel.Text = "PROCESSING REBIRTH..."
-	statusLabel.TextColor3 = COLORS.Yellow
-
-	-- Match the existing server's expected action.
 	local success, err = pcall(function()
 		rebirthRemote:FireServer("Rebirth")
 	end)
@@ -451,18 +468,13 @@ rebirthButton.Activated:Connect(function()
 	if not success then
 		busy = false
 		refreshUI()
-
-		statusLabel.Text = "REQUEST FAILED! TRY AGAIN"
-		statusLabel.TextColor3 = COLORS.Red
-
+		statusLabel.Text = "Request failed - try again."
+		statusLabel.TextColor3 = RED
 		warn("[RebirthUIClient] FireServer failed:", err)
 	end
 end)
 
---------------------------------------------------
--- SERVER RESULT
---------------------------------------------------
-
+-- The server's answer is the only thing that says it worked.
 rebirthRemote.OnClientEvent:Connect(function(message, success, reason)
 	if message ~= "RebirthResult" then
 		return
@@ -472,42 +484,15 @@ rebirthRemote.OnClientEvent:Connect(function(message, success, reason)
 	refreshUI()
 
 	if success then
-		statusLabel.Text = "REBIRTH COMPLETE! 🔥"
-		statusLabel.TextColor3 = COLORS.Green
-
-		print("[RebirthUIClient] Rebirth successful:", reason)
+		statusLabel.Text = "REBIRTH COMPLETE!"
+		statusLabel.TextColor3 = GREEN
 	else
-		statusLabel.Text = "REBIRTH FAILED: " .. tostring(reason)
-		statusLabel.TextColor3 = COLORS.Red
-
+		statusLabel.Text = "Rebirth failed: " .. tostring(reason)
+		statusLabel.TextColor3 = RED
 		warn("[RebirthUIClient] Rebirth rejected:", reason)
 	end
 end)
 
---------------------------------------------------
--- BUTTON ANIMATION
---------------------------------------------------
-
-local pulseTween = TweenService:Create(
-	openButton,
-	TweenInfo.new(
-		0.8,
-		Enum.EasingStyle.Sine,
-		Enum.EasingDirection.InOut,
-		-1,
-		true
-	),
-	{
-		Size = UDim2.fromOffset(158, 58),
-	}
-)
-
-pulseTween:Play()
-
---------------------------------------------------
--- INITIALIZE
---------------------------------------------------
-
 refreshUI()
-
+refreshAuto()
 print("[RebirthUIClient] Rebirth UI loaded.")

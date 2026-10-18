@@ -25,6 +25,7 @@ local ATTRIBUTE_OF = {
 	Oil2x = "BoostOilUntil",
 	Wins2x = "BoostWinsUntil",
 	XP4 = "BoostXPUntil",
+	Captain = "BoostCaptainUntil",
 }
 
 local states = {} -- [player] = { Loaded, Ends = { [key] = epochSeconds } }
@@ -142,11 +143,11 @@ local function multiplierFor(player, key)
 end
 
 function BoostService.OilMultiplier(player)
-	return multiplierFor(player, "Oil2x")
+	return multiplierFor(player, "Oil2x") * multiplierFor(player, "Captain")
 end
 
 function BoostService.WinsMultiplier(player)
-	return multiplierFor(player, "Wins2x")
+	return multiplierFor(player, "Wins2x") * multiplierFor(player, "Captain")
 end
 
 function BoostService.XPMultiplier(player)

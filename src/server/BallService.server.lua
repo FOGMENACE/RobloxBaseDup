@@ -895,7 +895,8 @@ local function validateDefinitions()
 	) do
 
 		if ballId ~= DEFAULT_BALL
-			and definition.IsTutorial ~= true then
+			and definition.IsTutorial ~= true
+			and definition.IsExclusive ~= true then
 
 			if getBallProductId(ballId) == nil then
 
@@ -1452,6 +1453,7 @@ local function getShopState(player)
 		DisplayOrder = definition.DisplayOrder,
 
 		IsTutorial = definition.IsTutorial == true,
+		IsExclusive = definition.IsExclusive == true,
 
 		Owned = ownedBalls[ballId] == true,
 		Equipped = equippedBall == ballId,
@@ -1978,6 +1980,12 @@ local function buyWithWins(
 
 	end
 
+
+	-- Exclusive balls are granted by the server only (pass, Captain pack,
+	-- calendar reward); they can never be bought through the shop path.
+	if definition.IsExclusive == true then
+		return false, "EXCLUSIVE"
+	end
 
 	if ballId == DEFAULT_BALL then
 

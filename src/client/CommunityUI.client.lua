@@ -2,7 +2,7 @@
 -- COMMUNITY REWARDS (podium) - CLIENT
 --
 --   * Animates the podium: rainbow, glowing, shaking "FREE WINS!" sign and
---     a pulsing colored circle.
+--     a clean gold circle.
 --   * Using the circle's prompt opens the COMMUNITY REWARDS panel with the
 --     two steps (like the game, join the group) and a claim button.
 --   * Eligibility, the +500 wins and the "already claimed" flag are all
@@ -85,8 +85,6 @@ task.spawn(function()
 		glow.ImageTransparency = 0.45 + math.sin(t * 3) * 0.15
 		billboard.StudsOffset = home + Vector3.new(0, math.sin(t * 2) * 0.4, 0)
 
-		circle.Color = Color3.fromHSV(hues % 1, 0.75, 1)
-		circle.Transparency = 0.12 + (math.sin(t * 4) + 1) * 0.06
 	end)
 end)
 

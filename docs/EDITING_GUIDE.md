@@ -73,3 +73,9 @@ The Store panel is built in `src/client/HubUI.client.lua`, in the section `GAME 
 Register it with `PanelManager` (`src/shared/PanelManager.luau`) instead of toggling `Visible` yourself:
 `PanelManager.Register("Name", frame)`, then `PanelManager.Toggle("Name")`. That gives the slide in/out transition,
 closes whichever panel is open, and makes the camera ignore zoom/FOV input while it is open.
+
+## Special Robux items
+All ids, prices shown and reward sizes for the Captain pack, Starter Pack, Skip Quest, Skip Rebirth and the badges are in `src/server/StoreConfig.luau`. The Store panel rows are built in `src/client/HubUI.client.lua` (Captain row) and from `ShopConfig.GamePasses` (passes). Weekly milestone targets and rewards: `src/shared/QuestConfig.luau` (`Weekly`).
+
+## Exclusive balls (Oil Barrel)
+To release the Game Pass: paste its id into `src/shared/ShopConfig.luau` (`ExclusiveBalls.OilBarrel.PassId`). That one value enables the buy button in the Ball Shop banner and the Store, and tells `ExclusiveBallService` to grant the ball. The ball's look is `designs.OilBarrel` in `src/shared/BallAccessories.luau`; its stats are the `OilBarrel` entry in `src/server/BallDefinitions.luau`.

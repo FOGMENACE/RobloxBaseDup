@@ -580,6 +580,8 @@ local function positionTile(
 	index
 )
 
+	WinCourseGenerator.ShapeTile(tile, index)
+
 	local templatePivot =
 		tile:GetPivot()
 
@@ -594,7 +596,7 @@ local function positionTile(
 		Vector3.new(
 			0,
 			0,
-			(index - 1) * TILE_SPACING
+			WinCourseGenerator.GetTileStartDistance(index)
 		)
 
 	tile:PivotTo(

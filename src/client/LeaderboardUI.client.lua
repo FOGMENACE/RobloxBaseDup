@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
+local PanelManager = require(game:GetService("ReplicatedStorage"):WaitForChild("PanelManager"))
 local playerGui = player:WaitForChild("PlayerGui")
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -60,7 +61,7 @@ local gui = create("ScreenGui", {
 	Name = "LeaderboardUI",
 	ResetOnSpawn = false,
 	DisplayOrder = 13,
-	Enabled = false,
+	Enabled = true,
 }, playerGui)
 
 local panel = create("Frame", {
@@ -292,14 +293,23 @@ for key, button in pairs(tabButtons) do
 	end)
 end
 
+local pendingKey = nil
+
+PanelManager.Register("Leaderboard", panel, function()
+	fit()
+	task.spawn(show, pendingKey or currentKey)
+end)
+
 local function setOpen(open, key)
 	if open then
-		gui.Enabled = true
-		panelScale.Scale = panelScale.Scale * 0.9
-		fit()
-		task.spawn(show, key or currentKey)
+		pendingKey = key
+		if PanelManager.IsOpen("Leaderboard") then
+			task.spawn(show, key or currentKey)
+		else
+			PanelManager.Open("Leaderboard")
+		end
 	else
-		gui.Enabled = false
+		PanelManager.Close("Leaderboard")
 	end
 end
 

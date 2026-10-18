@@ -43,7 +43,7 @@ GiftConfig.DailyCalendar = {
 		{ Type = "BallNext" },
 		{ Type = "Wins", Amount = 8000 },
 		{ Type = "Oil", Amount = 5000 },
-		{ Type = "Wins", Amount = 25000, Special = true },
+		{ Type = "Ball", BallId = "OilBarrel", Special = true }, -- exclusive rainbow Oil Barrel
 	},
 }
 

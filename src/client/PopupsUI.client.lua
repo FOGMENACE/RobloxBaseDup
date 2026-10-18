@@ -142,31 +142,49 @@ local function tweenScale(target, scale, time, style, direction)
 	return tween
 end
 
--- Pops in for a few seconds, rests hidden, then repeats while claimable.
+-- While an offer is open (server X6Mode == "Ready") the card pops in at a
+-- random spot on screen with a countdown, hops to a new random spot every
+-- 25 s, and goes away when claimed or when the claim window ends.
+local x6Rng = Random.new()
+
+local function randomSpot()
+	return UDim2.fromScale(x6Rng:NextNumber(0.1, 0.9), x6Rng:NextNumber(0.16, 0.62))
+end
+
+x6Holder.AnchorPoint = Vector2.new(0.5, 0.5)
+x6Holder.Position = randomSpot()
+
 task.spawn(function()
 	while true do
-		if player:GetAttribute("X6Mode") == "Ready" then
+		if player:GetAttribute("X6Mode") == "Ready" and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
+			x6Holder.Position = randomSpot()
 			x6Holder.Visible = true
 			x6Scale.Scale = 0
 			tweenScale(x6Scale, 1, 0.45)
 			ding()
 
-			local shown = 0
-			while shown < 7 and player:GetAttribute("X6Mode") == "Ready" do
+			local sinceMove = 0
+			while player:GetAttribute("X6Mode") == "Ready" and (player:GetAttribute("RunState") or "Waiting") == "Waiting" do
 				task.wait(0.25)
-				shown += 0.25
+				sinceMove += 0.25
+
+				local untilTime = player:GetAttribute("X6Until") or 0
+				local left = math.max(0, math.ceil(untilTime - workspace:GetServerTimeNow()))
+				x6Claim.Text = string.format("CLAIM  %d:%02d", left // 60, left % 60)
+
 				-- gentle breathing
 				x6Scale.Scale = 1 + math.sin(os.clock() * 4) * 0.04
+
+				if sinceMove >= 25 then
+					sinceMove = 0
+					tweenScale(x6Scale, 0, 0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In).Completed:Wait()
+					x6Holder.Position = randomSpot()
+					tweenScale(x6Scale, 1, 0.4)
+				end
 			end
 
 			tweenScale(x6Scale, 0, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In).Completed:Wait()
 			x6Holder.Visible = false
-
-			local rested = 0
-			while rested < 12 and player:GetAttribute("X6Mode") == "Ready" do
-				task.wait(0.5)
-				rested += 0.5
-			end
 		else
 			task.wait(1)
 		end
@@ -315,5 +333,46 @@ remotes:WaitForChild("PurchaseConfirmed").OnClientEvent:Connect(function(label)
 	TweenService:Create(confirmToast, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 24) }):Play()
 	task.delay(3.5, function()
 		TweenService:Create(confirmToast, TweenInfo.new(0.3), { Position = UDim2.new(0.5, 0, 0, -80) }):Play()
+	end)
+end)
+
+--------------------------------------------------
+-- CAPTAIN ANNOUNCEMENT (everyone in the server sees who bought the pack)
+--------------------------------------------------
+
+local captainBanner = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, -140),
+	Size = UDim2.fromOffset(640, 92),
+	BackgroundColor3 = Color3.fromRGB(255, 190, 50),
+	Font = FONT,
+	Text = "",
+	TextColor3 = INK,
+	TextSize = 22,
+	TextWrapped = true,
+	ZIndex = 90,
+}, gui)
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, captainBanner)
+create("UIStroke", { Color = INK, Thickness = 4 }, captainBanner)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 240, 150), Color3.fromRGB(255, 150, 40)),
+	Rotation = 90,
+}, captainBanner)
+
+remotes:WaitForChild("CaptainAnnounce").OnClientEvent:Connect(function(name, wins, minutes)
+	if typeof(name) ~= "string" or typeof(wins) ~= "number" or typeof(minutes) ~= "number" then
+		return
+	end
+
+	captainBanner.Text = string.format(
+		"CAPTAIN %s bought the Captain Oil Server Pack!\n+%d WINS for everyone and x2/x3 boosts for %d minutes!",
+		string.sub(name, 1, 24),
+		wins,
+		minutes
+	)
+	ding()
+	TweenService:Create(captainBanner, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 16) }):Play()
+	task.delay(8, function()
+		TweenService:Create(captainBanner, TweenInfo.new(0.4), { Position = UDim2.new(0.5, 0, 0, -140) }):Play()
 	end)
 end)

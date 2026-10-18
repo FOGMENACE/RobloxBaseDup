@@ -11,7 +11,11 @@
 local Workspace = game:GetService("Workspace")
 
 local FLOOR_Y = 63.5
-local CENTER = Vector3.new(-44, FLOOR_Y, -206)
+-- Moved to the west side (where the ball shop used to be), turned toward
+-- the middle of the room.
+local CENTER = Vector3.new(-84, FLOOR_Y, -208)
+local TO_MIDDLE = (Vector3.new(-65, 0, -237) - Vector3.new(CENTER.X, 0, CENTER.Z)).Unit
+local YAW = math.atan2(-TO_MIDDLE.X, -TO_MIDDLE.Z) -- local -Z front -> toward the middle
 
 local old = Workspace:FindFirstChild("Podium")
 if old then
@@ -53,8 +57,8 @@ local step = part("Step", CYL, Vector3.new(1.2, 6.4, 6.4), CFrame.new(CENTER + V
 step.CanCollide = true
 
 -- Speaker's stand
-part("Stand", BLOCK, Vector3.new(3.2, 4.2, 2.2), CFrame.new(CENTER + Vector3.new(0, 4.5, 0)), Color3.fromRGB(150, 70, 60), Enum.Material.WoodPlanks)
-part("StandTop", BLOCK, Vector3.new(3.8, 0.4, 2.8), CFrame.new(CENTER + Vector3.new(0, 6.8, 0)), Color3.fromRGB(255, 247, 232))
+part("Stand", BLOCK, Vector3.new(3.2, 4.2, 2.2), CFrame.new(CENTER + Vector3.new(0, 4.5, 0)) * CFrame.Angles(0, YAW, 0), Color3.fromRGB(150, 70, 60), Enum.Material.WoodPlanks)
+part("StandTop", BLOCK, Vector3.new(3.8, 0.4, 2.8), CFrame.new(CENTER + Vector3.new(0, 6.8, 0)) * CFrame.Angles(0, YAW, 0), Color3.fromRGB(255, 247, 232))
 
 -- Golden microphone
 local gold = Color3.fromRGB(255, 200, 50)
@@ -72,10 +76,12 @@ anchor.Transparency = 1
 
 local billboard = Instance.new("BillboardGui")
 billboard.Name = "FreeWinsBillboard"
-billboard.Size = UDim2.fromOffset(420, 110)
+-- sized in STUDS (scale), so it shrinks with distance: small from afar,
+-- readable when you walk up to the podium
+billboard.Size = UDim2.fromScale(5.2, 1.35)
 billboard.AlwaysOnTop = false
 billboard.LightInfluence = 0
-billboard.MaxDistance = 250
+billboard.MaxDistance = 80
 billboard.Parent = anchor
 
 local text = Instance.new("TextLabel")
@@ -111,23 +117,21 @@ gradient.Parent = text
 local circle = part(
 	"CommunityCircle",
 	CYL,
-	Vector3.new(0.3, 5.4, 5.4),
-	CFrame.new(CENTER + Vector3.new(0, 0.2, -8)) * upright,
-	Color3.fromRGB(255, 80, 200),
-	Enum.Material.Neon
+	Vector3.new(0.3, 4.6, 4.6),
+	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.5, 0)) * upright,
+	Color3.fromRGB(255, 205, 80)
 )
-circle.Transparency = 0.15
 
-local ring = part(
+-- clean cream rim under the gold disc
+part(
 	"CommunityRing",
 	CYL,
-	Vector3.new(0.2, 6.4, 6.4),
-	CFrame.new(CENTER + Vector3.new(0, 0.1, -8)) * upright,
+	Vector3.new(0.2, 5.6, 5.6),
+	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.38, 0)) * upright,
 	Color3.fromRGB(255, 247, 232)
 )
-ring.Transparency = 0.2
 
-local promptHolder = part("PromptHolder", BLOCK, Vector3.new(1, 1, 1), CFrame.new(CENTER + Vector3.new(0, 1.2, -8)), Color3.new(1, 1, 1))
+local promptHolder = part("PromptHolder", BLOCK, Vector3.new(1, 1, 1), CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 1.2, 0)), Color3.new(1, 1, 1))
 promptHolder.Transparency = 1
 
 local prompt = Instance.new("ProximityPrompt")
@@ -135,8 +139,17 @@ prompt.Name = "CommunityPrompt"
 prompt.ActionText = "Community Rewards"
 prompt.ObjectText = "FREE WINS"
 prompt.HoldDuration = 0
-prompt.MaxActivationDistance = 9
+prompt.MaxActivationDistance = 8
 prompt.RequiresLineOfSight = false
 prompt.Parent = promptHolder
+
+-- A little smaller overall (podium, mic and circle), standing on the floor.
+do
+	model:ScaleTo(0.75)
+	local cf, size = model:GetBoundingBox()
+	local bottom = cf.Position.Y - size.Y / 2
+	model:PivotTo(model:GetPivot() + Vector3.new(0, FLOOR_Y - bottom, 0))
+	prompt.MaxActivationDistance = 8
+end
 
 print("[PodiumService] READY")

@@ -59,7 +59,9 @@ local INK = Color3.fromRGB(24, 22, 34)
 
 local ordered = {}
 for ballId, definition in pairs(BallDefinitions) do
-	table.insert(ordered, { Id = ballId, Order = definition.DisplayOrder or 0 })
+	if definition.IsExclusive ~= true then
+		table.insert(ordered, { Id = ballId, Order = definition.DisplayOrder or 0 })
+	end
 end
 table.sort(ordered, function(a, b)
 	return a.Order < b.Order
@@ -147,8 +149,8 @@ end
 -- spacing stays the generator's.
 --------------------------------------------------
 
-local UP_PLATFORM_COLOR = Color3.fromRGB(60, 220, 90)
-local DOWN_PLATFORM_COLOR = Color3.fromRGB(220, 50, 50)
+local UP_PLATFORM_COLOR = Color3.fromRGB(40, 222, 72)
+local DOWN_PLATFORM_COLOR = Color3.fromRGB(236, 42, 52)
 
 local function platformParts(platform)
 	local parts = {}
@@ -186,8 +188,8 @@ local function convertPlatform(platform, isUp)
 
 	for _, part in ipairs(platformParts(platform)) do
 		part.Color = isUp and UP_PLATFORM_COLOR or DOWN_PLATFORM_COLOR
-		part.Material = Enum.Material.Neon
-		part.Transparency = 0.25
+		part.Material = Enum.Material.SmoothPlastic
+		part.Transparency = 0.3
 	end
 
 	for _, object in ipairs(platform:GetDescendants()) do
@@ -198,13 +200,38 @@ local function convertPlatform(platform, isUp)
 	end
 end
 
+-- Upgrade / downgrade rows are a rare event: a course gets 0-3 of them
+-- (most often 0 or 1), on randomly chosen candidate rows.
+local TIER_COUNT_WEIGHTS = { [0] = 32, [1] = 40, [2] = 20, [3] = 8 }
+
+local function chooseTierRows()
+	local roll = rng:NextNumber() * 100
+	local acc = 0
+	local count = 0
+	for candidate = 0, 3 do
+		acc += TIER_COUNT_WEIGHTS[candidate]
+		if roll <= acc then
+			count = candidate
+			break
+		end
+	end
+
+	local pool = table.clone(TIER_ROWS)
+	local chosen = {}
+	for _ = 1, math.min(count, #pool) do
+		chosen[table.remove(pool, rng:NextInteger(1, #pool))] = true
+	end
+	return chosen
+end
+
 local function buildGates(player, state, playerCourse)
+	local chosenRows = chooseTierRows()
+
 	for _, child in ipairs(playerCourse:GetChildren()) do
 		local rowNumber = child:GetAttribute("RowNumber")
-		if typeof(rowNumber) ~= "number" or not table.find(TIER_ROWS, rowNumber) then
+		if typeof(rowNumber) ~= "number" or not chosenRows[rowNumber] then
 			continue
 		end
-
 		local left = child:FindFirstChild("OilPlatformL", true)
 		local right = child:FindFirstChild("OilPlatformR", true)
 		if not left or not right then

@@ -161,6 +161,13 @@ local function getControls()
 end
 
 local function updateKeys()
+	-- Typing in any TextBox (feedback mailbox, admin console) must never
+	-- move the ball / avatar.
+	if UserInputService:GetFocusedTextBox() then
+		inputX = 0
+		inputZ = 0
+		return
+	end
 
 	local x = 0
 	local z = 0
@@ -830,6 +837,10 @@ end
 local lastJumpSent = 0
 
 local function requestJump()
+	if UserInputService:GetFocusedTextBox() then
+		return
+	end
+
 	local runState = getRunState()
 	if runState ~= "Waiting" then
 		return

@@ -327,6 +327,62 @@ pinTriangle(Vector3.new(X_MIN + 5, FLOOR_Y + 0.1, -226), 1)
 pinTriangle(Vector3.new(X_MAX - 5, FLOOR_Y + 0.1, Z_MAX - 7), -1)
 
 --------------------------------------------------
+-- WALL SCREENS: two flat screens on each side wall, one at each end of the
+-- ball rack, with short tips. Decoration only.
+--------------------------------------------------
+
+local SCREEN_TEXTS = {
+	{ "ROLL. WIN.", "REBIRTH!" },
+	{ "DAILY QUESTS", "= FREE WINS" },
+	{ "GRAB OIL.", "DODGE GUTTERS!" },
+	{ "FASTER BALLS", "= MORE WINS" },
+}
+
+do
+	local count = 0
+	local screenY = FLOOR_Y + 11.5
+
+	for _, wall in ipairs({ { X_MIN, 1 }, { X_MAX, -1 } }) do
+		for _, z in ipairs({ -260, -203 }) do
+			count += 1
+			local x = wall[1] + wall[2] * 0.75 -- just off the wall, facing the room
+			local face = CFrame.new(x, screenY, z) * CFrame.Angles(0, wall[2] == 1 and -math.pi / 2 or math.pi / 2, 0)
+
+			part("ScreenFrame", Vector3.new(11, 6.4, 0.6), face, Color3.fromRGB(24, 22, 34))
+			local screen = part("Screen", Vector3.new(10.2, 5.6, 0.2), face * CFrame.new(0, 0, -0.35), Color3.fromRGB(16, 30, 70))
+
+			local gui = create("SurfaceGui", {
+				Face = Enum.NormalId.Front,
+				SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+				PixelsPerStud = 50,
+				LightInfluence = 0,
+				Brightness = 0.7,
+			}, screen)
+
+			create("UIGradient", {}, create("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Color3.fromRGB(40, 110, 255),
+			}, gui)).Color = ColorSequence.new(Color3.fromRGB(30, 80, 200), Color3.fromRGB(14, 24, 70))
+
+			local texts = SCREEN_TEXTS[((count - 1) % #SCREEN_TEXTS) + 1]
+			for lineIndex, text in ipairs(texts) do
+				local label = create("TextLabel", {
+					BackgroundTransparency = 1,
+					Position = UDim2.fromScale(0, 0.12 + (lineIndex - 1) * 0.42),
+					Size = UDim2.fromScale(1, lineIndex == 1 and 0.42 or 0.34),
+					Font = FONT,
+					Text = text,
+					TextScaled = true,
+					TextColor3 = lineIndex == 1 and Color3.fromRGB(255, 226, 90) or CREAM,
+				}, gui)
+				create("UIStroke", { Color = Color3.fromRGB(10, 14, 40), Thickness = 3 }, label)
+			end
+		end
+	end
+end
+
+--------------------------------------------------
+--------------------------------------------------
 -- ENTRANCE SIGNS
 --------------------------------------------------
 
@@ -386,28 +442,73 @@ sign(
 
 -- Behind the ball shop, standing on two posts, facing the room (+X).
 -- (The shop model no longer touches a wall now that the room is wider.)
-local shopSignX = -91.5
-local shopSignZ = -209
+-- The shop now stands on the east side (x ~ -46); the sign is behind it and
+-- turned a little toward the middle of the room, like the shop itself.
+local shopSignX = -38.5
+local shopSignZ = -210
+
+local roomMiddle = Vector3.new(-88.6, 0, -272) -- the x2 XP generator: the shop and its sign turn toward it
+local signToMiddle = (roomMiddle - Vector3.new(shopSignX, 0, shopSignZ)).Unit
+local signFacing = (Vector3.new(-1, 0, 0) * 0.15 + signToMiddle * 0.85).Unit
+-- The sign's front is local -Z: yaw psi turns it to (-sin psi, 0, -cos psi).
+local signYaw = math.atan2(-signFacing.X, -signFacing.Z)
+local signRight = Vector3.new(signFacing.Z, 0, -signFacing.X) -- perpendicular, in the floor plane
 
 sign(
 	"BallShopSign",
 	"BALL SHOP",
 	"ROLL IN. ROLL UP. ROLL RICH!",
 	Vector3.new(20, 6.5, 0.5),
-	CFrame.new(shopSignX, FLOOR_Y + 14, shopSignZ) * CFrame.Angles(0, -math.pi / 2, 0),
+	CFrame.new(shopSignX, FLOOR_Y + 14, shopSignZ) * CFrame.Angles(0, signYaw, 0),
 	Color3.fromRGB(86, 168, 240)
 )
 
-for _, postZ in ipairs({ shopSignZ - 8, shopSignZ + 8 }) do
+for _, side in ipairs({ -1, 1 }) do
+	local postPosition = Vector3.new(shopSignX, FLOOR_Y + 6.2, shopSignZ) + signRight * (8 * side) - signFacing * 0.1
 	part(
 		"BallShopSignPost",
 		Vector3.new(0.8, 12.4, 0.8),
-		CFrame.new(shopSignX - 0.1, FLOOR_Y + 6.2, postZ),
+		CFrame.new(postPosition),
 		LANE,
 		Enum.Material.WoodPlanks
 	)
 end
 
+-- Floating call-to-action above the shop sign, readable from across the room.
+do
+	local anchor = part(
+		"BallShopAdAnchor",
+		Vector3.new(1, 1, 1),
+		CFrame.new(-47.5, FLOOR_Y + 9.2, -210.5), -- just above the shop roof, eye level from the lobby
+		CREAM
+	)
+	anchor.Transparency = 1
+
+	local ad = create("BillboardGui", {
+		Name = "ShopCall",
+		Size = UDim2.fromScale(7.6, 1.45), -- studs: shrinks with distance
+		LightInfluence = 0,
+		MaxDistance = 110,
+	}, anchor)
+
+	local function line(text, y, h, thickness, c1, c2)
+		local label = create("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromScale(0, y),
+			Size = UDim2.fromScale(1, h),
+			Font = FONT,
+			Text = text,
+			TextScaled = true,
+			TextColor3 = Color3.new(1, 1, 1),
+		}, ad)
+		create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = thickness }, label)
+		create("UIGradient", { Color = ColorSequence.new(c1, c2), Rotation = 90 }, label)
+	end
+
+	line("BUY BOWLING GEAR!", 0, 1, 3, Color3.fromRGB(255, 224, 70), Color3.fromRGB(255, 130, 30))
+end
+
+--------------------------------------------------
 --------------------------------------------------
 -- LIGHTING (warmer, more colourful; existing Sky/Atmosphere/Bloom stay)
 --------------------------------------------------

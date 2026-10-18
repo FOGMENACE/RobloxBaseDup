@@ -65,3 +65,33 @@ Send me the product ids and I will wire them with the same durable receipt path 
 3. Test purchases with a test account and rejoin; test with a second client.
 4. Save the Studio place with the lane edits; confirm `studio-exports/README.md` items are in it.
 5. Only then publish (this repo never publishes).
+
+## Latest pass (see CORE_LOOP_PROPOSAL.md for the next decisions)
+- Verified in Studio: new bottom-left panel (trophy / barrel multipliers), percent badge on the hub REBIRTH button, rebuilt Rebirth window (percent = level progress to the requirement), random-position FREE x6 card with countdown, radial speed lines + side dash trails, gutter platforms in rows 4/5/8 of one run, result celebration (tile total, multipliers dragged in, confetti).
+- Built, not exercised: WinCourse fall guard, 25-tile lookahead, the real (non-faked) result attributes at the end of a long WinCourse, leaderboard zoom block, zoom button while a panel is open.
+- The old Studio-side WinCourseUIController still draws its own tile pop-ups and countdown; the new celebration plays on top of it.
+
+## Store, badges, weekly milestones, auto rebirth (latest)
+Built and loaded in Studio: Store rows (Starter Pack R$18 gamepass, Captain Oil Server Pack R$2,799), Daily + Weekly quest tabs with claims, per-quest SKIP (R$29), Rebirth window with Auto Rebirth toggle (default OFF/red, ON/green) and SKIP REBIRTH (R$46). Verified live: Starter Pack granted once on the test account, a daily quest claim paid +1,029 wins, the auto toggle flipped on the server attribute.
+
+**Assumptions I made (change in `server/StoreConfig.luau` / `shared/QuestConfig.luau`)**
+- Captain pack: buyer 150,000 wins + x2 oil / x2 wins / CAPTAIN x3 (oil and wins) for 1 hour and the Captain badge; everyone else in the server 25,000 wins + the same boosts for 30 minutes; a banner tells the whole server who bought it.
+- Starter Pack: one-time 10,000 wins + x2 oil and x2 wins for 20 minutes.
+- Skip Rebirth does a normal rebirth without the level requirement (XP and level reset).
+- Weekly milestones are the free track only (resets Monday 00:00 UTC); no paid track was added.
+
+**Check before launch**
+- The Captain product id you sent (371925404) has 9 digits; your other products have 10. Verify it in the Creator Hub, or the buy button will show an error.
+- None of the purchase receipts (Captain, Skip Quest, Skip Rebirth) were bought with real or test Robux yet; only the code path loads. Test each with a test account and a rejoin.
+- Badges (Welcome, 5/10/20 minutes, Captain) call BadgeService; they only work if those badges belong to this experience.
+
+## Oil Barrel exclusive ball (latest)
+- The model is your uploaded barrel mesh (`105517155573112`, loaded at runtime by `BallAccessories` with `AssetService:CreateMeshPartAsync`) with a NEW texture (`rbxassetid://105669825602431`, source `assets/textures/oil_barrel_rainbow_v6.png`). The old texture was lopsided because the mesh UV is split into 116 islands (4 body strips, 2 lids, hoops, overlapping bits); the new texture is generated from the mesh itself: hue follows the barrel axis so the rainbow is even on every strip, the lids get a radial rainbow with a dark rim, and an "OIL" plate sits on each of the four strips. The old parts-built barrel remains as an automatic fallback if the mesh cannot load. Glitter and sparks as before.
+- Never sold with wins or a Developer Product (`IsExclusive`). Owned through: the 499 R$ Game Pass (paste the id in `shared/ShopConfig.luau` -> `ExclusiveBalls.OilBarrel.PassId`), the Captain Oil Server Pack (buyer only), or the day-7 calendar reward.
+- Ball shop: opaque banner pinned over the bottom edge with the Robux icon and price (disabled "COMING SOON" until the pass id is set); hidden once owned. The Store panel has the same entry.
+- Excluded from the upgrade/downgrade chain and from the calendar's "next ball" pick.
+- Thumbnail frames: `assets/thumbnails/oil_barrel_closeup.jpg`, `oil_barrel_label.jpg` (1920x913, crop to 512x512 for the pass).
+- Not exercised: a real pass purchase / ownership grant, and equipping the barrel from the shop (verified instead: swap onto the run ball, lobby rolling, preview in the shop banner and calendar).
+
+## Notes on test data
+Studio runs write to the same DataStores as the published game for your account. During testing the account received the Starter Pack grant (+10,000 wins, boosts), claimed one daily quest, and toggled Auto Rebirth on and off. If you want a clean account, reset those values in the DataStore manager.
