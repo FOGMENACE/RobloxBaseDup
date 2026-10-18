@@ -1,20 +1,28 @@
 --------------------------------------------------
 -- TUTORIAL UI
 --
--- CLIENT ONLY. Shows a banner and an arrow that points from the
--- player's ball toward the current objective. The step itself comes
+-- CLIENT ONLY. Shows a banner, an arrow that points from the player's ball
+-- toward the current objective, and (for button steps) a SPOTLIGHT: the
+-- whole screen fades except the button to press. The step itself comes
 -- from the server attribute "TutorialStep" (see TutorialService); this
--- script never advances anything.
+-- script never advances anything and grants nothing.
 --
--- Steps (7 = done, nothing is shown):
---   1 START wall    2 FINISH wall    3 shop pad (buy Aftershock)
---   4 X1 generator  5 Rebirth (hub)  6 Daily calendar (hub)
+-- Steps (12 = done, nothing is shown):
+--    1 START wall            2 FINISH wall (while rolling)
+--    3 X1 XP generator       4 REBIRTH button (free), then REBIRTH NOW
+--    5 START wall (again)    6 FINISH wall
+--    7 shop: buy AFTERSHOCK  8 shop: equip AFTERSHOCK
+--    9 START wall            10 FINISH wall
+--   11 DAILY calendar: claim day 1
 --------------------------------------------------
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+
+local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -24,9 +32,10 @@ local INK = Color3.fromRGB(24, 22, 34)
 local CREAM = Color3.fromRGB(255, 247, 232)
 local LANE = Color3.fromRGB(240, 178, 82)
 local PIN_RED = Color3.fromRGB(230, 70, 70)
+local GOLD = Color3.fromRGB(255, 214, 70)
 local FONT = Enum.Font.FredokaOne
 
-local DONE = 7
+local DONE = 12
 local TUTORIAL_BALL = "Aftershock"
 
 local old = playerGui:FindFirstChild("TutorialUI")
@@ -47,29 +56,153 @@ local gui = create("ScreenGui", {
 	Name = "TutorialUI",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true, -- matches WorldToViewportPoint coordinates
-	DisplayOrder = 9,
+	DisplayOrder = 150, -- above the hub and the panels it points at
 }, playerGui)
+
+--------------------------------------------------
+-- SPOTLIGHT (dims everything except the target)
+--------------------------------------------------
+
+local function dimFrame(name)
+	return create("Frame", {
+		Name = name,
+		BackgroundColor3 = Color3.fromRGB(8, 6, 24),
+		BackgroundTransparency = 0.38,
+		BorderSizePixel = 0,
+		Active = true, -- sinks clicks everywhere except the hole
+		Visible = false,
+		ZIndex = 1,
+	}, gui)
+end
+
+local dimTop, dimBottom, dimLeft, dimRight = dimFrame("DimTop"), dimFrame("DimBottom"), dimFrame("DimLeft"), dimFrame("DimRight")
+
+local ring = create("Frame", {
+	Name = "Ring",
+	BackgroundTransparency = 1,
+	Visible = false,
+	ZIndex = 3,
+}, gui)
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, ring)
+local ringStroke = create("UIStroke", { Color = GOLD, Thickness = 5 }, ring)
+
+local pointer = create("TextLabel", {
+	Name = "Pointer",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Size = UDim2.fromOffset(60, 50),
+	BackgroundTransparency = 1,
+	Font = FONT,
+	Text = "v",
+	TextColor3 = GOLD,
+	TextSize = 54,
+	Visible = false,
+	ZIndex = 4,
+}, gui)
+create("UIStroke", { Color = INK, Thickness = 4 }, pointer)
+
+-- a GuiObject really on screen (every ancestor visible)?
+local function isShown(object)
+	if not object or not object.Parent then
+		return false
+	end
+
+	local current = object
+	while current and current ~= playerGui do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		if current:IsA("ScreenGui") then
+			return current.Enabled
+		end
+		current = current.Parent
+	end
+
+	return object.AbsoluteSize.X > 4 and object.AbsoluteSize.Y > 4
+end
+
+local function screenRect(object)
+	local position = object.AbsolutePosition
+	local sourceGui = object:FindFirstAncestorWhichIsA("ScreenGui")
+	if sourceGui and not sourceGui.IgnoreGuiInset then
+		position += GuiService:GetGuiInset()
+	end
+	return position, object.AbsoluteSize
+end
+
+local function setSpotlight(target, extra)
+	if not target or not isShown(target) then
+		for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, ring, pointer }) do
+			frame.Visible = false
+		end
+		return
+	end
+
+	local position, size = screenRect(target)
+
+	-- an extra object (the FREE tag) is kept inside the lit area too
+	if extra and isShown(extra) then
+		local extraPosition, extraSize = screenRect(extra)
+		local minX = math.min(position.X, extraPosition.X)
+		local minY = math.min(position.Y, extraPosition.Y)
+		local maxX = math.max(position.X + size.X, extraPosition.X + extraSize.X)
+		local maxY = math.max(position.Y + size.Y, extraPosition.Y + extraSize.Y)
+		position, size = Vector2.new(minX, minY), Vector2.new(maxX - minX, maxY - minY)
+	end
+
+	local pad = 10
+	local x, y = position.X - pad, position.Y - pad
+	local w, h = size.X + pad * 2, size.Y + pad * 2
+	local screen = gui.AbsoluteSize
+
+	-- Whole-pixel rectangle, frames abut exactly (no overlap, no gap): with
+	-- fractional sizes a 1 px gap used to show as a thin line across the screen.
+	local x0, y0 = math.floor(x), math.floor(y)
+	local x1, y1 = math.ceil(x + w), math.ceil(y + h)
+	local sw, sh = math.ceil(screen.X) + 4, math.ceil(screen.Y) + 4
+
+	dimTop.Position, dimTop.Size = UDim2.fromOffset(-2, -2), UDim2.fromOffset(sw, math.max(0, y0 + 2))
+	dimBottom.Position, dimBottom.Size = UDim2.fromOffset(-2, y1), UDim2.fromOffset(sw, math.max(0, sh - y1 - 2))
+	dimLeft.Position, dimLeft.Size = UDim2.fromOffset(-2, y0), UDim2.fromOffset(math.max(0, x0 + 2), y1 - y0)
+	dimRight.Position, dimRight.Size = UDim2.fromOffset(x1, y0), UDim2.fromOffset(math.max(0, sw - 2 - x1), y1 - y0)	ring.Position, ring.Size = UDim2.fromOffset(x, y), UDim2.fromOffset(w, h)
+	ringStroke.Transparency = 0.5 - math.sin(os.clock() * 6) * 0.45
+
+	local bob = math.sin(os.clock() * 6) * 6
+	if y > 90 then
+		pointer.Text = "v"
+		pointer.AnchorPoint = Vector2.new(0.5, 1)
+		pointer.Position = UDim2.fromOffset(x + w / 2, y - 2 + bob)
+	else
+		pointer.Text = "^"
+		pointer.AnchorPoint = Vector2.new(0.5, 0)
+		pointer.Position = UDim2.fromOffset(x + w / 2, y + h + 2 - bob)
+	end
+
+	for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, ring, pointer }) do
+		frame.Visible = true
+	end
+end
 
 --------------------------------------------------
 -- BANNER
 --------------------------------------------------
 
+-- Instruction text: no box. Big cream text with a thick dark outline and a
+-- soft gold glow so it reads over any part of the game.
 local banner = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 84),
-	Size = UDim2.fromOffset(520, 44),
-	BackgroundColor3 = LANE,
+	Position = UDim2.new(0.5, 0, 0, 96),
+	Size = UDim2.fromOffset(760, 74),
+	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "",
-	TextColor3 = INK,
-	TextSize = 14,
+	TextColor3 = Color3.fromRGB(255, 240, 150),
+	TextSize = 32,
 	TextWrapped = true,
 	Visible = false,
+	ZIndex = 10,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 14) }, banner)
-create("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, banner)
+create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 5 }, banner)
 local bannerScale = create("UIScale", { Scale = 1 }, banner)
-
 local function fitBanner()
 	local viewport = gui.AbsoluteSize
 	bannerScale.Scale = math.clamp(viewport.X / 740, 0.6, 1.1)
@@ -81,18 +214,85 @@ fitBanner()
 -- ARROW (screen space, orbits the ball toward the target)
 --------------------------------------------------
 
-local arrow = create("TextLabel", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Size = UDim2.fromOffset(40, 40),
-	BackgroundTransparency = 1,
-	Font = FONT,
-	Text = ">",
-	TextColor3 = PIN_RED,
-	TextSize = 38,
-	Visible = false,
-}, gui)
-create("UIStroke", { Color = INK, Thickness = 2 }, arrow)
+-- A chain of GROUND arrows flows out of the ball along the floor toward the
+-- objective (world parts, drawn only on this client). Screen-space arrows
+-- pointed at the sky whenever the target was straight ahead.
+local ARROW_COUNT = 8
+local ARROW_SPACING = 7
+local ARROW_COLOR = Color3.fromRGB(255, 214, 70)
 
+local arrowFolder = workspace:FindFirstChild("TutorialArrows")
+if arrowFolder then
+	arrowFolder:Destroy()
+end
+arrowFolder = Instance.new("Folder")
+arrowFolder.Name = "TutorialArrows"
+arrowFolder.Parent = workspace
+
+local worldArrows = {}
+
+local function makeGroundArrow()
+	local part = Instance.new("Part")
+	part.Size = Vector3.new(8, 0.2, 8)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Transparency = 1
+	part.Parent = arrowFolder
+
+	local surface = Instance.new("SurfaceGui")
+	surface.Face = Enum.NormalId.Top
+	surface.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+	surface.CanvasSize = Vector2.new(240, 240)
+	surface.LightInfluence = 0
+	surface.Brightness = 2
+	surface.Parent = part
+
+	local group = Instance.new("CanvasGroup")
+	group.Size = UDim2.fromScale(1, 1)
+	group.BackgroundTransparency = 1
+	group.Parent = surface
+
+	-- two arms meeting at the tip (UI rotation pivots on the element centre,
+	-- so each arm is placed by its centre)
+	local phi = math.rad(38)
+	local armLength = 240 * 0.62
+	local thickness = 240 * 0.2
+	local apex = Vector2.new(120, 38)
+	for _, side in ipairs({ -1, 1 }) do
+		local direction = Vector2.new(side * math.cos(phi), math.sin(phi))
+		local centre = apex + direction * (armLength / 2)
+
+		local arm = Instance.new("Frame")
+		arm.AnchorPoint = Vector2.new(0.5, 0.5)
+		arm.Position = UDim2.fromOffset(centre.X, centre.Y)
+		arm.Size = UDim2.fromOffset(armLength, thickness)
+		arm.Rotation = side * math.deg(phi)
+		arm.BackgroundColor3 = ARROW_COLOR
+		arm.BorderSizePixel = 0
+		arm.Parent = group
+		Instance.new("UICorner", arm).CornerRadius = UDim.new(0, 12)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = INK
+		stroke.Thickness = 5
+		stroke.Parent = arm
+	end
+
+	return { Part = part, Group = group }
+end
+
+for index = 1, ARROW_COUNT do
+	worldArrows[index] = makeGroundArrow()
+end
+
+local function hideArrows()
+	for _, arrow in ipairs(worldArrows) do
+		arrow.Part.Position = Vector3.new(0, -5000, 0)
+		arrow.Group.GroupTransparency = 1
+	end
+end
 local distanceLabel = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Size = UDim2.fromOffset(90, 22),
@@ -100,31 +300,35 @@ local distanceLabel = create("TextLabel", {
 	Font = FONT,
 	Text = "",
 	TextColor3 = CREAM,
-	TextSize = 16,
+	TextSize = 22,
 	Visible = false,
+	ZIndex = 5,
 }, gui)
-create("UIStroke", { Color = INK, Thickness = 2 }, distanceLabel)
+create("UIStroke", { Color = INK, Thickness = 3 }, distanceLabel)
 
 --------------------------------------------------
--- TARGETS
+-- WORLD TARGETS
 --------------------------------------------------
 
-local function findTarget(step)
-	if step == 1 then
+local function worldTarget(step)
+	if step == 1 or step == 5 or step == 9 then
 		return workspace:FindFirstChild("StartWall")
-	elseif step == 2 then
+
+	elseif step == 2 or step == 6 or step == 10 then
 		-- Only during the oil course. Once the finish wall is hit (RunState
 		-- Finishing) and the WinCourse runs, there is nothing to point at.
 		if player:GetAttribute("RunState") ~= "Running" then
 			return nil
 		end
 		return workspace:FindFirstChild("FinishWall")
+
 	elseif step == 3 then
-		local shop = workspace:FindFirstChild("BowlingShop")
-		return shop and shop:FindFirstChild("BallShopInteractionPoint")
-	elseif step == 4 then
 		local generators = workspace:FindFirstChild("XPGenerators")
 		return generators and generators:FindFirstChild("GenX1")
+
+	elseif step == 7 or step == 8 then
+		local shop = workspace:FindFirstChild("BowlingShop")
+		return shop and shop:FindFirstChild("BallShopInteractionPoint")
 	end
 
 	return nil
@@ -142,6 +346,58 @@ end
 local function getOwnBall()
 	local balls = workspace:FindFirstChild("PlayerBalls")
 	return balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+end
+
+--------------------------------------------------
+-- BUTTON TARGETS (spotlight)
+--------------------------------------------------
+
+local function findGui(name)
+	return playerGui:FindFirstChild(name, true)
+end
+
+local function calendarDayOne()
+	local panel = findGui("CalendarPanel")
+	if not panel then
+		return nil
+	end
+	local best
+	for _, child in ipairs(panel:GetDescendants()) do
+		if child:IsA("TextButton") and child.Size.X.Offset == 94 and child.Size.Y.Offset == 154 then
+			if not best or child.LayoutOrder < best.LayoutOrder then
+				best = child
+			end
+		end
+	end
+	return best
+end
+
+-- returns the GuiObject to spotlight for this step (nil = none right now)
+local function spotlightTarget(step)
+	if step == 4 then
+		if PanelManager.IsOpen("Rebirth") then
+			return findGui("RebirthNowButton")
+		end
+		local hub = playerGui:FindFirstChild("HubUI")
+		local button = hub and hub:FindFirstChild("RebirthButton", true)
+		return button
+
+	elseif step == 7 or step == 8 then
+		local shop = playerGui:FindFirstChild("BallShopUI")
+		if shop and shop.Enabled then
+			local card = shop:FindFirstChild(TUTORIAL_BALL, true)
+			return card
+		end
+
+	elseif step == 11 then
+		if PanelManager.IsOpen("Calendar") then
+			return calendarDayOne()
+		end
+		local hub = playerGui:FindFirstChild("HubUI")
+		return hub and hub:FindFirstChild("DailyButton", true)
+	end
+
+	return nil
 end
 
 --------------------------------------------------
@@ -174,27 +430,52 @@ local function fetchAftershockCost()
 	end
 end
 
+local function shopOpen()
+	local shop = playerGui:FindFirstChild("BallShopUI")
+	return shop ~= nil and shop.Enabled
+end
+
 local function textFor(step)
+	local running = player:GetAttribute("RunState") == "Running"
+
 	if step == 1 then
 		return "Roll onto the START wall to begin your first course!"
-	elseif step == 2 then
-		if player:GetAttribute("RunState") == "Running" then
+	elseif step == 2 or step == 6 or step == 10 then
+		if running then
 			return "Collect oil, avoid the gutters, then roll into the FINISH wall!"
 		end
 		return "Nice! Your WinCourse is next. Roll through the tiles to collect Wins!"
 	elseif step == 3 then
+		return "Roll onto the X1 generator and earn XP to level up!"
+	elseif step == 4 then
+		if PanelManager.IsOpen("Rebirth") then
+			return "Press REBIRTH NOW - it's FREE!"
+		end
+		return "Level up complete! Press the REBIRTH button - it's FREE!"
+	elseif step == 5 then
+		return "Rebirthed! Your OIL is now x2. Roll the course again!"
+	elseif step == 7 then
+		if shopOpen() then
+			return "Tap the BUY button on AFTERSHOCK!"
+		end
 		local cost = aftershockCost
 		local wins = player:GetAttribute("Wins") or 0
 		if cost and wins < cost then
 			return "Win " .. cost .. " Wins, then roll onto the SHOP pad to buy AFTERSHOCK!"
 		end
 		return "Roll onto the SHOP pad and buy AFTERSHOCK!"
-	elseif step == 4 then
-		return "Roll onto the X1 generator to start earning XP!"
-	elseif step == 5 then
-		return "Keep earning XP. When you hit the level, press REBIRTH in the hub!"
-	elseif step == 6 then
-		return "Open the DAILY calendar on the left and claim your gift!"
+	elseif step == 8 then
+		if shopOpen() then
+			return "Now press EQUIP on AFTERSHOCK!"
+		end
+		return "Open the shop (roll onto the SHOP pad) and EQUIP AFTERSHOCK!"
+	elseif step == 9 then
+		return "Roll again with your new ball!"
+	elseif step == 11 then
+		if PanelManager.IsOpen("Calendar") then
+			return "Claim DAY 1 of your daily calendar!"
+		end
+		return "Your DAILY calendar is here! Tap it and claim Day 1."
 	end
 
 	return ""
@@ -205,6 +486,7 @@ end
 --------------------------------------------------
 
 local shownStep = nil
+local calendarOpened = false
 
 local function updateBanner(step)
 	if step == shownStep then
@@ -217,7 +499,7 @@ local function updateBanner(step)
 		return
 	end
 
-	if step == 3 then
+	if step == 7 then
 		task.spawn(fetchAftershockCost)
 	end
 
@@ -237,63 +519,81 @@ RunService.RenderStepped:Connect(function()
 	local step = player:GetAttribute("TutorialStep")
 	updateBanner(step)
 
-	-- Step 3's text depends on Wins, so keep it fresh.
-	if (step == 2 or step == 3) and banner.Visible then
+	local active = typeof(step) == "number" and step >= 1 and step < DONE
+
+	-- the banner text depends on state (wins, panels), so keep it fresh
+	if active and banner.Visible then
 		banner.Text = textFor(step)
 	end
 
-	local target = typeof(step) == "number" and findTarget(step) or nil
+	-- step 11: the calendar appears on screen by itself, once
+	if active and step == 11 and not calendarOpened and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
+		calendarOpened = true
+		task.delay(0.6, function()
+			PanelManager.Open("Calendar")
+		end)
+	end
+
+	-- spotlight for button steps (only in the lobby)
+	local lobby = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	local extra = (step == 4 and PanelManager.IsOpen("Rebirth")) and findGui("FreeTag") or nil
+	setSpotlight(active and lobby and spotlightTarget(step) or nil, extra)
+
+	local target = active and worldTarget(step) or nil
 	local ball = getOwnBall()
 
 	if not target or not ball then
-		arrow.Visible = false
+		hideArrows()
 		distanceLabel.Visible = false
 		return
 	end
 
 	local targetPosition = positionOf(target)
 	if not targetPosition then
-		arrow.Visible = false
+		hideArrows()
 		distanceLabel.Visible = false
 		return
 	end
 
-	local ballScreen, ballOnScreen = camera:WorldToViewportPoint(ball.Position)
-	local targetScreen, targetInFront = camera:WorldToViewportPoint(targetPosition)
+	-- horizontal direction from the ball to the objective
+	local flat = Vector3.new(targetPosition.X - ball.Position.X, 0, targetPosition.Z - ball.Position.Z)
+	if flat.Magnitude < 3 then
+		hideArrows()
+		distanceLabel.Visible = false
+		return
+	end
+	local direction = flat.Unit
 
-	local origin = Vector2.new(ballScreen.X, ballScreen.Y)
-	local direction = Vector2.new(targetScreen.X, targetScreen.Y) - origin
+	local groundY = ball.Position.Y - ball.Size.Y / 2 + 0.2
+	local phase = (os.clock() * 0.9) % 1
+	local reach = math.min(flat.Magnitude - 4, ARROW_COUNT * ARROW_SPACING)
+	local lastPoint = ball.Position
 
-	-- Target behind the camera: the projected direction is mirrored.
-	if targetScreen.Z < 0 then
-		direction = -direction
+	for index, arrow in ipairs(worldArrows) do
+		local distance = 7 + (index - 1 + phase) * ARROW_SPACING
+		if distance > reach + 7 then
+			arrow.Part.Position = Vector3.new(0, -5000, 0)
+			arrow.Group.GroupTransparency = 1
+		else
+			local point = Vector3.new(
+				ball.Position.X + direction.X * distance,
+				groundY,
+				ball.Position.Z + direction.Z * distance
+			)
+			-- the arrow's UI "up" is local -X: point that axis along the way
+			arrow.Part.CFrame = CFrame.fromMatrix(point, -direction, Vector3.yAxis)
+			local fraction = (index - 1 + phase) / ARROW_COUNT
+			arrow.Group.GroupTransparency = 1 - math.sin(math.clamp(fraction, 0, 1) * math.pi) * 0.95
+			lastPoint = point
+		end
 	end
 
-	if direction.Magnitude < 1 then
-		direction = Vector2.new(0, -1)
-	end
-
-	direction = direction.Unit
-
-	local orbit = 90
-	local bob = math.sin(os.clock() * 5) * 6
-
-	arrow.Position = UDim2.fromOffset(
-		origin.X + direction.X * (orbit + bob),
-		origin.Y + direction.Y * (orbit + bob)
-	)
-	arrow.Rotation = math.deg(math.atan2(direction.Y, direction.X))
-	arrow.Visible = ballOnScreen
-
+	local screen, onScreen = camera:WorldToViewportPoint(lastPoint + Vector3.new(0, 3, 0))
 	local distance = (targetPosition - ball.Position).Magnitude
-	distanceLabel.Position = UDim2.fromOffset(
-		origin.X + direction.X * (orbit + 40),
-		origin.Y + direction.Y * (orbit + 40)
-	)
+	distanceLabel.Position = UDim2.fromOffset(screen.X, screen.Y)
 	distanceLabel.Text = math.floor(distance) .. " studs"
-	distanceLabel.Visible = ballOnScreen
+	distanceLabel.Visible = onScreen and screen.Z > 0
 end)
-
 -- Keep the banner out of the way while rolling (only shown in the lobby).
 player:GetAttributeChangedSignal("RunState"):Connect(function()
 	if shownStep ~= nil and shownStep < DONE and shownStep >= 1 then

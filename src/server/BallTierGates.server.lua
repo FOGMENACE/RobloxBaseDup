@@ -26,6 +26,7 @@ local PlayerDataService = require(
 		:WaitForChild("PlayerDataService")
 )
 
+local SweptTouch = require(ServerScriptService:WaitForChild("SweptTouch"))
 local swapEvent = ServerScriptService:WaitForChild("SwapRunBall")
 local course = workspace:WaitForChild("Course")
 local playerBalls = workspace:WaitForChild("PlayerBalls")
@@ -72,6 +73,16 @@ for index, entry in ipairs(ordered) do
 	indexOf[entry.Id] = index
 end
 
+-- Exclusive balls (the Oil Barrel) are not in the tier list, but their owners
+-- still roll through upgrade / downgrade platforms: an exclusive ball counts
+-- as ONE STEP ABOVE the best normal ball. A downgrade drops it to the best
+-- normal ball, an upgrade has nowhere to go ("best ball").
+local EXCLUSIVE_INDEX = #ordered + 1
+for ballId, definition in pairs(BallDefinitions) do
+	if definition.IsExclusive == true then
+		indexOf[ballId] = EXCLUSIVE_INDEX
+	end
+end
 local function displayName(ballId)
 	local definition = BallDefinitions[ballId]
 	return definition and definition.DisplayName or tostring(ballId)
@@ -104,7 +115,8 @@ local function applyGate(player, state, ball, delta)
 	end
 
 	local currentIndex = indexOf[state.BallId]
-	local newIndex = math.clamp(currentIndex + delta, 1, #ordered)
+	local topIndex = (currentIndex == EXCLUSIVE_INDEX) and EXCLUSIVE_INDEX or #ordered
+	local newIndex = math.clamp(currentIndex + delta, 1, topIndex)
 	local oldName = displayName(state.BallId)
 
 	if newIndex == currentIndex then
@@ -204,7 +216,7 @@ end
 -- (most often 0 or 1), on randomly chosen candidate rows.
 local TIER_COUNT_WEIGHTS = { [0] = 32, [1] = 40, [2] = 20, [3] = 8 }
 
-local function chooseTierRows()
+local function chooseTierRows(playerCourse)
 	local roll = rng:NextNumber() * 100
 	local acc = 0
 	local count = 0
@@ -216,6 +228,14 @@ local function chooseTierRows()
 		end
 	end
 
+	-- A course already full of X2 / X4 gets fewer upgrade platforms, so it is
+	-- never wall-to-wall helpers (mixed difficulty).
+	if (playerCourse:GetAttribute("MultiplierPlatforms") or 0) >= 2 then
+		count = math.min(count, 1)
+	elseif (playerCourse:GetAttribute("MultiplierPlatforms") or 0) == 1 then
+		count = math.min(count, 2)
+	end
+
 	local pool = table.clone(TIER_ROWS)
 	local chosen = {}
 	for _ = 1, math.min(count, #pool) do
@@ -225,7 +245,7 @@ local function chooseTierRows()
 end
 
 local function buildGates(player, state, playerCourse)
-	local chosenRows = chooseTierRows()
+	local chosenRows = chooseTierRows(playerCourse)
 
 	for _, child in ipairs(playerCourse:GetChildren()) do
 		local rowNumber = child:GetAttribute("RowNumber")
@@ -247,7 +267,7 @@ local function buildGates(player, state, playerCourse)
 			convertPlatform(platform, isUp)
 
 			for _, part in ipairs(platformParts(platform)) do
-				part.Touched:Connect(function(hit)
+				local function onHit(hit)
 					if used or state.Locked then
 						return
 					end
@@ -276,7 +296,10 @@ local function buildGates(player, state, playerCourse)
 					task.delay(0.3, function()
 						state.Locked = false
 					end)
-				end)
+				end
+
+				part.Touched:Connect(onHit)
+				SweptTouch.Register(part, player.UserId, onHit) -- fast balls skip Touched
 			end
 		end
 	end

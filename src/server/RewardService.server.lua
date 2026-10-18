@@ -107,13 +107,27 @@ leaveClaim.OnServerInvoke = function(player)
 	busy[player] = true
 
 	local newNext = now + LEAVE_COOLDOWN
+	-- Atomic across servers: the stored cooldown is re-checked inside UpdateAsync,
+	-- so two servers cannot both pay out the same claim.
+	local won = false
 	local saved = pcall(function()
-		leaveStore:SetAsync(key(player), newNext)
+		leaveStore:UpdateAsync(key(player), function(old)
+			if typeof(old) == "number" and old > now then
+				return nil
+			end
+			won = true
+			return newNext
+		end)
 	end)
 
 	if not saved then
 		busy[player] = nil
 		return false, "SAVE_FAILED"
+	end
+
+	if not won then
+		busy[player] = nil
+		return false, "COOLDOWN"
 	end
 
 	publishLeave(player, newNext)
@@ -140,7 +154,7 @@ local function hasFavorited(player)
 	local ok, value = pcall(function()
 		return flagStore:GetAsync("Flags_" .. tostring(player.UserId))
 	end)
-	return ok and typeof(value) == "table" and value.Favorite == true
+	return ok and typeof(value) == "table" and value.FavoriteVerified == true
 end
 
 local function alreadyClaimed(player)
@@ -178,12 +192,22 @@ communityClaim.OnServerInvoke = function(player)
 	elseif not (isMember(player) and hasFavorited(player)) then
 		reason = "REQUIREMENTS"
 	else
+		-- atomic across servers: only the call that flips false -> true pays out
+		local won = false
 		local ok = pcall(function()
-			communityStore:SetAsync(key(player), true)
+			communityStore:UpdateAsync(key(player), function(old)
+				if old == true then
+					return nil
+				end
+				won = true
+				return true
+			end)
 		end)
 
 		if not ok then
 			reason = "SAVE_FAILED"
+		elseif not won then
+			reason = "CLAIMED"
 		elseif PlayerDataService.AddWins(player, COMMUNITY_WINS) then
 			PlayerDataService.SavePlayer(player)
 			result, reason = true, "OK"

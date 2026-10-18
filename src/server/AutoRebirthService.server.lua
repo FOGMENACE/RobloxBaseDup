@@ -49,6 +49,8 @@ Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("AutoRebirth", false)
 
 	task.spawn(function()
+		require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
+
 		local ok, value = pcall(function()
 			return store:GetAsync(key(player))
 		end)

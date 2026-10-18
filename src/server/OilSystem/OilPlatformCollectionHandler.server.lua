@@ -206,6 +206,18 @@ end
 
 
 --------------------------------------------------
+-- TOUCH HANDLERS + SWEPT COLLISION
+--
+-- A platform is only ~0.3 studs thick. At high speed the ball moves several
+-- studs per physics step and Touched can miss it entirely (that made X2 / X4
+-- / dividers and oil randomly "not count"). A per-frame swept check runs the
+-- same handler for every platform the ball's path crossed.
+--------------------------------------------------
+
+local touchHandlers = {}
+local sweepParts = {} -- [playerCourse] = { { Part, Platform } }
+
+--------------------------------------------------
 -- CONNECT PLATFORM
 --------------------------------------------------
 
@@ -225,7 +237,7 @@ local function connectPlatform(platform, playerCourse)
         connectedParts[part] = true
         part.CanTouch = true
 
-        part.Touched:Connect(function(hit)
+        local function handler(hit)
 
             --------------------------------------------------
             -- VALIDATE PLATFORM
@@ -285,11 +297,17 @@ local function connectPlatform(platform, playerCourse)
                 return
             end
 
+            -- Special platforms (X2 / X4 / /2 / /4) are defined by OilType and act
+            -- on CurrentOil, so their OilAmount is 0 BY DESIGN. Only normal oil
+            -- platforms need a non-zero amount (this check used to reject every
+            -- special platform, so X2 / X4 / dividers never did anything).
+            local isSpecialPlatform = platform:GetAttribute("IsSpecial") == true
+
             if typeof(oilAmount) ~= "number"
                 or oilAmount ~= oilAmount
                 or oilAmount == math.huge
                 or oilAmount == -math.huge
-                or oilAmount == 0 then
+                or (oilAmount == 0 and not isSpecialPlatform) then
 
                 warn(
                     "[OilPlatformCollectionHandler] Invalid OilAmount:",
@@ -364,7 +382,13 @@ local function connectPlatform(platform, playerCourse)
                 player:GetAttribute("CollectedOilCount")
             )
 
-        end)
+        end
+
+        touchHandlers[part] = handler
+        part.Touched:Connect(handler)
+
+        sweepParts[playerCourse] = sweepParts[playerCourse] or {}
+        table.insert(sweepParts[playerCourse], { Part = part, Platform = platform })
 
     end
 
@@ -431,12 +455,94 @@ end)
 
 
 --------------------------------------------------
+-- SWEPT COLLISION LOOP
+--------------------------------------------------
+
+local RunService = game:GetService("RunService")
+local lastBallPosition = {}
+
+RunService.Heartbeat:Connect(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player:GetAttribute("RunState") ~= "Running" then
+            lastBallPosition[player] = nil
+            continue
+        end
+
+        local ball = workspace:FindFirstChild("PlayerBalls")
+            and workspace.PlayerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
+        if not ball then
+            continue
+        end
+
+        local current = ball.Position
+        local previous = lastBallPosition[player]
+        lastBallPosition[player] = current
+
+        if not previous or (current - previous).Magnitude < 1.5 then
+            continue -- slow enough for Touched
+        end
+
+        local playerCourse = courseFolder:FindFirstChild("PlayerCourse_" .. player.UserId)
+        local list = playerCourse and sweepParts[playerCourse]
+        if not list then
+            continue
+        end
+
+        local radius = ball.Size.X / 2
+
+        for _, entry in ipairs(list) do
+            local part = entry.Part
+            local platform = entry.Platform
+
+            if part.Parent and platform:GetAttribute("Collected") ~= true then
+                local size = part.Size
+                local axis = "X"
+                if size.Y < size[axis] then axis = "Y" end
+                if size.Z < size[axis] then axis = "Z" end
+
+                local a = part.CFrame:PointToObjectSpace(previous)
+                local b = part.CFrame:PointToObjectSpace(current)
+                local pa, pb = a[axis], b[axis]
+                local half = size[axis] / 2 + radius
+
+                -- crossed (or ended inside) the thin slab?
+                local crossed = (pa < -half and pb > -half) or (pa > half and pb < half)
+                    or (math.abs(pa) <= half) or (math.abs(pb) <= half)
+
+                if crossed and pa ~= pb then
+                    local t = math.clamp((0 - pa) / (pb - pa), 0, 1)
+                    local at = a:Lerp(b, t)
+                    local inside = true
+                    for _, other in ipairs({ "X", "Y", "Z" }) do
+                        if other ~= axis and math.abs(at[other]) > size[other] / 2 + radius then
+                            inside = false
+                        end
+                    end
+
+                    if inside then
+                        local handler = touchHandlers[part]
+                        if handler then
+                            task.spawn(handler, ball)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    lastBallPosition[player] = nil
+end)
+
+--------------------------------------------------
 -- CLEANUP
 --------------------------------------------------
 
 courseFolder.ChildRemoved:Connect(function(playerCourse)
 
     connectingCourses[playerCourse] = nil
+    sweepParts[playerCourse] = nil
 
 end)
 

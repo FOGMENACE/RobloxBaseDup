@@ -239,15 +239,15 @@ local oilScale = create("UIScale", { Scale = 1 }, oilChip)
 
 local oilIconHolder = create("Frame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(8, 7),
-	Size = UDim2.fromOffset(34, 34),
+	Position = UDim2.fromOffset(6, 8),
+	Size = UDim2.fromOffset(46, 34),
 }, oilChip)
 addOilIcon(oilIconHolder, UDim2.fromScale(1, 1))
 
 local oilLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(46, 0),
-	Size = UDim2.new(1, -52, 1, 0),
+	Position = UDim2.fromOffset(56, 0),
+	Size = UDim2.new(1, -60, 1, 0),
 	Font = FONT,
 	Text = "0",
 	TextColor3 = INK,
@@ -265,6 +265,7 @@ local oilLabel = create("TextLabel", {
 --------------------------------------------------
 
 local XPKits = require(ReplicatedStorage:WaitForChild("XPKits"))
+local BadgeOverlay = require(ReplicatedStorage:WaitForChild("BadgeOverlay"))
 
 local kitRow = create("Frame", {
 	Name = "KitRow",
@@ -328,6 +329,7 @@ for index = 1, 3 do
 	round(badge, 11)
 	outline(badge, 2)
 	local badgeScale = create("UIScale", { Scale = 0 }, badge)
+	BadgeOverlay.Attach(badge, button, { Dx = 6, Dy = -8 })
 
 	Shine.Attach(button, { Offset = index * 1.1 })
 
@@ -442,10 +444,8 @@ local passBonusLine = bonusLine(20, Color3.fromRGB(30, 130, 70))
 
 local function percentText(value)
 	value = math.floor(value + 0.5)
-	local text = tostring(value)
-	-- thousands separators
-	local formatted = text:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
-	return "+" .. formatted .. "%"
+	-- plain digits, no thousands separators (commas looked choppy)
+	return "+" .. tostring(value) .. "%"
 end
 
 local function refreshBonusPill()
@@ -454,7 +454,11 @@ local function refreshBonusPill()
 	local passMultiplier = player:GetAttribute("PassXPMultiplier") or 1
 	local passPercent = math.max(passMultiplier - 1, 0) * 100
 
-	rebirthBonusLine.Text = "REBIRTH XP " .. percentText(rebirthPercent)
+	-- Stays at +1000% up to the x10 wins multiplier, then follows it 1:1 (x11 = +1100%,
+	-- x12 = +1200%, x13 = +1300% ...): 100% per extra wins multiplier.
+	local winsNow = RebirthBonuses.WinsMultiplier(rebirths)
+	local pillPercent = math.max(1000, winsNow * 100)
+	rebirthBonusLine.Text = "REBIRTH XP " .. percentText(pillPercent)
 	passBonusLine.Text = "PASS XP " .. percentText(passPercent)
 	bump(bonusScale, 1.08)
 end
@@ -619,6 +623,20 @@ end
 local winsChip = multiplierText(winsTile, Color3.fromRGB(255, 255, 255))
 local oilChip2 = multiplierText(oilTile, Color3.fromRGB(255, 255, 255))
 
+-- New players do not see the multiplier panel until the tutorial reaches\n-- the rebirth step (TutorialService step 4); veterans see it at once.
+local tutorialTimedOut = false
+local function applyTutorialVisibility()
+	local step = player:GetAttribute("TutorialStep")
+	local known = typeof(step) == "number"
+	rebirthPanel.Visible = known and step >= 4 or (not known and tutorialTimedOut)
+end
+player:GetAttributeChangedSignal("TutorialStep"):Connect(applyTutorialVisibility)
+applyTutorialVisibility()
+task.delay(8, function()
+	tutorialTimedOut = true
+	applyTutorialVisibility()
+end)
+
 -- Opens the existing rebirth panel (owned by RebirthUIClient).
 rebirthPanel.Activated:Connect(function()
 	local toggle = playerGui:FindFirstChild("ToggleRebirthPanel")
@@ -721,6 +739,27 @@ end
 
 local lastLevel = nil
 local barTween = nil
+local levelMaxed = false
+local shakeToken = 0
+
+-- "REBIRTH REQUIRED" shakes side to side every time XP lands on the full bar.
+local function shakeRebirthRequired()
+	shakeToken += 1
+	local token = shakeToken
+	task.spawn(function()
+		for step = 1, 8 do
+			if token ~= shakeToken then
+				return
+			end
+			local amount = (9 - step) * 1.2
+			barLabel.Position = UDim2.fromOffset((step % 2 == 0 and 1 or -1) * amount, 0)
+			barLabel.Rotation = (step % 2 == 0 and 1 or -1) * (9 - step) * 0.5
+			task.wait(0.035)
+		end
+		barLabel.Position = UDim2.fromOffset(0, 0)
+		barLabel.Rotation = 0
+	end)
+end
 
 local function refreshLevel()
 	local level = player:GetAttribute("Level")
@@ -732,10 +771,20 @@ local function refreshLevel()
 		return
 	end
 
-	levelLabel.Text = "LEVEL " .. math.floor(level)
+	local maxed = player:GetAttribute("RebirthMaxReached") == true
+	levelMaxed = maxed
 
-	if typeof(into) == "number" and typeof(needed) == "number" then
-		barLabel.Text = formatNumber(into) .. " / " .. formatNumber(needed)
+	if maxed then
+		-- At the reach level the bar is full: say so, and ask for the rebirth.
+		levelLabel.Text = "MAX LEVEL"
+		barLabel.Text = "REBIRTH REQUIRED"
+		barLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
+	else
+		levelLabel.Text = "LEVEL " .. math.floor(level)
+		barLabel.TextColor3 = CREAM
+		if typeof(into) == "number" and typeof(needed) == "number" then
+			barLabel.Text = formatNumber(into) .. " / " .. formatNumber(needed)
+		end
 	end
 
 	if typeof(progress) == "number" then
@@ -784,6 +833,7 @@ local function refreshOil()
 end
 
 local lastRebirths = nil
+local lastShowWins = nil
 
 local function refreshRebirth()
 	local rebirths = player:GetAttribute("Rebirths") or 0
@@ -793,6 +843,30 @@ local function refreshRebirth()
 	local winsMultiplier = RebirthBonuses.WinsMultiplier(rebirths)
 
 	multiplierLabel.Text = "REBIRTH " .. rebirths
+
+	-- The wins multiplier tile only exists once a rebirth grants it (rebirth 2).
+	-- Until then the panel is just the oil tile; when it is earned the panel
+	-- expands and the trophy tile pops in.
+	local showWins = winsMultiplier > 1
+	if showWins ~= lastShowWins then
+		local targetWidth = showWins and 270 or 140
+		if lastShowWins == nil then
+			rebirthPanel.Size = UDim2.fromOffset(targetWidth, rebirthPanel.Size.Y.Offset)
+			winsTile.Visible = showWins
+		else
+			TweenService:Create(
+				rebirthPanel,
+				TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+				{ Size = UDim2.fromOffset(targetWidth, rebirthPanel.Size.Y.Offset) }
+			):Play()
+			winsTile.Visible = showWins
+			if showWins then
+				winsChipScale.Scale = 0.2
+				TweenService:Create(winsChipScale, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+			end
+		end
+		lastShowWins = showWins
+	end
 	oilChip2.Text = "x" .. formatNumber(oilMultiplier)
 	winsChip.Text = "x" .. formatNumber(winsMultiplier)
 
@@ -805,7 +879,7 @@ local function refreshRebirth()
 	lastRebirths = rebirths
 end
 
-for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgress" }) do
+for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgress", "RebirthMaxReached" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshLevel)
 end
 player:GetAttributeChangedSignal("RebirthLevelRequirement"):Connect(refreshGlobal)
@@ -879,6 +953,10 @@ task.spawn(function()
 	xpAward.OnClientEvent:Connect(function(amount)
 		if typeof(amount) ~= "number" or amount <= 0 then
 			return
+		end
+
+		if levelMaxed then
+			shakeRebirthRequired()
 		end
 
 		batched += amount

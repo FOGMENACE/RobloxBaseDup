@@ -190,7 +190,13 @@ showOilChips = function()
 	end
 
 	if anim then
-		anim:Fire("Begin", (player:GetAttribute("CurrentOil") or 0) / product)
+		-- Platforms gave RAW oil; the multipliers were applied once at the finish
+		-- wall. Show the raw total first, then count up as each multiplier lands.
+		local raw = player:GetAttribute("OilRawCollected")
+		if typeof(raw) ~= "number" then
+			raw = (player:GetAttribute("CurrentOil") or 0) / product
+		end
+		anim:Fire("Begin", raw)
 	end
 
 	local target = panel and (panel.AbsolutePosition + Vector2.new(panel.AbsoluteSize.X / 2, 26))
@@ -393,8 +399,9 @@ local function showResult()
 
 	-- 5) final: the exact amount the server credited
 	total.Text = "+" .. commas(credited) .. " WINS!"
-	totalScale.Scale = 1.3
-	TweenService:Create(totalScale, TweenInfo.new(0.4, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	-- the final total GROWS and stays bigger while it is on screen
+	totalScale.Scale = 1.0
+	TweenService:Create(totalScale, TweenInfo.new(0.55, Enum.EasingStyle.Back), { Scale = 1.45 }):Play()
 	confetti()
 	play(FANFARE_SOUND, 0.7)
 	task.wait(0.5)

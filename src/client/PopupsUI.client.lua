@@ -195,16 +195,34 @@ end)
 -- WAIT! DON'T LEAVE!
 --------------------------------------------------
 
+local RunService = game:GetService("RunService")
+
+-- Dim the whole screen so the popup cannot be missed (and nothing behind it
+-- can be clicked by accident while it is open).
+local leaveDim = create("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(10, 8, 30),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 48,
+}, gui)
+
 local leaveFrame = create("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(420, 300),
-	BackgroundColor3 = Color3.fromRGB(40, 50, 110),
+	Size = UDim2.fromOffset(660, 430),
+	BackgroundColor3 = Color3.fromRGB(52, 36, 140),
 	Visible = false,
 	ZIndex = 50,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 22) }, leaveFrame)
-create("UIStroke", { Color = INK, Thickness = 5 }, leaveFrame)
+create("UICorner", { CornerRadius = UDim.new(0, 36) }, leaveFrame)
+create("UIStroke", { Color = Color3.fromRGB(255, 214, 70), Thickness = 7 }, leaveFrame)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(96, 64, 210), Color3.fromRGB(34, 22, 96)),
+	Rotation = 90,
+}, leaveFrame)
 local leaveScale = create("UIScale", { Scale = 0 }, leaveFrame)
 
 local function label(text, y, h, size, color, parent)
@@ -219,52 +237,73 @@ local function label(text, y, h, size, color, parent)
 		TextWrapped = true,
 		ZIndex = 51,
 	}, parent)
-	create("UIStroke", { Color = INK, Thickness = 3 }, l)
+	create("UIStroke", { Color = INK, Thickness = 4 }, l)
 	return l
 end
 
-label("WAIT! Don't Leave!", 14, 48, 38, Color3.fromRGB(255, 220, 70), leaveFrame)
-label("Stay and grab a FREE gift:", 66, 28, 20, CREAM, leaveFrame)
-label("+360 WINS", 100, 46, 36, Color3.fromRGB(120, 255, 150), leaveFrame)
-label("x4 XP for 8 minutes", 148, 36, 26, Color3.fromRGB(255, 150, 220), leaveFrame)
+local leaveHeader = label("WAIT! DON'T LEAVE!", 22, 74, 62, Color3.fromRGB(255, 226, 80), leaveFrame)
+label("Stay and grab a FREE gift:", 104, 34, 26, CREAM, leaveFrame)
+label("+360 WINS", 142, 74, 64, Color3.fromRGB(120, 255, 150), leaveFrame)
+label("+ x4 XP for 8 minutes", 222, 44, 32, Color3.fromRGB(255, 160, 225), leaveFrame)
 
 local leaveClaimButton = create("TextButton", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 200),
-	Size = UDim2.fromOffset(240, 54),
+	Position = UDim2.new(0.5, 0, 0, 282),
+	Size = UDim2.fromOffset(420, 92),
 	BackgroundColor3 = GREEN,
 	Font = FONT,
 	Text = "CLAIM & STAY!",
 	TextColor3 = CREAM,
-	TextSize = 26,
+	TextSize = 44,
 	ZIndex = 51,
 }, leaveFrame)
-create("UICorner", { CornerRadius = UDim.new(0, 14) }, leaveClaimButton)
-create("UIStroke", { Color = INK, Thickness = 3 }, leaveClaimButton)
+create("UICorner", { CornerRadius = UDim.new(0, 28) }, leaveClaimButton)
+create("UIStroke", { Color = INK, Thickness = 5 }, leaveClaimButton)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(130, 240, 140), Color3.fromRGB(48, 170, 80)),
+	Rotation = 90,
+}, leaveClaimButton)
+local claimPulse = create("UIScale", { Scale = 1 }, leaveClaimButton)
 Shine.Attach(leaveClaimButton, { Offset = 0 })
 
+-- small and far from the big button on purpose
 local leaveNo = create("TextButton", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 262),
-	Size = UDim2.fromOffset(160, 26),
+	Position = UDim2.new(0.5, 0, 0, 392),
+	Size = UDim2.fromOffset(200, 28),
 	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "no thanks",
-	TextColor3 = Color3.fromRGB(190, 190, 215),
-	TextSize = 15,
+	TextColor3 = Color3.fromRGB(190, 190, 225),
+	TextSize = 16,
 	ZIndex = 51,
 }, leaveFrame)
 
+-- the headline bobs and the claim button pulses while it is open
+RunService.RenderStepped:Connect(function()
+	if not leaveFrame.Visible then
+		return
+	end
+	local t = os.clock()
+	claimPulse.Scale = 1 + math.sin(t * 5) * 0.035
+	leaveHeader.Rotation = math.sin(t * 3) * 1.2
+end)
+
 local function setLeaveOpen(open)
 	if open then
+		leaveDim.Visible = true
+		leaveDim.BackgroundTransparency = 1
+		TweenService:Create(leaveDim, TweenInfo.new(0.25), { BackgroundTransparency = 0.4 }):Play()
 		leaveFrame.Visible = true
 		leaveClaimButton.Text = "CLAIM & STAY!"
 		leaveScale.Scale = 0.3
 		tweenScale(leaveScale, 1, 0.4)
 		ding()
 	else
+		TweenService:Create(leaveDim, TweenInfo.new(0.2), { BackgroundTransparency = 1 }):Play()
 		tweenScale(leaveScale, 0, 0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In).Completed:Once(function()
 			leaveFrame.Visible = false
+			leaveDim.Visible = false
 		end)
 	end
 end
@@ -311,7 +350,7 @@ end)
 
 local confirmToast = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, -80),
+	Position = UDim2.new(0.5, 0, 0, -170),
 	Size = UDim2.fromOffset(420, 52),
 	BackgroundColor3 = GREEN,
 	Font = FONT,
@@ -332,7 +371,7 @@ remotes:WaitForChild("PurchaseConfirmed").OnClientEvent:Connect(function(label)
 	ding()
 	TweenService:Create(confirmToast, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 24) }):Play()
 	task.delay(3.5, function()
-		TweenService:Create(confirmToast, TweenInfo.new(0.3), { Position = UDim2.new(0.5, 0, 0, -80) }):Play()
+		TweenService:Create(confirmToast, TweenInfo.new(0.3), { Position = UDim2.new(0.5, 0, 0, -170) }):Play()
 	end)
 end)
 
@@ -342,7 +381,7 @@ end)
 
 local captainBanner = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, -140),
+	Position = UDim2.new(0.5, 0, 0, -270),
 	Size = UDim2.fromOffset(640, 92),
 	BackgroundColor3 = Color3.fromRGB(255, 190, 50),
 	Font = FONT,
@@ -373,6 +412,6 @@ remotes:WaitForChild("CaptainAnnounce").OnClientEvent:Connect(function(name, win
 	ding()
 	TweenService:Create(captainBanner, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 16) }):Play()
 	task.delay(8, function()
-		TweenService:Create(captainBanner, TweenInfo.new(0.4), { Position = UDim2.new(0.5, 0, 0, -140) }):Play()
+		TweenService:Create(captainBanner, TweenInfo.new(0.4), { Position = UDim2.new(0.5, 0, 0, -270) }):Play()
 	end)
 end)

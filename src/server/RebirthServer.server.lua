@@ -50,6 +50,10 @@ RebirthRemote.OnServerEvent:Connect(function(player, action)
 	local previous = lastRequest[player]
 
 	if previous and now - previous < REQUEST_COOLDOWN then
+		-- always answer, so the client never waits forever
+		if action == "Rebirth" then
+			RebirthRemote:FireClient(player, "RebirthResult", false, "TOO_FAST")
+		end
 		return
 	end
 
@@ -61,8 +65,12 @@ RebirthRemote.OnServerEvent:Connect(function(player, action)
 
 	if action == "Rebirth" then
 
-		local success, reason =
-			PlayerDataService.RebirthPlayer(player)
+		-- pcall: whatever happens (error, slow save) the client gets an answer
+		local ok, success, reason = pcall(PlayerDataService.RebirthPlayer, player)
+		if not ok then
+			warn("[RebirthServer] RebirthPlayer error:", success)
+			success, reason = false, "SERVER_ERROR"
+		end
 
 		RebirthRemote:FireClient(
 			player,

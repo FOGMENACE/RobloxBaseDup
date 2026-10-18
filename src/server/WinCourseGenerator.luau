@@ -78,7 +78,7 @@ local course =
 
 local START_POSITION =
 	Vector3.new(
-		-64.726, 63.444, 333.244
+		-64.726, 63.444, 353.244
 	)
 
 
@@ -713,7 +713,7 @@ local TILE_WIDTH_SCALE = 1.5 -- must match the oil course widening
 local MIN_TILE_LENGTH = 40 -- the first tile is the smallest
 local MAX_TILE_LENGTH = 80 -- reached at FULL_TILE_AMOUNT, then constant
 local FULL_TILE_AMOUNT = 65
-local RAINBOW_TILE_AMOUNT = 80 -- +80 and up are the long rainbow tiles
+local RAINBOW_TILE_AMOUNT = 110 -- +110 and up are the long rainbow tiles
 local RAINBOW_TILE_LENGTH = 130
 
 local function amountForIndex(index)
@@ -808,14 +808,25 @@ local function shapeTile(tile, index)
 	tile:SetAttribute("TileLength", length)
 	tile:SetAttribute("TileStart", tileStartDistance(index))
 end
+local VARIANT_COLORS = {
+	Color3.fromRGB(240, 128, 128),
+	Color3.fromRGB(240, 172, 100),
+	Color3.fromRGB(232, 214, 104),
+	Color3.fromRGB(128, 212, 138),
+	Color3.fromRGB(104, 196, 224),
+	Color3.fromRGB(138, 148, 240),
+	Color3.fromRGB(196, 128, 232),
+	Color3.fromRGB(240, 130, 190),
+}
+
 --------------------------------------------------
--- RAINBOW SURFACE (win amounts 80+)
+-- RAINBOW SURFACE (win amounts 110+)
 --
 -- A rainbow gradient is drawn on the Floor's top face. The trophy display
 -- sits just above the floor, so the trophy and win amount stay on top.
 --------------------------------------------------
 
-local RAINBOW_FROM_AMOUNT = 80
+local RAINBOW_FROM_AMOUNT = 110
 
 local function applyRainbowSurface(floor)
 	if floor:FindFirstChild("RainbowSurface") then
@@ -836,22 +847,26 @@ local function applyRainbowSurface(floor)
 	band.Size = UDim2.fromScale(1, 1)
 	band.BorderSizePixel = 0
 	band.BackgroundColor3 = Color3.new(1, 1, 1)
+	-- translucent, so the floor's own material still shows through
+	band.BackgroundTransparency = 0.42
 	band.Parent = surface
 
 	local gradient = Instance.new("UIGradient")
 	gradient.Rotation = 90
 	gradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 70, 70)),
-		ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 170, 40)),
-		ColorSequenceKeypoint.new(0.34, Color3.fromRGB(255, 240, 60)),
-		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(80, 235, 110)),
-		ColorSequenceKeypoint.new(0.67, Color3.fromRGB(60, 210, 255)),
-		ColorSequenceKeypoint.new(0.84, Color3.fromRGB(150, 90, 255)),
-		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 80, 200)),
+		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(226, 110, 120)),
+		ColorSequenceKeypoint.new(0.17, Color3.fromRGB(230, 158, 96)),
+		ColorSequenceKeypoint.new(0.34, Color3.fromRGB(226, 212, 108)),
+		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(120, 208, 138)),
+		ColorSequenceKeypoint.new(0.67, Color3.fromRGB(106, 190, 220)),
+		ColorSequenceKeypoint.new(0.84, Color3.fromRGB(150, 132, 224)),
+		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(220, 124, 186)),
 	})
 	gradient.Parent = band
 
-	floor.Color = Color3.fromRGB(255, 255, 255)
+	-- a light neutral base: the floor keeps the SAME material / texture as the
+	-- other win tiles and the soft gradient tints it
+	floor.Color = Color3.fromRGB(232, 232, 238)
 	floor:SetAttribute("Rainbow", true)
 
 	-- lift the trophy display a little so it always draws above the gradient
@@ -874,6 +889,95 @@ end
 -- This uses the SAME COURSE_DIRECTION that
 -- WinCourseProgressService will use for the ball.
 --------------------------------------------------
+
+-- FLOW ARROWS (decor): white chevrons pointing down the course on both
+-- side lanes of every tile, so the direction of travel reads at speed.
+-- They are non-colliding, non-touchable, and live inside the tile model.
+local ARROW_COLOR = Color3.fromRGB(255, 255, 255)
+
+local function makeFlowArrow(tile, center)
+	local width, length = 9, 10
+	local base = Instance.new("Part")
+	base.Name = "FlowArrow"
+	base.Size = Vector3.new(width, 0.05, length)
+	base.CFrame = CFrame.new(center) * CFrame.Angles(0, math.pi / 2, 0) -- tip points +Z
+	base.Anchored = true
+	base.CanCollide = false
+	base.CanTouch = false
+	base.CanQuery = false
+	base.CastShadow = false
+	base.Transparency = 1
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Top
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+	gui.CanvasSize = Vector2.new(300, 300 * length / width)
+	gui.LightInfluence = 0
+	gui.Parent = base
+
+	local canvas = gui.CanvasSize
+	local phi = math.rad(36)
+	local armLength = canvas.X * 0.5
+	local thickness = math.min(canvas.X, canvas.Y) * 0.17
+	local apex = Vector2.new(canvas.X / 2, canvas.Y * 0.2)
+
+	for _, side in ipairs({ -1, 1 }) do
+		local direction = Vector2.new(side * math.cos(phi), math.sin(phi))
+		local centre = apex + direction * (armLength / 2)
+
+		local arm = Instance.new("Frame")
+		arm.AnchorPoint = Vector2.new(0.5, 0.5)
+		arm.Position = UDim2.fromOffset(centre.X, centre.Y)
+		arm.Size = UDim2.fromOffset(armLength, thickness)
+		arm.Rotation = side * math.deg(phi)
+		arm.BackgroundColor3 = ARROW_COLOR
+		arm.BackgroundTransparency = 0.12
+		arm.BorderSizePixel = 0
+		arm.Parent = gui
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 8)
+		corner.Parent = arm
+	end
+
+	base.Parent = tile
+end
+
+local function addFlowArrows(tile, index)
+	for _, old in ipairs(tile:GetChildren()) do
+		if old.Name == "FlowArrow" then
+			old:Destroy()
+		end
+	end
+
+	local objects = getTileObjects(tile)
+	if not objects then
+		return
+	end
+
+	local floor = objects.Floor
+	local length = tile:GetAttribute("TileLength")
+	if typeof(length) ~= "number" then
+		return
+	end
+
+	local alongX = math.abs(floor.CFrame.RightVector:Dot(COURSE_DIRECTION)) > 0.5
+	local laneWidth = alongX and floor.Size.Z or floor.Size.X
+	local topY = floor.Position.Y + floor.Size.Y / 2 + 0.06
+
+	local startZ = START_POSITION.Z + tileStartDistance(index)
+	local sideOffset = laneWidth * 0.36
+
+	for _, fraction in ipairs({ 0.3, 0.72 }) do
+		for _, side in ipairs({ -1, 1 }) do
+			makeFlowArrow(tile, Vector3.new(
+				floor.Position.X + side * sideOffset,
+				topY,
+				startZ + length * fraction
+			))
+		end
+	end
+end
 
 local function positionTile(
 	tile,
@@ -908,6 +1012,8 @@ local function positionTile(
 		rotationOnly
 	)
 
+
+	addFlowArrows(tile, index)
 
 	print(
 		"[WinCourseGenerator] Positioned:",
@@ -992,6 +1098,14 @@ local function configureTile(
 
 		objects.Floor.Color =
 			color
+
+	elseif winAmount > 40 and winAmount < RAINBOW_FROM_AMOUNT then
+
+		-- Same floor material, a different colour per amount (cycling softly
+		-- through the palette), so the long stretch before the rainbow stays
+		-- varied instead of one flat colour.
+		objects.Floor.Color =
+			VARIANT_COLORS[(winAmount % #VARIANT_COLORS) + 1]
 
 	end
 

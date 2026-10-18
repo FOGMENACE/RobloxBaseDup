@@ -75,71 +75,122 @@ function MultiplierFly.FindTile(playerGui, kind)
 	return nil
 end
 
+-- A burst of little sparkles flying outward from a screen point.
+local function burst(gui, point, color, count, spread)
+	for index = 1, count do
+		local size = math.random(8, 18)
+		local spark = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(point.X, point.Y),
+			Size = UDim2.fromOffset(size, size),
+			Rotation = math.random(0, 90),
+			BackgroundColor3 = color:Lerp(Color3.new(1, 1, 1), math.random() * 0.6),
+			BorderSizePixel = 0,
+			ZIndex = 79,
+		}, gui)
+		create("UICorner", { CornerRadius = UDim.new(0.3, 0) }, spark)
+
+		local angle = (index / count) * math.pi * 2 + math.random() * 0.5
+		local distance = spread * (0.55 + math.random() * 0.6)
+		local tween = TweenService:Create(
+			spark,
+			TweenInfo.new(0.55 + math.random() * 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{
+				Position = UDim2.fromOffset(point.X + math.cos(angle) * distance, point.Y + math.sin(angle) * distance),
+				Size = UDim2.fromOffset(2, 2),
+				Rotation = spark.Rotation + math.random(-200, 200),
+				BackgroundTransparency = 1,
+			}
+		)
+		tween.Completed:Once(function()
+			spark:Destroy()
+		end)
+		tween:Play()
+	end
+end
+
+-- An expanding ring (shockwave) at a screen point.
+local function ring(gui, point, color, size)
+	local frame = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(point.X, point.Y),
+		Size = UDim2.fromOffset(40, 40),
+		BackgroundTransparency = 1,
+		ZIndex = 78,
+	}, gui)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, frame)
+	local stroke = create("UIStroke", { Color = color, Thickness = 8 }, frame)
+	local info = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(frame, info, { Size = UDim2.fromOffset(size, size) }):Play()
+	local fade = TweenService:Create(stroke, info, { Thickness = 1, Transparency = 1 })
+	fade.Completed:Once(function()
+		frame:Destroy()
+	end)
+	fade:Play()
+end
+
 function MultiplierFly.Fly(options)
 	local gui = options.Gui
 	local multiplier = math.max(tonumber(options.Multiplier) or 1, 1)
 	local playSound = options.Sound or function() end
 	local viewport = gui.AbsoluteSize
 
-	local width = options.Label and 250 or 190
+	-- Just the big icon and number: no box, no background.
+	local width = options.Label and 400 or 330
 	local chip = create("CanvasGroup", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Size = UDim2.fromOffset(width, 66),
-		BackgroundColor3 = options.Color or Color3.fromRGB(150, 90, 235),
+		Size = UDim2.fromOffset(width, 120),
+		BackgroundTransparency = 1,
 		ZIndex = 80,
 	}, gui)
-	create("UICorner", { CornerRadius = UDim.new(0, 18) }, chip)
-	create("UIStroke", { Color = INK, Thickness = 4 }, chip)
 	local chipScale = create("UIScale", { Scale = 0.6 }, chip)
 
 	if options.Kind == "Wins" then
 		create("ImageLabel", {
-			Position = UDim2.fromOffset(8, 7),
-			Size = UDim2.fromOffset(52, 52),
+			Position = UDim2.fromOffset(6, 8),
+			Size = UDim2.fromOffset(104, 104),
 			BackgroundTransparency = 1,
 			Image = UiAssets.TrophyImage,
 			ScaleType = Enum.ScaleType.Fit,
 			ZIndex = 81,
 		}, chip)
 	else
-		create("TextLabel", {
-			Position = UDim2.fromOffset(6, 2),
-			Size = UDim2.fromOffset(56, 62),
+		create("ImageLabel", {
+			Position = UDim2.fromOffset(0, 8),
+			Size = UDim2.fromOffset(112, 104),
 			BackgroundTransparency = 1,
-			Font = FONT,
-			Text = "🛢️",
-			TextSize = 44,
-			TextColor3 = INK,
+			Image = UiAssets.OilImages.Black,
+			ScaleType = Enum.ScaleType.Fit,
 			ZIndex = 81,
 		}, chip)
 	end
 
 	local label = create("TextLabel", {
-		Position = UDim2.fromOffset(64, options.Label and 4 or 0),
-		Size = UDim2.new(1, -70, options.Label and 0.62 or 1, 0),
+		Position = UDim2.fromOffset(118, options.Label and 6 or 0),
+		Size = UDim2.new(1, -122, options.Label and 0.68 or 1, 0),
 		BackgroundTransparency = 1,
 		Font = FONT,
 		Text = "x1",
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 38,
+		TextColor3 = options.Color and options.Color:Lerp(Color3.new(1, 1, 1), 0.55) or Color3.new(1, 1, 1),
+		TextSize = 84,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 81,
 	}, chip)
-	create("UIStroke", { Color = INK, Thickness = 3.5 }, label)
+	create("UIStroke", { Color = INK, Thickness = 6 }, label)
 
 	if options.Label then
 		local caption = create("TextLabel", {
-			Position = UDim2.new(0, 64, 0.62, 0),
-			Size = UDim2.new(1, -70, 0.34, 0),
+			Position = UDim2.new(0, 118, 0.7, 0),
+			Size = UDim2.new(1, -122, 0.28, 0),
 			BackgroundTransparency = 1,
 			Font = FONT,
 			Text = options.Label,
 			TextColor3 = Color3.new(1, 1, 1),
-			TextSize = 15,
+			TextSize = 22,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			ZIndex = 81,
 		}, chip)
-		create("UIStroke", { Color = INK, Thickness = 2.5 }, caption)
+		create("UIStroke", { Color = INK, Thickness = 3.5 }, caption)
 	end
 
 	-- start point: lift off from the HUD tile, or slide in from a screen edge
@@ -178,6 +229,10 @@ function MultiplierFly.Fly(options)
 	local started = os.clock()
 	local nextTick = 0
 	local ticks = 0
+	local baseColor = options.Color and options.Color:Lerp(Color3.new(1, 1, 1), 0.55) or Color3.new(1, 1, 1)
+	local rainbow = multiplier >= 10
+	local center = Vector2.new(rise.X, rise.Y)
+	local milestone = 0
 	while true do
 		local t = (os.clock() - started) / duration
 		if t >= 1 then
@@ -185,21 +240,44 @@ function MultiplierFly.Fly(options)
 		end
 		local alpha = t * t * (1.7 - 0.7 * t)
 		label.Text = "x" .. compact(1 + (multiplier - 1) * alpha)
+
+		-- the number heats up as it climbs: rainbow for big multipliers
+		if rainbow then
+			label.TextColor3 = Color3.fromHSV((os.clock() * 1.6) % 1, 0.5, 1)
+		else
+			label.TextColor3 = baseColor:Lerp(Color3.fromRGB(255, 236, 120), alpha * 0.6)
+		end
+
 		if t >= nextTick then
 			ticks += 1
 			nextTick = t + math.max(0.015, tickBase * (1 - t * 0.85) / duration)
 			playSound(TICK_SOUND, 0.28, 0.85 + math.min(ticks, 30) * 0.045)
+			-- every tick punches the number a little
+			chipScale.Scale = 1.1 + 0.1 * alpha + 0.05
 		end
-		chipScale.Scale = 1.1 + 0.06 * math.sin(os.clock() * 30)
+
+		-- shockwave + sparkles at each quarter of the climb
+		if t >= (milestone + 1) * 0.25 then
+			milestone += 1
+			ring(gui, center + Vector2.new(50, 0), baseColor, 220 + milestone * 40)
+			burst(gui, center + Vector2.new(50, 0), baseColor, 6 + milestone * 2, 120 + milestone * 20)
+		end
+
+		chipScale.Scale += (1.1 + 0.12 * alpha + 0.04 * math.sin(os.clock() * 34) - chipScale.Scale) * 0.35
+		chip.Rotation = math.sin(os.clock() * 22) * (1 + alpha * 3.5)
 		RunService.RenderStepped:Wait()
 	end
 	label.Text = "x" .. compact(multiplier)
-	chipScale.Scale = 1.25
-	TweenService:Create(chipScale, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Scale = 1.1 }):Play()
-	playSound(WHOOSH_SOUND, 0.4, 1.1 + math.min(multiplier, 40) * 0.01)
-	task.wait(0.22)
+	label.TextColor3 = Color3.fromRGB(255, 240, 130)
+	chip.Rotation = 0
+	chipScale.Scale = 1.45
+	TweenService:Create(chipScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1.15 }):Play()
+	playSound(WHOOSH_SOUND, 0.45, 1.1 + math.min(multiplier, 40) * 0.01)
+	ring(gui, center + Vector2.new(50, 0), Color3.fromRGB(255, 240, 130), 420)
+	burst(gui, center + Vector2.new(50, 0), Color3.fromRGB(255, 226, 90), 22, 220)
+	task.wait(0.28)
 
-	-- 3) drag it into the number
+	-- 3) drag it into the number, leaving a glittering trail
 	local target = options.Target
 	local drag = TweenService:Create(
 		chip,
@@ -208,8 +286,17 @@ function MultiplierFly.Fly(options)
 	)
 	TweenService:Create(chipScale, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.35 }):Play()
 	drag:Play()
+	task.spawn(function()
+		while chip.Parent and drag.PlaybackState == Enum.PlaybackState.Playing do
+			local abs = chip.AbsolutePosition + chip.AbsoluteSize / 2
+			burst(gui, abs, Color3.fromRGB(255, 226, 90), 2, 60)
+			task.wait(0.05)
+		end
+	end)
 	drag.Completed:Wait()
 	chip:Destroy()
+	ring(gui, target, Color3.fromRGB(255, 240, 130), 300)
+	burst(gui, target, Color3.fromRGB(255, 226, 90), 16, 160)
 end
 
 return MultiplierFly

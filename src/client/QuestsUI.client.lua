@@ -302,19 +302,64 @@ local function questsHubButton()
 	return hub and hub:FindFirstChild("QuestsButton", true)
 end
 
-local function anythingClaimable(state)
+-- Which tab has something to claim (drives the red notification dots).
+local function dailyClaimable(state)
 	for _, quest in ipairs(state.Quests) do
 		if not quest.Claimed and quest.Progress >= quest.Target then
 			return true
 		end
 	end
+	return state.AllDone == true and not state.BonusClaimed
+end
+
+local function weeklyClaimable(state)
 	for _, milestone in ipairs(state.Weekly or {}) do
 		if not milestone.Claimed and milestone.Progress >= milestone.Target then
 			return true
 		end
 	end
-	return state.AllDone and not state.BonusClaimed
+	return false
 end
+
+local function anythingClaimable(state)
+	return dailyClaimable(state) or weeklyClaimable(state)
+end
+
+-- Small red "!" dot on a tab, like a notification badge. Hidden when there is
+-- nothing left to claim on that tab.
+local function makeTabDot(tab)
+	local dot = Instance.new("TextLabel")
+	dot.Name = "ClaimDot"
+	dot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dot.Position = UDim2.new(1, -4, 0, 4)
+	dot.Size = UDim2.fromOffset(22, 22)
+	dot.BackgroundColor3 = Color3.fromRGB(235, 55, 60)
+	dot.Font = Enum.Font.FredokaOne
+	dot.Text = "!"
+	dot.TextColor3 = Color3.new(1, 1, 1)
+	dot.TextSize = 15
+	dot.Visible = false
+	dot.ZIndex = (tab.ZIndex or 1) + 5
+	dot.Parent = tab
+	local dotScale = Instance.new("UIScale")
+	dotScale.Parent = dot
+	dot:GetPropertyChangedSignal("Visible"):Connect(function()
+		if dot.Visible then
+			dotScale.Scale = 0.3
+			game:GetService("TweenService"):Create(dotScale, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+		end
+	end)
+	require(game:GetService("ReplicatedStorage"):WaitForChild("BadgeOverlay")).Attach(dot, tab, { Dx = 4, Dy = -2 })
+	Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(24, 22, 34)
+	stroke.Thickness = 2
+	stroke.Parent = dot
+	return dot
+end
+
+local dailyDot = makeTabDot(dailyTab)
+local weeklyDot = makeTabDot(weeklyTab)
 
 local function weekLeftText(state)
 	local left = math.max(0, (state.WeekEndsAt or 0) - workspace:GetServerTimeNow())
@@ -401,6 +446,9 @@ local function render(state)
 	if view == "Weekly" then
 		subtitle.Text = "Weekly milestones - resets in " .. weekLeftText(state)
 	end
+
+	dailyDot.Visible = dailyClaimable(state)
+	weeklyDot.Visible = weeklyClaimable(state)
 
 	local hubButton = questsHubButton()
 	local badge = hubButton and hubButton:FindFirstChild("Badge")
@@ -514,3 +562,14 @@ task.spawn(function()
 end)
 
 setView("Daily")
+
+-- Fill the notification dots / hub badge right after joining, not only once
+-- the panel is opened.
+task.spawn(function()
+	local ok, state = pcall(function()
+		return remotes.QuestsState:InvokeServer()
+	end)
+	if ok and state then
+		render(state)
+	end
+end)

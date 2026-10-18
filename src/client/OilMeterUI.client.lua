@@ -48,28 +48,29 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 8,
 }, playerGui)
 
-local BASE_TILT = -2.5
+local BASE_TILT = 0 -- the meter is straight; oil makes it SHAKE side to side
 
 local panel = create("Frame", {
 	Name = "Panel",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, -90),
-	Size = UDim2.fromOffset(430, 58),
+	Position = UDim2.new(0.5, 0, 0, -130),
+	Size = UDim2.new(0.74, 0, 0, 86),
 	BackgroundTransparency = 1,
 	Rotation = BASE_TILT,
 	Visible = false,
 }, gui)
+create("UISizeConstraint", { MinSize = Vector2.new(460, 86), MaxSize = Vector2.new(1000, 86) }, panel)
 local scale = create("UIScale", { Scale = 1 }, panel)
 
--- slanted bar (deep bowling-purple with a glossy top), like a speed-game gauge
+-- wide chunky gauge (deep bowling-purple, glossy), like a speed-game fuel bar
 local bar = create("Frame", {
-	Position = UDim2.fromOffset(34, 8),
-	Size = UDim2.new(1, -40, 1, -14),
+	Position = UDim2.fromOffset(46, 12),
+	Size = UDim2.new(1, -52, 1, -22),
 	BackgroundColor3 = Color3.fromRGB(46, 30, 96),
 	ClipsDescendants = true,
 }, panel)
-create("UICorner", { CornerRadius = UDim.new(0, 12) }, bar)
-create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 5 }, bar)
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, bar)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 6 }, bar)
 
 local track = bar -- (kept name: the fill lives inside the bar)
 
@@ -77,7 +78,7 @@ local fill = create("Frame", {
 	Size = UDim2.fromScale(0, 1),
 	BackgroundColor3 = Color3.fromRGB(150, 90, 235),
 }, bar)
-create("UIGradient", {
+local fillGradient = create("UIGradient", {
 	Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(196, 130, 255)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(140, 70, 235)),
@@ -85,6 +86,49 @@ create("UIGradient", {
 	}),
 	Rotation = 90,
 }, fill)
+
+-- bar colour theme: purple while collecting, green -> amber -> red as the
+-- win-course oil burns down
+local THEMES = {
+	oil = { Color3.fromRGB(196, 130, 255), Color3.fromRGB(140, 70, 235), Color3.fromRGB(98, 44, 190) },
+	high = { Color3.fromRGB(150, 255, 150), Color3.fromRGB(60, 205, 90), Color3.fromRGB(30, 150, 60) },
+	mid = { Color3.fromRGB(255, 232, 120), Color3.fromRGB(250, 190, 50), Color3.fromRGB(215, 140, 20) },
+	low = { Color3.fromRGB(255, 140, 130), Color3.fromRGB(240, 70, 70), Color3.fromRGB(180, 35, 45) },
+}
+local currentTheme = "oil"
+local function setTheme(name)
+	if name == currentTheme then
+		return
+	end
+	currentTheme = name
+	local c = THEMES[name]
+	fillGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, c[1]),
+		ColorSequenceKeypoint.new(0.5, c[2]),
+		ColorSequenceKeypoint.new(1, c[3]),
+	})
+end
+
+-- a soft light sweep that keeps gliding across the bar
+local shine = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(-0.2, 0.5),
+	Size = UDim2.new(0, 70, 1.6, 0),
+	Rotation = 18,
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.78,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, bar)
+task.spawn(function()
+	while true do
+		shine.Position = UDim2.fromScale(-0.2, 0.5)
+		local tween = TweenService:Create(shine, TweenInfo.new(1.8, Enum.EasingStyle.Sine), { Position = UDim2.fromScale(1.2, 0.5) })
+		tween:Play()
+		tween.Completed:Wait()
+		task.wait(1.2)
+	end
+end)
 
 -- gloss on the upper half
 create("Frame", {
@@ -95,28 +139,49 @@ create("Frame", {
 	ZIndex = 2,
 }, bar)
 
--- barrel icon, tilted, overlapping the left end of the bar
-local icon = create("TextLabel", {
+-- light plate behind the icon so the dark spill pops against the purple bar
+local plate = create("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromOffset(34, 26),
-	Size = UDim2.fromOffset(64, 64),
+	Position = UDim2.fromOffset(52, 46),
+	Size = UDim2.fromOffset(84, 84),
+	BackgroundColor3 = Color3.fromRGB(255, 244, 214),
+	ZIndex = 4,
+}, panel)
+create("UICorner", { CornerRadius = UDim.new(1, 0) }, plate)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 5 }, plate)
+
+-- oil spill icon, tilted, overlapping the left end of the bar
+local icon = create("ImageLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromOffset(52, 46),
+	Size = UDim2.fromOffset(112, 82),
 	BackgroundTransparency = 1,
-	Font = Enum.Font.FredokaOne,
-	Text = "🛢️",
-	TextSize = 50,
-	TextColor3 = INK,
-	Rotation = -14,
+	Image = require(game:GetService("ReplicatedStorage"):WaitForChild("UiAssets")).OilImages.Black,
+	ScaleType = Enum.ScaleType.Fit,
+	Rotation = -8,
 	ZIndex = 5,
 }, panel)
+-- the icon gently breathes so the meter always feels alive
+task.spawn(function()
+	while true do
+		local info = TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		local a = TweenService:Create(icon, info, { Rotation = 6, Size = UDim2.fromOffset(118, 86) })
+		a:Play()
+		a.Completed:Wait()
+		local b = TweenService:Create(icon, info, { Rotation = -8, Size = UDim2.fromOffset(112, 82) })
+		b:Play()
+		b.Completed:Wait()
+	end
+end)
 
 local title = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(74, 6),
-	Size = UDim2.fromOffset(150, 46),
+	Position = UDim2.fromOffset(108, 12),
+	Size = UDim2.fromOffset(200, 60),
 	Font = Enum.Font.FredokaOne,
 	Text = "OIL",
 	TextColor3 = CREAM,
-	TextSize = 30,
+	TextSize = 40,
 	TextXAlignment = Enum.TextXAlignment.Left,
 	ZIndex = 5,
 }, panel)
@@ -124,17 +189,17 @@ create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 4 }, title)
 
 local valueLabel = create("TextLabel", {
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -12, 0.5, -6),
-	Size = UDim2.fromOffset(220, 60),
+	Position = UDim2.new(1, -20, 0.5, -2),
+	Size = UDim2.fromOffset(380, 76),
 	BackgroundTransparency = 1,
 	Font = Enum.Font.FredokaOne,
 	Text = "",
 	TextColor3 = Color3.new(1, 1, 1),
-	TextSize = 46,
+	TextSize = 62,
 	TextXAlignment = Enum.TextXAlignment.Right,
 	ZIndex = 6,
 }, panel)
-create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 5 }, valueLabel)
+create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 7 }, valueLabel)
 create("UIGradient", {
 	Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(235, 205, 255)),
 	Rotation = 90,
@@ -170,7 +235,7 @@ local function setShown(visible)
 		local tween = TweenService:Create(
 			panel,
 			TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ Position = UDim2.new(0.5, 0, 0, -90) }
+			{ Position = UDim2.new(0.5, 0, 0, -130) }
 		)
 		tween.Completed:Once(function()
 			if not shown then
@@ -190,44 +255,72 @@ local function bump(target, amount)
 	):Play()
 end
 
--- The bar slants harder for a moment whenever oil comes in, then springs back.
-local function kickTilt(degrees)
-	panel.Rotation = BASE_TILT - degrees
-	TweenService:Create(
-		panel,
-		TweenInfo.new(0.55, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
-		{ Rotation = BASE_TILT }
-	):Play()
+-- The meter shakes side to side whenever oil goes in (straight otherwise).
+local shakeToken = 0
+local function kickTilt(strength)
+	shakeToken += 1
+	local token = shakeToken
+	task.spawn(function()
+		local steps = 10
+		for step = 1, steps do
+			if token ~= shakeToken then
+				return
+			end
+			local amount = (strength or 8) * (1 - step / (steps + 1))
+			panel.Position = UDim2.new(0.5, (step % 2 == 0 and 1 or -1) * amount, 0, 40)
+			task.wait(0.035)
+		end
+		panel.Position = UDim2.new(0.5, 0, 0, 40)
+	end)
 end
-
 local lastCurrentOil = 0
+local runOil = 0 -- oil carried into the WinCourse
 
 -- While the multiplier animation runs (WinCelebration fires OilMeterAnim) the
 -- meter shows the oil BEFORE the multipliers and counts up as each one lands.
 -- The real CurrentOil (already multiplied by the server) is shown at the end.
 local displayOverride = nil
 
-local function flyDroplet()
+-- An oil spill with the platform's "+amount" beside it flies into the meter.
+local function flyDroplet(amount)
 	local center = gui.AbsoluteSize / 2
 	local drop = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromOffset(center.X, center.Y + 60),
-		Size = UDim2.fromOffset(18, 18),
-		BackgroundColor3 = OIL,
+		Size = UDim2.fromOffset(190, 56),
+		BackgroundTransparency = 1,
 		ZIndex = 20,
 	}, gui)
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, drop)
-	create("UIStroke", { Color = CREAM, Thickness = 2 }, drop)
+	local dropScale = create("UIScale", { Scale = 1 }, drop)
+	create("ImageLabel", {
+		Size = UDim2.fromOffset(72, 52),
+		Position = UDim2.fromOffset(0, 2),
+		BackgroundTransparency = 1,
+		Image = require(game:GetService("ReplicatedStorage"):WaitForChild("UiAssets")).OilImages.Black,
+		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = 20,
+	}, drop)
+	if amount and amount >= 1 then
+		local text = create("TextLabel", {
+			Position = UDim2.fromOffset(76, 0),
+			Size = UDim2.new(1, -76, 1, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.FredokaOne,
+			Text = "+" .. formatNumber(amount),
+			TextColor3 = Color3.fromRGB(120, 235, 110),
+			TextSize = 34,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 21,
+		}, drop)
+		create("UIStroke", { Color = INK, Thickness = 3.5 }, text)
+	end
 
 	local target = panel.AbsolutePosition + panel.AbsoluteSize / 2
-	local tween = TweenService:Create(
-		drop,
-		TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{
-			Position = UDim2.fromOffset(target.X, target.Y + 36),
-			Size = UDim2.fromOffset(8, 8),
-		}
-	)
+	local info = TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	local tween = TweenService:Create(drop, info, {
+		Position = UDim2.fromOffset(target.X + panel.AbsoluteSize.X * 0.12, target.Y),
+	})
+	TweenService:Create(dropScale, info, { Scale = 0.4 }):Play()
 	tween.Completed:Once(function()
 		drop:Destroy()
 		bump(scale, 1.08)
@@ -262,7 +355,9 @@ local function refresh()
 
 		title.Text = "OIL LEFT"
 		displayOverride = nil
-		valueLabel.Text = string.format("%d%%", math.floor(remaining * 100))
+		setTheme(remaining > 0.5 and "high" or (remaining > 0.2 and "mid" or "low"))
+		-- remaining oil as a number (the oil you rolled in with), not a percentage
+		valueLabel.Text = formatNumber(runOil * remaining)
 		TweenService:Create(
 			fill,
 			TweenInfo.new(0.1, Enum.EasingStyle.Linear),
@@ -280,13 +375,18 @@ local function refresh()
 		-- Oil course (and the finish countdown): show oil collected.
 		local oil = player:GetAttribute("CurrentOil") or 0
 		title.Text = "OIL"
+		setTheme("oil")
+		runOil = oil
 		if displayOverride == nil then
 			valueLabel.Text = formatNumber(oil)
 		end
 		fill.Size = UDim2.fromScale(1, 1)
 
 		if oil > lastCurrentOil then
-			flyDroplet()
+			-- the finish-wall multiplier jump has its own animation
+			if runState ~= "Finishing" and displayOverride == nil then
+				flyDroplet(oil - lastCurrentOil)
+			end
 			kickTilt(math.clamp(5 + (oil - lastCurrentOil) / 300, 5, 12))
 		end
 		lastCurrentOil = oil
@@ -407,24 +507,32 @@ animEvent.Event:Connect(function(command, value)
 		valueLabel.Text = formatNumber(value)
 
 	elseif command == "Multiply" and typeof(value) == "number" and displayOverride then
+		-- count up to raw x multiplier while the icon drags in
 		local from = displayOverride
 		local to = from * value
 		displayOverride = to
 
 		local duration = math.clamp(0.5 + math.log10(math.max(value, 1)) * 0.3, 0.5, 1.4)
 		local started = os.clock()
-		bump(scale, 1.15)
+		bump(scale, 1.22)
 		kickTilt(12)
+		valueLabel.TextColor3 = Color3.fromRGB(255, 232, 110)
 		while os.clock() - started < duration and displayOverride == to do
 			local t = (os.clock() - started) / duration
 			valueLabel.Text = formatNumber(from + (to - from) * (t * t * (1.6 - 0.6 * t)))
-			panel.Rotation = BASE_TILT - 7 * math.sin(t * math.pi * 4) * (1 - t)
+			-- the fill flares and the number swells while it counts
+			fill.BackgroundTransparency = 0.25 * math.abs(math.sin(t * math.pi * 6))
+			valueLabel.TextSize = 62 + math.floor(10 * math.sin(t * math.pi))
+			panel.Position = UDim2.new(0.5, 9 * math.sin(t * math.pi * 8) * (1 - t), 0, 40)
 			task.wait()
 		end
+		panel.Position = UDim2.new(0.5, 0, 0, 40)
+		fill.BackgroundTransparency = 0
+		valueLabel.TextSize = 62
+		valueLabel.TextColor3 = Color3.new(1, 1, 1)
 		if displayOverride == to then
 			valueLabel.Text = formatNumber(to)
 		end
-
 	elseif command == "End" then
 		displayOverride = nil
 		refresh()

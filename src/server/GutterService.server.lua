@@ -37,6 +37,8 @@ local PlayerDataService = require(
 )
 
 -- A run gets 0-3 gutters (most runs 0 or 1): they are a rare surprise.
+local SweptTouch = require(game:GetService("ServerScriptService"):WaitForChild("SweptTouch"))
+
 local GUTTER_COUNT_WEIGHTS = { [0] = 35, [1] = 38, [2] = 20, [3] = 7 }
 local CANDIDATE_ROWS = { 2, 4, 5, 7, 8, 10, 11 } -- not the tier rows 3, 6, 9
 local GUTTER_COLOR = Color3.fromRGB(96, 14, 34)
@@ -151,7 +153,7 @@ local function convert(player, platform, row, totalRows)
 	end
 
 	for _, part in ipairs(platformParts(platform)) do
-		part.Touched:Connect(function(hit)
+		local function onHit(hit)
 			if used then
 				return
 			end
@@ -171,7 +173,10 @@ local function convert(player, platform, row, totalRows)
 			end
 
 			applyPenalty(player, row, totalRows)
-		end)
+		end
+
+		part.Touched:Connect(onHit)
+		SweptTouch.Register(part, player.UserId, onHit) -- fast balls skip Touched
 	end
 end
 

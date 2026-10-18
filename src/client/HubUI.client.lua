@@ -316,6 +316,8 @@ create("UIGridLayout", {
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, grid)
 
+local BadgeOverlay = require(game:GetService("ReplicatedStorage"):WaitForChild("BadgeOverlay"))
+
 local function makeHubButton(order, name, icon, caption, color, tilt)
 	local button = create("TextButton", {
 		Name = name,
@@ -380,6 +382,16 @@ local function makeHubButton(order, name, icon, caption, color, tilt)
 	round(badge, 12)
 	local badgeScale = create("UIScale", { Scale = 1 }, badge)
 
+	-- The badge is drawn in an overlay layer ABOVE every button (see
+	-- BadgeOverlay) and pops in whenever it appears.
+	badge:GetPropertyChangedSignal("Visible"):Connect(function()
+		if badge.Visible then
+			badgeScale.Scale = 0.3
+			TweenService:Create(badgeScale, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+		end
+	end)
+	BadgeOverlay.Attach(badge, button, { Dx = 6, Dy = -6 })
+
 	button.MouseEnter:Connect(function()
 		TweenService:Create(scale, TweenInfo.new(0.12), { Scale = 1.05 }):Play()
 	end)
@@ -418,7 +430,7 @@ outline(rebirthPercent, INK, 2.5)
 
 local function refreshRebirthPercent()
 	local level = player:GetAttribute("Level") or 1
-	local required = math.max(player:GetAttribute("RebirthLevelRequirement") or 65, 1)
+	local required = math.max(player:GetAttribute("RebirthLevelRequirement") or 2, 1)
 	local progress = player:GetAttribute("LevelProgress") or 0
 	local fraction = math.clamp((level - 1 + (level >= required and 0 or progress)) / math.max(required - 1, 1), 0, 1)
 
@@ -441,6 +453,37 @@ local giftButton = makeHubButton(3, "GiftButton", "🎁", "...", SKY, 3)
 local dailyButton = makeHubButton(4, "DailyButton", "📅", "...", GREEN, -2)
 local x6Button = makeHubButton(5, "X6Button", "X6", "...", Color3.fromRGB(255, 170, 40), 3)
 x6Button.Button.Visible = false -- X6 now arrives as a random timed popup (PopupsUI)
+
+--------------------------------------------------
+-- TUTORIAL VISIBILITY
+--
+-- New players start with REBIRTH and the DAILY calendar hidden so the
+-- tutorial can introduce them (TutorialService publishes TutorialStep):
+-- REBIRTH appears at step 4, the calendar at step 11. Veterans (step 12)
+-- see everything. If the step never arrives, show everything after 8 s.
+--------------------------------------------------
+
+local TUTORIAL_REBIRTH_STEP = 4
+local TUTORIAL_CALENDAR_STEP = 11
+local tutorialWaitedOut = false
+
+local function applyTutorialVisibility()
+	local step = player:GetAttribute("TutorialStep")
+	local known = typeof(step) == "number" and step >= 1
+
+	local showRebirth = known and step >= TUTORIAL_REBIRTH_STEP or (not known and tutorialWaitedOut)
+	local showCalendar = known and step >= TUTORIAL_CALENDAR_STEP or (not known and tutorialWaitedOut)
+
+	rebirthButton.Button.Visible = showRebirth
+	dailyButton.Button.Visible = showCalendar
+end
+
+player:GetAttributeChangedSignal("TutorialStep"):Connect(applyTutorialVisibility)
+applyTutorialVisibility()
+task.delay(8, function()
+	tutorialWaitedOut = true
+	applyTutorialVisibility()
+end)
 local questsButton = makeHubButton(6, "QuestsButton", "📋", "QUESTS", Color3.fromRGB(255, 140, 80), -2)
 
 --------------------------------------------------
@@ -576,7 +619,7 @@ local function describe(reward)
 	if reward.Type == "Wins" then
 		return "+" .. formatNumber(reward.Amount) .. " 🏆"
 	elseif reward.Type == "Oil" then
-		return "+" .. formatNumber(reward.Amount) .. " 🛢️ starter oil for your next run"
+		return "+" .. formatNumber(reward.Amount) .. " starter oil for your next run"
 	elseif reward.Type == "Ball" then
 		return "New ball unlocked: " .. tostring(reward.BallId)
 	elseif reward.Type == "Rebirth" then
@@ -831,7 +874,7 @@ local function slotText(reward)
 	if reward.Type == "Wins" then
 		return "+" .. formatNumber(reward.Amount) .. "\n🏆"
 	elseif reward.Type == "Oil" then
-		return formatNumber(reward.Amount) .. " 🛢️\nSTART"
+		return formatNumber(reward.Amount) .. " OIL\nSTART"
 	elseif reward.Type == "Ball" then
 		return "BALL"
 	elseif reward.Type == "BallNext" then
@@ -848,7 +891,18 @@ local function slotIcon(holder, reward)
 		return
 	end
 
-	local emoji = ({ Oil = "🛢️", BallNext = "🎳", Rebirth = "♻" })[reward.Type] or "🎁"
+	if reward.Type == "Oil" then
+		create("ImageLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Image = require(ReplicatedStorage:WaitForChild("UiAssets")).OilImages.Black,
+			ScaleType = Enum.ScaleType.Fit,
+			ZIndex = 23,
+		}, holder)
+		return
+	end
+
+	local emoji = ({ BallNext = "🎳", Rebirth = "♻" })[reward.Type] or "🎁"
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Size = UDim2.fromScale(1, 1),
@@ -978,12 +1032,25 @@ rebuildCalendar = function()
 		end
 	end
 
+	-- visible streak: only days actually completed in a row count
+	if calendar and streak > 0 then
+		calendarTitle.Text = "DAILY CALENDAR  -  " .. streak .. " DAY STREAK"
+	else
+		calendarTitle.Text = "DAILY CALENDAR"
+	end
+	calendarTitle.Size = UDim2.fromOffset(560, 34)
+
 	if calendar == nil then
 		calendarHint.Text = "Loading your calendar..."
 	elseif nextSlot then
 		calendarHint.Text = "Day " .. nextSlot .. " is ready! Tap it to claim."
 	else
-		calendarHint.Text = "Claimed today. Come back tomorrow to keep your streak!"
+		local tutorialStep = player:GetAttribute("TutorialStep")
+		if typeof(tutorialStep) == "number" and tutorialStep < 12 then
+			calendarHint.Text = "Claimed! Nice work." -- no "come back" talk while the tutorial runs
+		else
+			calendarHint.Text = "Claimed today. Come back tomorrow to keep your streak!"
+		end
 	end
 end
 
@@ -1005,6 +1072,25 @@ dailyButton.Button.Activated:Connect(function()
 end)
 calendarClose.Activated:Connect(function()
 	setCalendarOpen(false)
+end)
+
+-- "Claim before you leave": opening the Roblox menu (the way players leave)
+-- with an unclaimed daily reward opens the calendar with a reminder. The
+-- leave-reward card in PopupsUI takes priority when that one is ready.
+game:GetService("GuiService").MenuOpened:Connect(function()
+	if not (calendar and calendar.NextSlot) or not dailyButton.Button.Visible then
+		return
+	end
+	local leaveAt = player:GetAttribute("LeaveRewardNextAt")
+	if typeof(leaveAt) == "number" and os.time() >= leaveAt then
+		return
+	end
+	local step = player:GetAttribute("TutorialStep")
+	if typeof(step) == "number" and step < 12 then
+		return
+	end
+	setCalendarOpen(true)
+	showToast("Claim your daily reward before you leave!", true)
 end)
 
 giftResult.OnClientEvent:Connect(function(kind, success, result, slot)
@@ -1077,7 +1163,7 @@ round(shopClose, 10)
 local shopList = create("ScrollingFrame", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(12, 56),
-	Size = UDim2.new(1, -24, 0, 336),
+	Size = UDim2.new(1, -24, 1, -70),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 4,
@@ -1095,7 +1181,7 @@ create("UIListLayout", {
 do
 	local row = create("Frame", {
 		LayoutOrder = 15,
-		Size = UDim2.new(1, -8, 0, 124),
+		Size = UDim2.new(1, -8, 0, 140),
 		BackgroundColor3 = Color3.fromRGB(255, 214, 90),
 		ZIndex = 22,
 	}, shopList)
@@ -1125,7 +1211,7 @@ do
 		Font = FONT,
 		Text = "YOU: 150,000 wins, the rainbow OIL BARREL ball, and x2 oil + x2 wins + x3 CAPTAIN boost for 1 hour." .. "\nEVERYONE in the server: 25,000 wins + boosts for 30 min!",
 		TextColor3 = Color3.fromRGB(110, 50, 20),
-		TextSize = 12,
+		TextSize = 14,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,

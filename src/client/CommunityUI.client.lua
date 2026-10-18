@@ -292,12 +292,17 @@ likeButton.Activated:Connect(function()
 	end
 
 	local connection
-	connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(success)
+	connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)
 		connection:Disconnect()
-		if success then
+		-- The event passes an Enum.AvatarPromptResult (always truthy): only an
+		-- explicit Success counts, so pressing No / closing the prompt does not.
+		if result == Enum.AvatarPromptResult.Success then
 			remotes.PromptDone:FireServer("Favorite")
 			task.wait(1.5) -- let the server save the flag first
 			refresh()
+		else
+			message.Text = "Tap LIKE and press Yes to favorite the game."
+			message.TextColor3 = RED
 		end
 	end)
 

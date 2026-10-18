@@ -86,7 +86,7 @@ local START_POSITION =
 	Vector3.new(
 		-64.718,
 		67.994,
-		-174.612
+		-154.612
 	)
 
 

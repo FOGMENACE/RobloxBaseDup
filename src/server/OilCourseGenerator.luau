@@ -86,7 +86,7 @@ local PLATFORM_SEPARATION = 5
 local START_POSITION = Vector3.new(
 	-64.718,
 	67.994,
-	-174.612
+	-154.612
 )
 
 
@@ -673,6 +673,31 @@ end
 -- CHOOSE OIL TYPE BASED ON PLATFORM POLARITY
 --------------------------------------------------
 
+-- MIXED DIFFICULTY: each course rolls how many X2/X4 (helpers) and /2 /4
+-- (hurters) it may contain, so a course is never wall-to-wall x4 or all
+-- dividers. BallTierGates also reads "MultiplierPlatforms" to give fewer
+-- upgrade platforms to a course that is already generous.
+local helperCap, hurtCap = 1, 1
+local helperUsed, hurtUsed = 0, 0
+
+local function rollCap(weights)
+	local roll = rng:NextNumber() * 100
+	local acc = 0
+	for count = 0, #weights do
+		acc += weights[count]
+		if roll <= acc then
+			return count
+		end
+	end
+	return 0
+end
+
+local function rollSpecialCaps()
+	helperCap = rollCap({ [0] = 30, 45, 25 })
+	hurtCap = rollCap({ [0] = 25, 45, 30 })
+	helperUsed, hurtUsed = 0, 0
+end
+
 local function chooseOilType(isPositive)
 	local eligibleTypes = {}
 	local totalWeight = 0
@@ -693,6 +718,12 @@ local function chooseOilType(isPositive)
 
 			elseif kind == "Divider" then
 				eligible = isPositive == false
+			end
+
+			if kind == "Multiplier" and helperUsed >= helperCap then
+				eligible = false
+			elseif kind == "Divider" and hurtUsed >= hurtCap then
+				eligible = false
 			end
 
 			if eligible
@@ -725,6 +756,9 @@ local function chooseOilType(isPositive)
 		accumulated += entry.Weight
 
 		if roll <= accumulated then
+			local chosen = OilDefinitions[entry.Name]
+			local chosenKind = chosen and getDefinitionKind(chosen)
+			if chosenKind == "Multiplier" then helperUsed += 1 elseif chosenKind == "Divider" then hurtUsed += 1 end
 			return entry.Name
 		end
 	end
@@ -1166,6 +1200,7 @@ function OilCourseGenerator.Generate(player)
 	playerCourse:SetAttribute("NegativeChance", NEGATIVE_CHANCE)
 
 	oilScale = computeOilScale(player)
+	rollSpecialCaps()
 	playerCourse:SetAttribute("OilScale", oilScale)
 	playerCourse:SetAttribute("PositivePlatforms", 0)
 	playerCourse:SetAttribute("NegativePlatforms", 0)
@@ -1275,6 +1310,8 @@ function OilCourseGenerator.Generate(player)
 	--------------------------------------------------
 
 	local positiveCount, negativeCount = countCoursePolarities(playerCourse)
+	playerCourse:SetAttribute("MultiplierPlatforms", helperUsed)
+	playerCourse:SetAttribute("DividerPlatforms", hurtUsed)
 
 	playerCourse:SetAttribute(
 		"PositivePlatforms",

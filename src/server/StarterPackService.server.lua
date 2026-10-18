@@ -50,11 +50,19 @@ local function grantOnce(player)
 	end)
 
 	if okRead and already ~= true and player.Parent == Players then
+		-- atomic across servers: only the call that flips it to true grants the pack
+		local won = false
 		local saved = pcall(function()
-			store:SetAsync(key(player), true)
+			store:UpdateAsync(key(player), function(old)
+				if old == true then
+					return nil
+				end
+				won = true
+				return true
+			end)
 		end)
 
-		if saved then
+		if saved and won then
 			if PlayerDataService.AddWins(player, pack.Wins) then
 				BoostService.Grant(player, "Oil2x", pack.BoostSeconds)
 				BoostService.Grant(player, "Wins2x", pack.BoostSeconds)

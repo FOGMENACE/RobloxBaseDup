@@ -54,9 +54,34 @@ local flash = create("Frame", {
 	ZIndex = 1,
 }, gui)
 
-local upSound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.25, PlaybackSpeed = 1.25 }, gui)
-local downSound = create("Sound", { SoundId = "rbxasset://sounds/uuhhh.mp3", Volume = 0.25 }, gui)
+-- Upgrade = a bright three-part chime (ping + button click + victory sparkle),
+-- downgrade = a falling "swoop" (water-slide whoosh + low thud). Both are
+-- mixes of built-in sounds so they differ from the oil platform sounds.
+local function mix(parts)
+	return {
+		Play = function()
+			for _, part in ipairs(parts) do
+				task.delay(part[4] or 0, function()
+					local sound = create("Sound", { SoundId = part[1], Volume = part[2], PlaybackSpeed = part[3] }, gui)
+					sound:Play()
+					task.delay(3, function()
+						sound:Destroy()
+					end)
+				end)
+			end
+		end,
+	}
+end
 
+local upSound = mix({
+	{ "rbxasset://sounds/electronicpingshort.wav", 0.32, 1.35, 0 },
+	{ "rbxasset://sounds/button.wav", 0.3, 1.7, 0.08 },
+	{ "rbxasset://sounds/victory.wav", 0.16, 2.0, 0.14 },
+})
+local downSound = mix({
+	{ "rbxasset://sounds/impact_water.mp3", 0.45, 1.9, 0 },
+	{ "rbxasset://sounds/bass.mp3", 0.4, 0.7, 0.06 },
+})
 --------------------------------------------------
 -- CURRENT BALL CHIP
 --------------------------------------------------

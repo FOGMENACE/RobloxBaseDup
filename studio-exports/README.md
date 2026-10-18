@@ -97,7 +97,7 @@ WinCourse start z = 333.244 (WinCourseGenerator `START_POSITION`):
 - `Workspace.Course.LeftBoundary` / `RightBoundary`: length (Size.X) +33 and Position.Z +16.5.
 
 These were edited in the open place file (not Rojo-synced): SAVE/PUBLISH the place from Studio to keep them.
-Win tiles now have variable length (40 studs at +1, growing to 80 studs at +65, constant after; +80 and up are 130-stud rainbow tiles); positions come from
+Win tiles now have variable length (40 studs at +1, growing to 80 studs at +65, constant after; +110 and up are 130-stud soft-rainbow tiles); positions come from
 `WinCourseGenerator.GetTileStartDistance(index)`.
 
 ## Wider, lower oil course + look (Studio-only edits, SAVE the place)
@@ -107,3 +107,6 @@ Win tiles now have variable length (40 studs at +1, growing to 80 studs at +65, 
 - `StarterGui.WinCourseUI`: `CountdownTick` volume 0.3, `WinCourseGo` volume 0.28 and speed 0.92 (were ~3.9 / ~3.5).
 - `Lighting.Atmosphere`: pastel pink/purple (Color 255,214,236, Decay 170,130,255, Haze 1.4, Glare 0.25), ClockTime 16.6.
   The Sky textures were NOT changed (a Creator Store "skybox" pack I tried contained scripts and was deleted).
+
+## Courses moved 30 studs further out
+Oil rows now start at z -154.6 (was -174.6), the WinCourse start is z 353.2, and in Studio `FinishWall` moved +20 (to 362.4) and `Floor`/`LeftBoundary`/`RightBoundary` were lengthened by 20 (centre +10). Save the place to keep these.

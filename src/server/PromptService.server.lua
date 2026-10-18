@@ -57,7 +57,9 @@ local function loadPlayer(player)
 	end)
 
 	if ok then
-		state.Favorite = typeof(value) == "table" and value.Favorite == true
+		-- FavoriteVerified: older "Favorite" flags were wrongly set when a
+		-- player pressed No, so they are ignored.
+		state.Favorite = typeof(value) == "table" and value.FavoriteVerified == true
 		state.Loaded = true
 	else
 		warn("[PromptService] Load failed:", player.Name, value)
@@ -97,7 +99,7 @@ promptDone.OnServerEvent:Connect(function(player, kind)
 		local ok, err = pcall(function()
 			store:UpdateAsync(key(player), function(old)
 				old = typeof(old) == "table" and old or {}
-				old.Favorite = true
+				old.FavoriteVerified = true
 				return old
 			end)
 		end)

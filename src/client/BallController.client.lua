@@ -863,6 +863,37 @@ end
 
 UserInputService.JumpRequest:Connect(requestJump)
 
+-- HOLD TO KEEP JUMPING: JumpRequest only fires on the press, so while the key
+-- (or gamepad A / the touch button) stays down the ball jumps again as soon
+-- as it has landed. requestJump still applies the cooldown, ground check and
+-- lobby-only rule, so holding does not allow air jumps or spam.
+local jumpHeld = false
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+		jumpHeld = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+		jumpHeld = false
+	end
+end)
+
+UserInputService.WindowFocusReleased:Connect(function()
+	jumpHeld = false
+end)
+
+RunService.Heartbeat:Connect(function()
+	if jumpHeld then
+		requestJump()
+	end
+end)
+
 if UserInputService.TouchEnabled then
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "BallJumpControls"
@@ -888,6 +919,17 @@ if UserInputService.TouchEnabled then
 	corner.Parent = button
 
 	button.Activated:Connect(requestJump)
+	-- holding the touch button keeps jumping too
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			jumpHeld = true
+		end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			jumpHeld = false
+		end
+	end)
 
 	RunService.RenderStepped:Connect(function()
 		button.Visible = getRunState() == "Waiting"

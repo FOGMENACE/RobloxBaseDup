@@ -275,11 +275,13 @@ local function offerFavorite()
 		favoriteBusy = true
 
 		local connection
-		connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(success)
+		connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)
 			favoriteBusy = false
 			connection:Disconnect()
 
-			if success then
+			-- The event passes an Enum.AvatarPromptResult (always truthy), so
+			-- only an explicit Success counts; "No"/dismiss must not.
+			if result == Enum.AvatarPromptResult.Success then
 				promptDone:FireServer("Favorite")
 			end
 		end)

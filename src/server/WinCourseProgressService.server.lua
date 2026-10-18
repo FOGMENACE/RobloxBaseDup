@@ -149,7 +149,7 @@ local RESULT_DISPLAY_TIME = 4
 -- STARTING SPEED
 --------------------------------------------------
 
-local BASE_WIN_COURSE_SPEED = 40
+local BASE_WIN_COURSE_SPEED = 110 -- a lively start; nobody waits for the ball to get going
 
 
 --------------------------------------------------
@@ -183,14 +183,60 @@ local MAX_OIL_SPEED_BOOST = 100
 -- etc.
 --------------------------------------------------
 
-local WIN_COURSE_ACCELERATION = 14
+local WIN_COURSE_ACCELERATION = 40
 
 
 --------------------------------------------------
 -- MAXIMUM SPEED
 --------------------------------------------------
 
-local MAX_WIN_COURSE_SPEED = 240
+local MAX_WIN_COURSE_SPEED = 420 -- floor of the dynamic ceiling (small budgets)
+
+-- BIGGER BUDGET, FASTER BALL: a flat 240 studs/s top speed meant a player with
+-- 50,000 oil rolled for 3+ minutes. The ceiling now scales so a run lasts at
+-- most about TARGET_ROLL_SECONDS (up to HARD_MAX_SPEED), and the acceleration
+-- scales with it so the ball reaches that speed in about ACCEL_SECONDS.
+local TARGET_ROLL_SECONDS = 18
+local HARD_MAX_SPEED = 900
+
+-- OIL IS FUEL, AND IT BURNS FAST. Distance is not 1 oil = 1 stud: it grows
+-- with oil^0.84, so doubling your oil does NOT double your distance and
+-- 50,000 oil lands around win tile ~85-100 with a starter ball. Deeper tiles
+-- need real progress: a faster ball (up to +30 %) and more rebirths (+2 % each,
+-- up to +50 %) stretch the same oil further. The ball rolls fast, so the meter
+-- visibly burns down.
+-- Retuned harder: 100k oil used to land too deep (~1.1*100000^0.84 = 17k studs
+-- before factors). Lower exponent + coefficient make big banks burn faster.
+-- Second pass (still too easy): 0.77 / 0.9 and a smaller rebirth stretch.
+local TRAVEL_EXPONENT = 0.77
+local TRAVEL_COEFFICIENT = 0.9
+
+local function oilToTravel(oil, ball, player)
+	if oil <= 0 then
+		return 0
+	end
+
+	local speed = 50
+	local okBalls, balls = pcall(function()
+		return require(ServerScriptService:WaitForChild("BallDefinitions"))
+	end)
+	local ballId = ball and ball:GetAttribute("BallId")
+	if okBalls and typeof(ballId) == "string" and balls[ballId] and typeof(balls[ballId].ForwardSpeed) == "number" then
+		speed = balls[ballId].ForwardSpeed
+	end
+	local ballFactor = 0.7 + 0.6 * math.clamp((speed - 50) / 100, 0, 1)
+
+	local rebirths = tonumber(player:GetAttribute("Rebirths")) or 0
+	local rebirthFactor = 1 + math.min(rebirths * 0.01, 0.35)
+
+	return TRAVEL_COEFFICIENT * (oil ^ TRAVEL_EXPONENT) * ballFactor * rebirthFactor
+end
+
+local ACCEL_SECONDS = 5
+
+local function ceilingForBudget(budget)
+	return math.clamp(budget / TARGET_ROLL_SECONDS, MAX_WIN_COURSE_SPEED, HARD_MAX_SPEED)
+end
 
 
 --------------------------------------------------
@@ -795,11 +841,14 @@ local function calculateRollSpeed(run)
 			os.clock() - run.RollStartTime
 		)
 
+	local ceiling = run.MaxSpeed or MAX_WIN_COURSE_SPEED
+	local acceleration = math.max(WIN_COURSE_ACCELERATION, (ceiling - run.StartingSpeed) / ACCEL_SECONDS)
+
 	local speed =
 		run.StartingSpeed
 		+
 		(
-			WIN_COURSE_ACCELERATION
+			acceleration
 			*
 			elapsed
 		)
@@ -807,7 +856,7 @@ local function calculateRollSpeed(run)
 	return math.clamp(
 		speed,
 		0,
-		MAX_WIN_COURSE_SPEED
+		ceiling
 	)
 
 end
@@ -2051,6 +2100,19 @@ run.LastPosition = currentPosition
 	local currentSpeed =
 		calculateRollSpeed(run)
 
+	-- BRAKE INTO THE LANDING: over the last fraction of a second the roll
+	-- speed is limited to (remaining travel / 0.22 s), so the ball eases down
+	-- onto the tile where its budget ends instead of hitting full speed and
+	-- being frozen mid-stride (clients saw it drift onto the next tile and
+	-- snap back). The distance itself is unchanged: it still stops exactly at
+	-- the travel budget, and the tile credited is the one under the ball.
+	do
+		local remaining = run.TravelBudget - run.DistanceTravelled
+		if remaining >= 0 then
+			currentSpeed = math.min(currentSpeed, math.max(remaining / 0.22, 8))
+		end
+	end
+
 	run.CurrentSpeed =
 		currentSpeed
 
@@ -2625,7 +2687,7 @@ local function startTracking(
 	--------------------------------------------------
 
 	local travelBudget =
-		currentOil * OIL_PER_STUD
+		oilToTravel(currentOil * OIL_PER_STUD, ball, player)
 
 	if travelBudget <= 0 then
 
@@ -2754,7 +2816,7 @@ local function startTracking(
 			startingSpeed,
 
 		MaxSpeed =
-			MAX_WIN_COURSE_SPEED,
+			ceilingForBudget(travelBudget),
 
 
 		--------------------------------------------------

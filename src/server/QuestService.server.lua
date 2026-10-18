@@ -208,6 +208,8 @@ local function saveWeekly(player)
 end
 
 local function load(player)
+	require(ServerScriptService:WaitForChild("SessionGate")).Wait(player)
+
 	local ok, value = pcall(function()
 		return dailyStore:GetAsync(dailyKey(player))
 	end)

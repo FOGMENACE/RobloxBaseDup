@@ -214,6 +214,10 @@ local function onPlayerRemoving(player)
 
 	savePlayer(player, "PlayerRemoving")
 
+	pcall(function()
+		PlayerDataService.ReleasePlayer(player)
+	end)
+
 	loadedPlayers[player] = nil
 	loadingPlayers[player] = nil
 end
@@ -288,6 +292,12 @@ game:BindToClose(function()
 			)
 
 			saveResults[player] = success
+
+			-- free the session lock so the next server can load immediately
+			pcall(function()
+				PlayerDataService.ReleasePlayer(player)
+			end)
+
 			pending -= 1
 		end)
 	end

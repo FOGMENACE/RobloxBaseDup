@@ -31,10 +31,14 @@ local MAX_REBIRTHS = 1000000
 local MAX_OIL = 1e9
 local MAX_BALL_NAME_LENGTH = 64
 
-local BASE_XP_PER_LEVEL = 100
-local XP_LEVEL_GROWTH = 1.35
-
-local BASE_REBIRTH_LEVEL = 65
+-- LEVEL CURVE (retuned): total XP to reach level L = XP_CURVE_A * (L^XP_CURVE_Q - 1).
+-- The old geometric curve (x1.35 per level) became impossible after ~3 rebirths
+-- (reach level 45 needed ~10^8 times what a player earns). This polynomial curve
+-- is fitted to the XP income (rebirth XP x(1+10r), generators, ball speed) so a
+-- rebirth takes roughly 1 min early, 2-5 min mid game and 5-8 min deep in.
+local XP_CURVE_A = 95
+local XP_CURVE_Q = 2.46
+local BASE_REBIRTH_LEVEL = 2 -- first (tutorial) requirement; see RebirthBonuses.RequiredLevel
 local REBIRTH_LEVEL_INCREMENT = 15
 
 local DEFAULT_BALL_ID = "StraightBall"
@@ -95,6 +99,10 @@ end
 -- REBIRTH REQUIREMENT
 --------------------------------------------------
 
+local RebirthBonuses = require(
+    game:GetService("ReplicatedStorage"):WaitForChild("RebirthBonuses")
+)
+
 local function getRequiredRebirthLevel(rebirths)
     rebirths = math.clamp(
         math.floor(tonumber(rebirths) or 0),
@@ -104,25 +112,13 @@ local function getRequiredRebirthLevel(rebirths)
 
     return math.min(
         MAX_LEVEL,
-        BASE_REBIRTH_LEVEL
-            + rebirths * REBIRTH_LEVEL_INCREMENT
+        math.floor(RebirthBonuses.RequiredLevel(rebirths))
     )
 end
 
 --------------------------------------------------
 -- XP CALCULATIONS
 --------------------------------------------------
-
-local function getXPRequiredForLevel(level)
-    level = math.clamp(
-        math.floor(tonumber(level) or 1),
-        1,
-        MAX_LEVEL
-    )
-
-    return BASE_XP_PER_LEVEL
-        * (XP_LEVEL_GROWTH ^ (level - 1))
-end
 
 local function getTotalXPForLevel(level)
     level = math.max(
@@ -134,11 +130,18 @@ local function getTotalXPForLevel(level)
         return 0
     end
 
-    return BASE_XP_PER_LEVEL
-        * ((XP_LEVEL_GROWTH ^ (level - 1) - 1)
-        / (XP_LEVEL_GROWTH - 1))
+    return XP_CURVE_A * (level ^ XP_CURVE_Q - 1)
 end
 
+local function getXPRequiredForLevel(level)
+    level = math.clamp(
+        math.floor(tonumber(level) or 1),
+        1,
+        MAX_LEVEL
+    )
+
+    return getTotalXPForLevel(level + 1) - getTotalXPForLevel(level)
+end
 local function calculateLevelFromXP(xp, maxLevel)
     if not isFiniteNumber(xp) or xp <= 0 then
         return 1
@@ -152,16 +155,7 @@ local function calculateLevelFromXP(xp, maxLevel)
         MAX_LEVEL
     )
 
-    local inside =
-        (xp * (XP_LEVEL_GROWTH - 1) / BASE_XP_PER_LEVEL) + 1
-
-    local level = 1
-
-    if inside > 1 then
-        level = math.floor(
-            1 + math.log(inside) / math.log(XP_LEVEL_GROWTH)
-        )
-    end
+    local level = math.floor((xp / XP_CURVE_A + 1) ^ (1 / XP_CURVE_Q))
 
     level = math.clamp(level, 1, maxLevel)
 
@@ -530,6 +524,32 @@ end
 -- LOAD DATA
 --------------------------------------------------
 
+-- SESSION LOCK + LOAD RETRY
+--
+-- A record carries a `SessionLock = { JobId, Time }` field (kept OUT of the
+-- in-memory data). Loading claims the lock with UpdateAsync; if another
+-- server holds a FRESH lock the load waits and retries, then gives up (the
+-- loader kicks the player) instead of loading a second live copy. Saving
+-- refuses to overwrite a record whose lock belongs to another live server.
+-- A lock older than LOCK_TIMEOUT (crashed server) is taken over. Every save
+-- refreshes the lock. Failed DataStore calls are retried with exponential
+-- backoff; if the load still fails no data is loaded, and the loader never
+-- saves a player whose load did not succeed.
+local LOCK_TIMEOUT = 150 -- seconds; autosave (60 s) refreshes it
+local LOAD_ATTEMPTS = 5
+local LOAD_BACKOFF = 1 -- 1, 2, 4, 8 s between attempts
+local LOCK_WAIT_ATTEMPTS = 8 -- x 3 s while another server still holds it
+local RELEASE_GRACE = 2 -- seconds before the lock is dropped on leave
+
+local lockLost = {} -- [player] = true: another server took the record
+
+local function lockIsLive(lock)
+    return typeof(lock) == "table"
+        and lock.JobId ~= game.JobId
+        and typeof(lock.Time) == "number"
+        and os.time() - lock.Time < LOCK_TIMEOUT
+end
+
 local function loadData(player)
     if shuttingDown then
         return nil
@@ -539,25 +559,64 @@ local function loadData(player)
         return loadedData[player]
     end
 
-    local success, result = pcall(function()
-        return playerDataStore:GetAsync(getDataKey(player))
-    end)
+    local key = getDataKey(player)
+    local result = nil
+    local lockedElsewhere = 0
+    local failures = 0
 
-    if not success then
-        warn(
-            "[PlayerDataService] Failed to load:",
-            player.Name,
-            result
-        )
+    while player.Parent do
+        local blocked = false
+
+        local success, value = pcall(function()
+            return playerDataStore:UpdateAsync(key, function(old)
+                if old ~= nil and typeof(old) ~= "table" then
+                    return nil -- unreadable record: never touch it
+                end
+
+                if old and lockIsLive(old.SessionLock) then
+                    blocked = true
+                    return nil
+                end
+
+                local record = old or {}
+                record.SessionLock = { JobId = game.JobId, Time = os.time() }
+                return record
+            end)
+        end)
+
+        if success and not blocked then
+            result = value
+            break
+        end
+
+        if blocked then
+            lockedElsewhere += 1
+            warn("[PlayerDataService] AUDIT load blocked by another server:", player.Name, player.UserId, lockedElsewhere)
+            if lockedElsewhere >= LOCK_WAIT_ATTEMPTS then
+                warn("[PlayerDataService] AUDIT load gave up (session still active elsewhere):", player.Name)
+                return nil
+            end
+            task.wait(3)
+        else
+            failures += 1
+            warn("[PlayerDataService] AUDIT load failed (attempt", failures, "):", player.Name, value)
+            if failures >= LOAD_ATTEMPTS then
+                return nil
+            end
+            task.wait(LOAD_BACKOFF * 2 ^ (failures - 1))
+        end
+    end
+
+    if not player.Parent then
         return nil
     end
 
     local data = sanitizeData(result)
     loadedData[player] = data
+    lockLost[player] = nil
 
     return data
 end
-
 function PlayerDataService.LoadPlayer(player)
     if not player or not player:IsA("Player") or shuttingDown then
         return false
@@ -996,6 +1055,7 @@ function PlayerDataService.RebirthPlayer(player)
     )
 
     if currentLevel < requiredLevel then
+        warn("[AUDIT] rebirth refused LEVEL_REQUIREMENT_NOT_MET:", player.Name, "level", currentLevel, "need", requiredLevel)
         return false, "LEVEL_REQUIREMENT_NOT_MET"
     end
 
@@ -1011,6 +1071,7 @@ function PlayerDataService.RebirthPlayer(player)
 
     updatePlayerValues(player, data)
 
+    print("[AUDIT] rebirth ok:", player.Name, player.UserId, "rebirths", data.Rebirths)
     print(
         "[PlayerDataService] REBIRTH COMPLETE:",
         player.Name,
@@ -1023,6 +1084,7 @@ function PlayerDataService.RebirthPlayer(player)
     local saved = PlayerDataService.SavePlayer(player)
 
     if not saved then
+        warn("[AUDIT] rebirth SAVE FAILED (in memory only):", player.Name, player.UserId)
         warn(
             "[PlayerDataService] Rebirth save failed:",
             player.Name
@@ -1128,11 +1190,30 @@ function PlayerDataService.SavePlayer(player)
         local dataToSave = copyData(sanitized)
         local key = getDataKey(player)
 
+        local lostThisSave = false
         local success, errorMessage = pcall(function()
-            playerDataStore:UpdateAsync(key, function()
+            playerDataStore:UpdateAsync(key, function(old)
+                if typeof(old) == "table" and lockIsLive(old.SessionLock) then
+                    lostThisSave = true
+                    return nil -- another server owns this record: do NOT overwrite
+                end
+
+                dataToSave.SessionLock = { JobId = game.JobId, Time = os.time() }
                 return dataToSave
             end)
         end)
+
+        if lostThisSave then
+            lockLost[player] = true
+            warn("[PlayerDataService] AUDIT save blocked: record owned by another server:", player.Name, player.UserId)
+            overallSuccess = false
+            task.defer(function()
+                if player.Parent then
+                    player:Kick("Your account was opened in another server. Please rejoin.")
+                end
+            end)
+            break
+        end
 
         if not success then
             warn(
@@ -1152,6 +1233,34 @@ function PlayerDataService.SavePlayer(player)
     return overallSuccess
 end
 
+--------------------------------------------------
+-- RELEASE (leave / shutdown): drop our lock and free the memory
+--------------------------------------------------
+
+function PlayerDataService.ReleasePlayer(player)
+    if player and loadedData[player] and not lockLost[player] then
+        -- Let the other per-player services (quests, boosts, calendar ...)
+        -- finish their own leave-saves before another server can claim this
+        -- player (see SessionGate).
+        task.wait(RELEASE_GRACE)
+
+        pcall(function()
+            playerDataStore:UpdateAsync(getDataKey(player), function(old)
+                if typeof(old) == "table" and typeof(old.SessionLock) == "table"
+                    and old.SessionLock.JobId == game.JobId then
+                    old.SessionLock = nil
+                    return old
+                end
+                return nil
+            end)
+        end)
+    end
+
+    loadedData[player] = nil
+    lockLost[player] = nil
+    saving[player] = nil
+    saveRequested[player] = nil
+end
 --------------------------------------------------
 -- SAVE STATE
 --------------------------------------------------
@@ -1177,6 +1286,15 @@ local backupStore = DataStoreService:GetDataStore("PlayerDataBackup_v1")
 local function freshDefaults()
     local fresh = copyData(DEFAULT_DATA)
     fresh.OwnedBalls = { [DEFAULT_BALL_ID] = true }
+
+    -- Explicit, so a reset can never keep a higher Strike / Reach level:
+    -- the rebirth requirement is derived from the rebirth count (0 rebirths
+    -- = the base requirement), and the global level restarts too.
+    fresh.Rebirths = 0
+    fresh.RebirthLevelRequirement = getRequiredRebirthLevel(0)
+    fresh.GlobalLevel = 1
+    fresh.Level = 1
+    fresh.XP = 0
     return fresh
 end
 
@@ -1222,6 +1340,13 @@ function PlayerDataService.AdminResetOnline(player)
     loadedData[player] = freshDefaults()
     updatePlayerValues(player, loadedData[player])
 
+    -- Make the Strike badge / "Reach level" and rebirth count show the reset
+    -- values immediately, whatever the HUD last displayed.
+    player:SetAttribute("Rebirths", 0)
+    player:SetAttribute("RebirthLevelRequirement", loadedData[player].RebirthLevelRequirement)
+    player:SetAttribute("GlobalLevel", 1)
+    player:SetAttribute("RebirthMaxReached", false)
+
     local saved = PlayerDataService.SavePlayer(player)
     return saved, saved and key or "SAVE_FAILED"
 end
@@ -1235,7 +1360,9 @@ function PlayerDataService.AdminResetOffline(userId)
             if not backupKey then
                 return nil -- abort: never overwrite without a backup
             end
-            return freshDefaults()
+            local fresh = freshDefaults()
+            fresh.SessionLock = nil
+            return fresh
         end)
     end)
 

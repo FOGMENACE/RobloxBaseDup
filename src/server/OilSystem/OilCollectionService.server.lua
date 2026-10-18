@@ -950,7 +950,8 @@ end
 local function applyOilChange(
     player,
     change,
-    countAsCollection
+    countAsCollection,
+    isSpecial -- X2/X4 already computed from CurrentOil: no rebirth/boost on top
 )
     --------------------------------------------------
     -- VALIDATE PLAYER
@@ -975,35 +976,14 @@ local function applyOilChange(
     end
 
     --------------------------------------------------
-    -- REBIRTH OIL MULTIPLIER (gains only)
+    -- OIL MULTIPLIERS ARE NOT APPLIED PER PLATFORM
     --
-    -- Each rebirth adds +x1 to oil gains (rebirth 1 = x2, 2 = x3 ...).
-    -- Losses are never multiplied. Computed here from the player's real
-    -- rebirth count.
+    -- Platforms add and subtract their RAW amounts. The rebirth oil
+    -- multiplier and the timed oil boosts are applied ONCE to the final
+    -- collected total when the finish wall is reached (see
+    -- ApplyFinishOilMultiplier below), so the player sees them drag into
+    -- the oil meter at the end.
     --------------------------------------------------
-    if change > 0 then
-        local okBonus, oilMultiplier = pcall(function()
-            return require(
-                game:GetService("ReplicatedStorage"):WaitForChild("RebirthBonuses")
-            ).OilMultiplier(PlayerDataService.GetRebirths(player))
-        end)
-
-        if okBonus and typeof(oilMultiplier) == "number" and oilMultiplier > 1 then
-            change = math.floor(change * oilMultiplier)
-        end
-
-        -- Timed x2 OIL boost (bought or rewarded), see BoostService.
-        local okBoost, boostMultiplier = pcall(function()
-            return require(
-                game:GetService("ServerScriptService"):WaitForChild("BoostService")
-            ).OilMultiplier(player)
-        end)
-
-        if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
-            change = math.floor(change * boostMultiplier)
-        end
-    end
-
     --------------------------------------------------
     -- GET CURRENT RUN OIL
     --------------------------------------------------
@@ -1167,7 +1147,8 @@ function OilCollectionService.CollectOil(
         local success, result = applyOilChange(
             player,
             change,
-            change > 0
+            change > 0,
+            true
         )
 
         print(
@@ -1268,6 +1249,81 @@ print(
 	"[OilCollectionService]",
 	"CollectOilRequest bridge connected."
 )
+
+--------------------------------------------------
+-- FINISH-WALL OIL MULTIPLIER (once per run)
+--
+-- RunController invokes this synchronously when the finish wall is reached,
+-- BEFORE the WinCourse reads CurrentOil. Returns the final oil.
+-- Attributes (read by the client animation, display only):
+--   OilRawCollected      oil before the multipliers
+--   OilFinishMultiplier  product of rebirth x boosts that was applied
+--------------------------------------------------
+
+local finishBridge = Instance.new("BindableFunction")
+finishBridge.Name = "ApplyFinishOilMultiplier"
+finishBridge.Parent = game:GetService("ServerScriptService")
+
+local finishApplied = {} -- [player] = os.clock() of the last application
+
+finishBridge.OnInvoke = function(player)
+	if not isValidPlayer(player) then
+		return 0
+	end
+
+	local raw = getCurrentRunOil(player)
+
+	-- guard against a double invoke for the same run
+	if finishApplied[player] and os.clock() - finishApplied[player] < 5 then
+		return raw
+	end
+	finishApplied[player] = os.clock()
+
+	local multiplier = 1
+
+	local okBonus, rebirthMultiplier = pcall(function()
+		return require(
+			game:GetService("ReplicatedStorage"):WaitForChild("RebirthBonuses")
+		).OilMultiplier(PlayerDataService.GetRebirths(player))
+	end)
+	if okBonus and typeof(rebirthMultiplier) == "number" and rebirthMultiplier > 1 then
+		multiplier *= rebirthMultiplier
+	end
+
+	local okBoost, boostMultiplier = pcall(function()
+		return require(
+			game:GetService("ServerScriptService"):WaitForChild("BoostService")
+		).OilMultiplier(player)
+	end)
+	if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
+		multiplier *= boostMultiplier
+	end
+
+	local final = math.floor(raw * multiplier)
+	local delta = final - raw
+
+	if delta ~= 0 then
+		applyPersistentOilChange(player, delta)
+		setCurrentRunOil(player, final)
+	end
+
+	player:SetAttribute("OilRawCollected", raw)
+	player:SetAttribute("OilFinishMultiplier", multiplier)
+
+	print(
+		"[OilCollectionService] FINISH MULTIPLIER:",
+		player.Name,
+		"| Raw:", raw,
+		"| x", multiplier,
+		"| Final:", final
+	)
+
+	return final
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	finishApplied[player] = nil
+end)
 
 --------------------------------------------------
 -- REMOVE OIL

@@ -145,8 +145,22 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	for ball, entry in pairs(tags) do
 		if ball.Parent then
 			local position = ball.Position
-			entry.Smoothed += (position.Y - entry.Smoothed) * alpha
-			entry.Anchor.CFrame = CFrame.new(position.X, entry.Smoothed + entry.Height, position.Z)
+			local velocity = ball.AssemblyLinearVelocity
+
+			-- dead-reckon so a fast-moving ball (win course) does not leave
+			-- the tag behind/under it between replication steps
+			if not entry.Track or (entry.Track - position).Magnitude > 40 then
+				entry.Track = position
+				entry.Velocity = velocity
+			end
+			entry.Velocity = entry.Velocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+			entry.Track = (entry.Track + entry.Velocity * deltaTime):Lerp(position, 1 - math.exp(-5 * deltaTime))
+			local tracked = entry.Track
+
+			entry.Smoothed += (tracked.Y - entry.Smoothed) * alpha
+			-- never let the tag sink below the top of the ball
+			entry.Smoothed = math.max(entry.Smoothed, tracked.Y - 0.5)
+			entry.Anchor.CFrame = CFrame.new(tracked.X, entry.Smoothed + entry.Height, tracked.Z)
 		end
 	end
 end)

@@ -1046,6 +1046,24 @@ print(
 
 
 	--------------------------------------------------
+	-- APPLY THE OIL MULTIPLIERS ONCE (rebirth x boosts) to the final total
+	--------------------------------------------------
+
+	do
+		local finishBridge = ServerScriptService:FindFirstChild("ApplyFinishOilMultiplier")
+		if finishBridge then
+			local okMultiply, finalOil = pcall(function()
+				return finishBridge:Invoke(player)
+			end)
+			if okMultiply and isFiniteNumber(finalOil) then
+				currentOil = finalOil
+			else
+				warn("[RunController] finish oil multiplier failed:", finalOil)
+			end
+		end
+	end
+
+	--------------------------------------------------
 	-- ACTIVATE WIN COURSE
 	--------------------------------------------------
 
@@ -1158,6 +1176,75 @@ end
 -- CHECK START WALL
 --------------------------------------------------
 
+-- HARDENED START: a ball only starts a run when it ROLLS INTO the wall.
+-- Rejected (no run, nothing changes) when the ball
+--   * was created / respawned less than START_GRACE seconds ago (spawn
+--     glitches, balls popping out of the floor),
+--   * is anchored, moving absurdly fast, or high above the lane,
+--   * is outside the lane width,
+--   * was not on the LOBBY side of the wall on the previous frame, or
+--     moved more than MAX_STEP studs since then (teleport / exploit).
+local START_GRACE = 2.5
+local MAX_START_SPEED = 160
+local MAX_STEP = 14
+local startSamples = setmetatable({}, { __mode = "k" }) -- [ball] = { Seen, LastZ }
+
+local function startAllowed(ball, player)
+	local now = os.clock()
+	local sample = startSamples[ball]
+	local z = ball.Position.Z
+
+	if not sample then
+		startSamples[ball] = { Seen = now, LastZ = z, Near = 0 }
+		return false
+	end
+
+	local lastZ = sample.LastZ
+	sample.LastZ = z
+
+	-- the ball must have ROLLED toward the wall: seen on the lobby side within
+	-- 14 studs of it for several consecutive frames before entering
+	-- (approach is remembered for a couple of seconds, so a fast or laggy ball
+	-- that is already inside the wall on its first frame still counts)
+	local approached = sample.Near >= 3 or (sample.ApproachAt and now - sample.ApproachAt <= 2.5)
+	if sample.Near >= 3 then
+		sample.ApproachAt = now
+	end
+	sample.Near = 0
+	if not approached then
+		return false
+	end
+
+	if now - sample.Seen < START_GRACE then
+		return false
+	end
+
+	if ball.Anchored or ball.AssemblyLinearVelocity.Magnitude > MAX_START_SPEED then
+		return false
+	end
+
+	local wallZ = startWall.Position.Z
+	if lastZ >= wallZ or math.abs(z - lastZ) > MAX_STEP then
+		return false
+	end
+
+	-- inside the lane and not flying
+	local localPosition = startWall.CFrame:PointToObjectSpace(ball.Position)
+	local half = startWall.Size / 2
+	local laneHalf = math.max(half.X, half.Z) -- the long horizontal axis
+	local horizontal = math.max(math.abs(localPosition.X), math.abs(localPosition.Z))
+	if horizontal > laneHalf + 1 then
+		return false
+	end
+
+	local bottom = startWall.Position.Y - half.Y
+	if ball.Position.Y - bottom > 14 or ball.Position.Y < bottom - 2 then
+		return false
+	end
+
+	return true
+end
+
 local function checkStartWall()
 
 	local balls =
@@ -1165,6 +1252,7 @@ local function checkStartWall()
 			startWall
 		)
 
+	local present = {}
 
 	for _, ball in ipairs(
 		balls
@@ -1175,24 +1263,64 @@ local function checkStartWall()
 				ball
 			)
 
-
 		if player then
 
-			startRun(
-				player,
-				ball
-			)
+			present[ball] = true
+
+			if player:GetAttribute("RunState") == "Waiting" and startAllowed(ball, player) then
+				startRun(
+					player,
+					ball
+				)
+			end
 
 		end
 
 	end
 
+	-- keep tracking balls that are NOT in the wall so "previous side" is real
+	local ballFolder = workspace:FindFirstChild("PlayerBalls")
+	if ballFolder then
+		for _, ball in ipairs(ballFolder:GetChildren()) do
+			if ball:IsA("BasePart") and not present[ball] then
+				local sample = startSamples[ball]
+				if not sample then
+					sample = { Seen = os.clock(), LastZ = ball.Position.Z, Near = 0 }
+					startSamples[ball] = sample
+				end
+				sample.LastZ = ball.Position.Z
+				local gap = startWall.Position.Z - ball.Position.Z
+				if gap > 1 and gap <= MAX_STEP then
+					sample.Near += 1
+					if sample.Near >= 3 then
+						sample.ApproachAt = os.clock()
+					end
+				else
+					sample.Near = 0
+				end
+
+				-- SAFETY NET: a ball that ended up PAST the wall while the player is
+				-- still in the lobby must never be left on the course without a game.
+				if ball.Position.Z > startWall.Position.Z + 3 then
+					local owner = getPlayerFromBall(ball)
+					if owner and owner:GetAttribute("RunState") == "Waiting" then
+						if sample.ApproachAt and os.clock() - sample.ApproachAt <= 4 then
+							startRun(owner, ball) -- it did roll in: start the run now
+						else
+							-- it got there some other way (glitch / exploit): back to spawn
+							local spawnPart = workspace:FindFirstChild("BallSpawn")
+							if spawnPart then
+								ball.AssemblyLinearVelocity = Vector3.zero
+								ball.CFrame = CFrame.new(spawnPart.Position + Vector3.new(0, ball.Size.Y / 2 + 1, 0))
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
 end
-
-
---------------------------------------------------
--- CHECK FINISH WALL
---------------------------------------------------
 
 local function checkFinishWall()
 

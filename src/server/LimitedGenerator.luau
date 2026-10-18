@@ -153,6 +153,8 @@ local function loadPlayer(player)
 	state.Busy = false
 	states[player] = state
 
+	require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
+
 	local ok, value = pcall(function()
 		return store:GetAsync(keyFor(player))
 	end)

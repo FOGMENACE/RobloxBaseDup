@@ -1738,11 +1738,10 @@ local generatorMultiplier, generatorName =
     getActiveGeneratorMultiplier(player, ball)
 
 -- Silent Game Pass multiplier (server-side only, no UI): applies
--- everywhere, not only on a generator. The higher of the two wins.
-generatorMultiplier = math.max(
-    generatorMultiplier,
-    GamePassService.GetSecretMultiplier(player)
-)
+-- everywhere and STACKS with the generator (it used to be "the higher of
+-- the two wins", which made every generator pay the same for pass owners).
+generatorMultiplier = generatorMultiplier
+    * GamePassService.GetSecretMultiplier(player)
 
 player:SetAttribute(
     "ActiveXPGenerator",

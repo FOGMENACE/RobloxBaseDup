@@ -125,8 +125,8 @@ local function summary(data)
 	end
 
 	return string.format(
-		"Level %s (global %s) | Wins %s | Rebirths %s | Oil %s | Balls %d | Equipped %s",
-		tostring(data.Level), tostring(data.GlobalLevel), tostring(data.Wins),
+		"Level %s (global %s) | Strike/Reach level %s | Wins %s | Rebirths %s | Oil %s | Balls %d | Equipped %s",
+		tostring(data.Level), tostring(data.GlobalLevel), tostring(data.RebirthLevelRequirement), tostring(data.Wins),
 		tostring(data.Rebirths), tostring(data.CurrentOil), balls, tostring(data.EquippedBall)
 	)
 end
@@ -347,7 +347,7 @@ commands.reset = function(admin, args)
 	local description = string.format("%d (%s)\nNOW: %s", id, online and ("online as " .. online.Name) or "offline", summary(data))
 
 	if args[2] == "dry" then
-		return true, "DRY RUN - nothing changed.\n" .. description .. "\nWOULD BECOME: Level 1, 0 wins, 0 rebirths, 0 oil, StraightBall only"
+		return true, "DRY RUN - nothing changed.\n" .. description .. "\nWOULD BECOME: Level 1, global level 1, Strike/Reach level 65 (base), 0 wins, 0 rebirths, 0 oil, StraightBall only, auto-rebirth off"
 	end
 
 	local code = tostring(math.random(1000, 9999))
@@ -373,6 +373,7 @@ commands.confirm = function(admin, args)
 	local id = action.UserId
 	local online = Players:GetPlayerByUserId(id)
 	local ok, detail
+	local beforeSummary = summary(online and PlayerDataService.GetData(online) or PlayerDataService.AdminRead(id))
 
 	if online then
 		ok, detail = PlayerDataService.AdminResetOnline(online)
@@ -390,8 +391,25 @@ commands.confirm = function(admin, args)
 		MessagingService:PublishAsync(TOPIC, HttpService:JSONEncode({ UserId = id, JobId = game.JobId }))
 	end)
 
+	-- The auto-rebirth switch lives in its own store; a reset turns it off.
+	pcall(function()
+		DataStoreService:GetDataStore("PlayerSettings_v1"):SetAsync("u_" .. id, { AutoRebirth = false })
+	end)
+	if online then
+		online:SetAttribute("AutoRebirth", false)
+	end
+
+	-- the tutorial starts again from step 1
+	local tutorialReset = game:GetService("ServerScriptService"):FindFirstChild("TutorialReset")
+	if tutorialReset then
+		tutorialReset:Fire(id)
+	end
+
+	-- Read the result back so the admin sees what is really stored now.
+	local after = online and PlayerDataService.GetData(online) or PlayerDataService.AdminRead(id)
+
 	log(admin, "reset", id, "OK backup=" .. tostring(detail))
-	return true, "RESET done for " .. id .. ". Backup key: " .. tostring(detail)
+	return true, "RESET done for " .. id .. ". Backup key: " .. tostring(detail) .. "\nBEFORE: " .. beforeSummary .. "\nNOW:    " .. summary(after)
 end
 
 --------------------------------------------------

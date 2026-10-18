@@ -15,11 +15,11 @@ local UiAssets = {}
 
 UiAssets.OilImages = {
 	-- assets/textures/dangerousblackoil spill.png
-	Black = "",
+	Black = "rbxassetid://97000428428004",
 	-- assets/textures/dangerousyellowdarkenoil spill.png
-	Yellow = "",
+	Yellow = "rbxassetid://87174949328054",
 	-- assets/textures/dangerousgreendarkenoil spill.png
-	Green = "",
+	Green = "rbxassetid://75803779771688",
 }
 
 UiAssets.TrophyImage = "rbxassetid://135956636242633"

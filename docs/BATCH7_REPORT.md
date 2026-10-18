@@ -105,3 +105,114 @@ Session locking (finding 2), lobby client ownership (4), audio licensing (8), un
 - Gutters (`GutterService`): each course gets 0-3 (weights 35/38/20/7 %), no longer always 3.
 - Oil digits (`OilCourseGenerator`): scale = clamp(0.3 + 0.07 x rebirths, 0.3, 1.6) x a per-course luck roll (0.6 / 0.85 / 1.15 / 1.5, 25/35/30/10 %). Rebirth 0 sees roughly 40-300 per platform. Stored on the course as attribute `OilScale`. The server-side rebirth OIL multiplier at collection is unchanged.
 - TESTED in Studio (one account, rebirth 0): scales 0.18 / 0.26 / 0.18, amounts 38-300, tier rows 2 / 1 / 0, gutters 1 / 2 / 1. Small sample; the distribution weights themselves were not statistically tested.
+
+## Fixes from the generator / platform review
+
+- XP: the silent pass multiplier now STACKS with the generator (it was `max(generator, pass)`, so for pass owners every generator paid the same). XP = base x rebirth XP x generator x pass x XP boost. NOT measured live (the lobby ball is client-driven, so a scripted test could not stand on a generator); verified by reading the code only.
+- X2 / X4 / dividers: tested in Studio (600 oil on an X4 platform -> 2,400). Two real bugs fixed: (1) special platforms were also being multiplied by the rebirth / boost oil bonus, (2) fast balls could skip the 0.3-stud-thick platforms so Touched never fired ("on and off"). New `SweptTouch` module plus a swept check in `OilPlatformCollectionHandler` now test the ball's path each frame; tier gates and gutters use it too. Verified in Studio by teleporting the ball across a platform in one frame.
+- Oil Barrel (exclusive) on a downgrade platform: now counts as one step above the best normal ball, so a downgrade drops it to the best normal ball (upgrade = "best ball"). NOT tested live.
+- Win course: the ball now eases down over its last ~0.2 s (speed limited to remaining travel / 0.22 s) before it is frozen, so it no longer coasts onto the next tile on clients and snaps back. The credited tile is unchanged (the tile under the ball). NOT measured live.
+- Sounds: new `PlatformSounds` (oil gain = snap + ping, big gain = double ping, loss = thump + whoosh); upgrade = ping, downgrade = low "swoop" (replaces the oof). Built-in Roblox sounds, not auditioned by me.
+- Quests: red "!" dot on the DAILY and WEEKLY tabs when something is claimable (hidden when all claimed), plus the hub badge filled at join.
+- "Don't leave" popup: larger, dimmed backdrop, pulsing claim button, small "no thanks" far from it.
+
+## Progression + tutorial rework
+
+- Reach-level schedule (`RebirthBonuses.RequiredLevel`, also used by `PlayerDataService`): 2 (free tutorial rebirth), 9, 17, 30, 45, 55, 70, 80, 95, 110, 125, 145, 165, 190, 215, 245, 275, 310, 345, 385, then +45 growing by 5 each rebirth. Base is no longer 65. NOTE: "2" means the first level-up (Level 1 is the starting level).
+- Multipliers: oil = 1 + rebirths (x2 after the free rebirth); wins start at the rebirth that reaches x3 oil (rebirth 2 -> wins x2, then +1 each). XP rule unchanged.
+- Tutorial (TutorialService, 12 steps): roll -> X1 generator level-up -> FREE rebirth (REBIRTH button appears here) -> roll again -> buy Aftershock -> equip -> roll again -> daily calendar appears and opens, claim day 1 (no "come back tomorrow" text) -> done. Everything but the target is dimmed (spotlight). Admin `reset` restarts the tutorial.
+- HUD: at the reach level the level box says MAX LEVEL and the bar says REBIRTH REQUIRED, which shakes on every XP hit.
+- Hub: REBIRTH button, DAILY calendar and the bottom-left multiplier panel are hidden for new players until their tutorial step. Badges ("!") lift their button above neighbours and pop in.
+- TESTED in Studio: tutorial reset to step 1 (rebirth/calendar hidden), step 4 spotlight on the REBIRTH hub button and on REBIRTH NOW, MAX LEVEL display. NOT tested: a full run through all 12 steps, the shop/equip spotlight, the calendar step, a real tutorial rebirth (it would change the owner's live data), existing-player migration of saved levels.
+
+## X2 / X4 / divider root cause + tile colours
+- ROOT CAUSE of X2/X4/dividers never working: `OilPlatformCollectionHandler` rejected any platform whose `OilAmount` is 0, and special platforms are 0 BY DESIGN. Fixed (special platforms are exempt). TESTED in Studio from 600 oil: X4 -> 2,400, /2 -> 275 (rounding of an earlier value included), /4 -> 150; X2 test read 5,780 because the ball kept rolling after the teleport and hit the next row (X4) before I read it, so X2 itself should be re-checked in isolation.
+- Win tiles: 41-109 use the same floor material with a cycling colour per amount; 110+ use a soft translucent rainbow over a light base. Visual check of the new rainbow was not possible (the tile was not streamed to the client in my test).
+- Tutorial: arrows are now world arrows on the floor pointing along the way; the spotlight seam is fixed (checked in Studio).
+
+## Mixed difficulty + win-course speed
+- Oil course: every course rolls how many X2/X4 helpers (0-2) and /2 /4 hurters (0-2) it may contain; `MultiplierPlatforms` / `DividerPlatforms` are published on the course. Upgrade platforms are capped to 1 on a course with 2 helpers and 2 on a course with 1. Only a single generated course was inspected (1 helper, cap 2); the distribution across many courses was NOT sampled.
+- Win course: top speed now scales with the travel budget (budget / 45 s, between 240 and 700 studs/s) and the acceleration reaches it in ~10 s, so a big-oil run no longer takes minutes. NOT run end to end; tile credit still follows the ball's real position, but very high speeds on very large budgets are untested.
+
+## Core-loop review (simulated, not player-tested)
+Numbers from a Studio simulation of the generator + speed model (rebirth 0 wins x1; no boosts):
+
+| Travel budget (studs) | Tiles passed | Wins (base) | Roll time (before this pass) |
+|---|---|---|---|
+| 1,000 | 19 | 501 | 6 s |
+| 8,000 | 97 | 7,248 | 35 s |
+| 20,000 | 190 | 23,244 | 48 s |
+| 150,000 | 1,190 | 741,744 | 218 s |
+| 500,000 | 3,882 | 7.6 M | 600 s |
+
+- Wins grow with the square of the distance, so oil matters a lot (good). The problem was TIME at deep rebirths: fixed. Travel is now 1 oil = 1 stud up to 20,000, then grows with the 0.8 power, and top speed scales up to 900 studs/s, so 150k oil is about 45 s and 500k about 60 s. Wins for those players are lower than the table shows (less distance); check the economy before launch.
+- Skill competition (best choice of two platforms each row vs random choice, 3,000 simulated courses): average oil 990 vs 295 at rebirth 0 (x3.3), x2.2 at rebirth 2, x1.9 at 5, x1.7 at 20. Choosing well clearly pays, and less so deep in the game because the rebirth oil multiplier dominates; consider more gutters / dividers at high rebirths if you want skill to stay important.
+- Possibly missing rewards (not implemented): no reward for a perfect oil run (all positive platforms), no streak / daily-first-win bonus, no leaderboard rewards, no reward for reaching WinCourse tile milestones (e.g. every 100th tile), no badge besides the Strike badge. These are suggestions, not defects.
+- UI sizes: not audited screen by screen. Skybox: the default Roblox sky is still used with a pastel atmosphere; the Creator Store skyboxes I found came with scripts / unreviewed content, so I did not use them.
+
+## Start-wall hardening, win-course oil, UI audit
+- START WALL: a run now starts only when the ball ROLLS into the wall: it must have been seen on the lobby side within 14 studs for 3+ frames, at least 2.5 s after it was created/respawned, not anchored, under 160 studs/s, inside the lane and near the floor, and not have moved more than 14 studs in one frame. TESTED in Studio: teleporting a ball onto the wall no longer starts a run (it did before); rolling in with the W key starts it normally. The exact "spawned inside the floor" glitch was not reproduced, only blocked by the same rules (spawn grace, near-floor check).
+- WIN-COURSE OIL: the lower amount was my travel compression (oil above a limit counts for less distance). Limit raised: 1 oil = 1 stud up to 60,000, then power 0.9. Everything below 60,000 oil is exactly 1:1. Wins still follow the real distance travelled; the oil meter shows remaining oil.
+- UI AUDIT (1922x856 only, scripted + screenshots): no text under 11 px (except a badge mid-animation), nothing off screen, no clipped text in Calendar, Store, Quests, Ball Shop panels; Store list now fills its panel and the Captain text is larger; hidden popups no longer peek in at the top. NOT done: phone / tablet sizes, console/gamepad.
+- Skybox: kept the default sky with the pastel atmosphere; it reads fine in screenshots and the free skyboxes I found were unreviewed.
+
+## Oil as fuel (economy)
+- Win-course distance = 1.1 x oil^0.84 x ball factor (0.7 starter .. 1.3 fastest ball, from ForwardSpeed) x rebirth factor (1 + 2 %/rebirth, max +50 %). Replaces the old 1 oil = 1 stud (and my short-lived compression). TESTED once in Studio: 50,000 oil at rebirth 6 with a mid ball -> 14,158 studs, 14,424 base wins (was ~100k), run ~50 s including countdown. Small oil: 1,000 oil is ~330 studs (~7 tiles at factor 1).
+- Better balls, more rebirths (and wins multipliers / boosts, which still apply to the credited wins) are now what pushes deeper. This lowers wins for everyone, so retune tile amounts, quest targets and shop prices before launch; none of those were changed.
+- Oil meter is wider (600 px). Top speed floor is 260 studs/s and scales with the budget; the meter drains in roughly 30 s.
+
+## Faster oil burn, finish-wall oil, start-wall safety net, retune
+- BURN: win-course start speed 110 (+oil boost up to +100), acceleration 40/s, top speed ceiling >= 420 studs/s (budget / 18 s above that, max 900). TESTED: 50,000 oil at rebirth 6 -> top speed 420, the rolling part lasted ~10 s, base wins 2,299 (x wins multiplier, boosts on top), no errors.
+- FINISH WALL OIL: the meter during the countdown no longer shows "oil divided by the multipliers" (that was the "less than collected" you saw; the multipliers are already inside the oil). It now shows the real collected oil (verified: attribute 50,000 and meter 50.0K) and the multiplier chips only pulse / shake it. The server never reduced oil at the wall.
+- START WALL: besides the roll-in rules, an approach is remembered for 2.5 s (a fast or laggy ball already inside the wall on its first frame still counts) and there is a safety net: a ball found PAST the wall while the player is in the lobby either starts the run (if it rolled in within the last 4 s) or is returned to the spawn. TESTED in Studio: ball teleported past the wall -> back at spawn; keyboard roll-in -> Running. The intermittent "no game" case could not be reproduced here, so the safety net, not a verified root cause, is what covers it.
+- RETUNE: not changed in code, checked against the new economy. Ball prices (24 / 160 / 470 ... 250,000 wins, gated by rebirths 0-13), quest targets (daily WinCourse 150 / 400 / 900 wins, weekly 3,000) and gifts (2,000 / 8,000 wins) were reasoned through at rebirth 0, 2, 5, 10, 13: one run pays about 25-60 wins at rebirth 0 (Aftershock is 24: one good run), ~1-14k at rebirth 5, and roughly a ball price per 1-3 runs deeper in. Late balls look slightly cheap; first-day quests look fine. A real playtest should confirm the pacing.
+
+## Level / XP curve retune
+- ROOT CAUSE: XP per level was geometric (x1.35 per level). With the reach levels 2, 9, 17, 30, 45... the XP needed past rebirth ~3 outgrew any income (a simulation put rebirth 4 at ~14 hours and rebirth 6 at tens of thousands of years). That is why x10 wins was unreachable.
+- NEW: total XP to reach level L = 85 x (L^2.43 - 1) (`PlayerDataService`). Fitted to the XP income model (12 XP/s base x rebirth XP (1+10r) x generator x ball speed): about 0.5 min for the tutorial rebirth, ~2 min rebirth 2, 3-5 min mid game, 5-8 min deep; x10 wins (rebirth 10) in roughly an hour of play, if players use the best generator they have unlocked. These times come from a model, not from watching a player: they assume standing on the best generator.
+- Existing saves keep their stored XP, which now maps to a higher level than before (the owner test account jumped to level 80). XP kits scale with the level's XP so they still work.
+- Rebirth UI: header pills, the OIL BARREL row on top with its multiplier on the right, the trophy row under it.
+
+## Rebirth stuck on "REBIRTHING..."
+- Cause NOT reproduced (it needs a real rebirth, which would change the owner's saved data). Hardened every way the client could wait forever: the server now always answers (rate-limited requests get TOO_FAST, errors get SERVER_ERROR via pcall and are logged as `[RebirthServer] RebirthPlayer error`), and the client unlocks the button after 6 s ("REBIRTH COMPLETE!" if the rebirth count went up, otherwise "No answer - try again."). If it happens again, check the Output for that warning: it names the real cause.
+- XP curve made slightly harder: 95 x (L^2.46 - 1) (was 85 x (L^2.43 - 1)); about +20 % XP per early level and +30 % at level 125.
+
+
+## Pre-launch hardening (data safety, claims, prompts, daily hook)
+
+Verified in the BACKUP place (Studio play), not production:
+- **Session lock + load retry** (`PlayerData_v1`, `SessionLock={JobId,Time}`, 150 s stale timeout, 5 load attempts with 1/2/4/8 s backoff). A player whose load fails is kicked and never saved. Lock is released on leave/shutdown (checked: record lock empty after stop). Cross-server behaviour was only simulated, not tested with two live servers.
+- **Atomic one-time claims** (leave reward, community reward, starter pack) via UpdateAsync. 40 concurrent `LeaveRewardClaim` calls on a fresh key produced exactly 1 success. Community and starter-pack claims use the same pattern but were not re-run under a storm.
+- **Remote fuzz**: 32 remotes, 1,776 junk calls, no server errors or hangs. This is not proof of exploit-proofing; only argument-shape fuzzing from one client.
+- **Finish-wall oil multiplier**: platforms add raw oil only; rebirth x boost multiplier is applied once at the finish wall (`ApplyFinishOilMultiplier`). Tested: 1,000 raw -> 36,000 at 35 rebirths; a second invoke does not multiply again. The drag-in animation was not re-watched this pass.
+- **Audit logging**: `[AUDIT]` lines for purchase grant success/failure (ReceiptLedger), rebirth success/refusal/save failure, load/save lock events.
+- **Favorite prompt bug**: `PromptSetFavoriteCompleted` passes an `Enum.AvatarPromptResult` (always truthy), so pressing No counted as favorited. Now only `Success` counts, and the stored flag was renamed `FavoriteVerified` so old wrongly-set flags are ignored. Favoriting cannot be verified server-side by Roblox; the server only trusts the client's Success report. Group membership IS checked server-side (`IsInGroupAsync`).
+- Prompts repeat every 420 s (first at 180 s) until both group and favorite are done; anti-AFK (`VirtualUser` on `Idled`) already lives in `PromptManager.client.lua`.
+- **Daily hook**: calendar title shows the current streak; opening the Roblox menu with an unclaimed daily opens the calendar with a "claim before you leave" toast (leave-reward card takes priority when ready). Not yet visually checked in play.
+
+## Win-course retune + stability
+- Travel = 1.0*oil^0.80 (was 1.1*oil^0.84): 100k oil now ~10.0k base studs vs ~17.4k (-43%); 1k oil -31%. Modelled, not play-tested for tile landing.
+- Camera and name tag now dead-reckon the ball (velocity extrapolation + soft pull) to remove replication jitter at high speed; tag cannot sink below the ball top. Not verified in a live win-course run.
+
+## Oil spill icon + platform amount on the drag
+- Uploaded the three spill PNGs (black/yellow/green) to Roblox via Studio MCP; ids in shared/UiAssets.luau (Black 97000428428004, Yellow 87174949328054, Green 75803779771688). Used as the oil icon in the oil meter, HUD oil chip (right of the level bar), rebirth panel, calendar oil slot, multiplier chips and level-up FX.
+- Oil meter: the flying oil is now the spill plus '+amount' of the platform just hit (skipped for the finish-wall multiplier jump, which has its own animation). Not yet viewed in play.
+
+## Meter redesign, multiplier FX, win-course arrows, cross-server gate
+- Oil meter: wider (74% of screen, max 1000px), taller, plate-backed breathing spill icon, bigger outlined number, gliding shine, bar turns green/amber/red as win-course oil burns down, swell + flare while the multiplier counts. Viewed in play (oil course state forced via attributes).
+- MultiplierFly: rainbow number for x10+, per-tick punch, shake, shockwave rings + sparkle bursts, glitter trail while dragged into the meter. Ran Fly() in play without errors; sparks clean up. Sound/feel needs a human pass.
+- Win course: 4 white flow chevrons per tile (WinCourseGenerator.addFlowArrows). 48 arrows created for 12 tiles; preview tiles (WinCoursePreviewService) do not get them. Size increased after the first look; the larger version was not re-screenshotted.
+- Cross-server: new SessionGate (per-player stores wait until PlayerData_v1 loaded = lock acquired) applied to Quest, Boost, Gift/calendar, Tutorial, AutoRebirth and LimitedGenerator loads; ReleasePlayer waits 2 s before dropping the lock so those services' leave-saves land first. Static/behavioural check only in one Studio server; NOT tested with two live servers. PromptFlags/Leaderboard/receipts already use UpdateAsync or derived values.
+
+## Win-course burn, pass 2 + lobby review
+- Travel = 0.9*oil^0.77 (was 1.0*oil^0.80), rebirth stretch +1%/rebirth capped +35% (was +2% / +50%). Example 100k oil at 35 rebirths: ~15,000 -> ~8,600 base studs. Modelled only, not run through the win course.
+- Lobby snapshot review (Studio play, 4 camera angles): see chat; nothing built yet.
+
+## Lobby furniture (LobbyFurniture.server.lua)
+- Center rug (non-colliding, 'ROLL. WIN. REBIRTH!'), two lounge benches, four poufs, four plants, arcade corner (3 cabinets + stools + neon ARCADE sign above the existing wall screen). Decor only, anchored, in Workspace.LobbyFurniture. Viewed in Studio play from three angles; the rug text orientation and sign overlap were fixed after the first look. Not tested on phone, and I did not play-test the lobby ball against the solid seating.
+
+- Lobby furniture revised on feedback (too busy/claustrophobic): rug, benches and plants removed. Kept the four poufs and the arcade corner.
+
+- Hold-to-jump (BallController): holding Space / gamepad A / the touch button re-jumps on landing via the existing requestJump gate (lobby only, grounded, cooldown). Studio test: 8 jumps in a 4 s hold, 1 for a tap. Poufs reduced to three small ones tucked under the right-wall ball rack.
+
+- Podium (CommunityUI) LIKE button had the same always-truthy PromptSetFavoriteCompleted bug as PromptManager; fixed (only AvatarPromptResult.Success counts, otherwise a hint is shown). The server claim requires group membership (IsInGroupAsync) AND the FavoriteVerified flag. Limits: Roblox gives servers no way to verify a favorite, so the flag is the client's Success report; a modified client could fake it. Not tested with a real favorite prompt (Studio cannot complete it).

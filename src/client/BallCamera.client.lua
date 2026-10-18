@@ -212,16 +212,16 @@ local CAMERA_SMOOTHNESS =
 --------------------------------------------------
 
 local COURSE_DISTANCE =
-	17
+	21
 
 local COURSE_HEIGHT =
-	12
+	16
 
 local COURSE_LOOK_AHEAD =
-	11
+	18
 
 local COURSE_LOOK_HEIGHT =
-	0.5
+	1
 
 local COURSE_FOV =
 	70
@@ -813,13 +813,32 @@ end
 -- It is completely independent.
 --------------------------------------------------
 
+-- The server-owned ball replicates in steps, which at hundreds of studs/s
+-- makes a camera glued to ball.Position shake. Track a locally integrated
+-- position (velocity dead-reckoning) that is gently pulled to the real one.
+local courseTrack = nil
+local courseTrackBall = nil
+local courseTrackVelocity = Vector3.zero
+
 local function updateCourseCamera(
 	ball,
 	deltaTime
 )
 
-	local ballPosition =
-		ball.Position
+	local realPosition = ball.Position
+	local velocity = ball.AssemblyLinearVelocity
+
+	if courseTrackBall ~= ball or not courseTrack or (courseTrack - realPosition).Magnitude > 40 then
+		courseTrackBall = ball
+		courseTrack = realPosition
+		courseTrackVelocity = velocity
+	end
+
+	courseTrackVelocity = courseTrackVelocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+	courseTrack = courseTrack + courseTrackVelocity * deltaTime
+	courseTrack = courseTrack:Lerp(realPosition, 1 - math.exp(-5 * deltaTime))
+
+	local ballPosition = courseTrack
 
 
 	--------------------------------------------------

@@ -92,6 +92,8 @@ local function loadPlayer(player)
 	}
 	states[player] = state
 
+	require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
+
 	local ok, value = pcall(function()
 		return calendarStore:GetAsync(calendarKey(player))
 	end)

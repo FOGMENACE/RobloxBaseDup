@@ -117,6 +117,7 @@ function ReceiptLedger.Consume(player, receiptInfo, grantFunction, onConfirmed)
 
 	if not ReceiptLedger.IsPending(purchaseId) then
 		if not grantFunction() then
+			warn("[AUDIT] purchase grant FAILED (receipt stays pending):", player.Name, player.UserId, "product", receiptInfo.ProductId, "purchase", purchaseId)
 			return false
 		end
 		ReceiptLedger.MarkPending(purchaseId)
@@ -132,6 +133,7 @@ function ReceiptLedger.Consume(player, receiptInfo, grantFunction, onConfirmed)
 	end
 
 	ReceiptLedger.ClearPending(purchaseId)
+	print("[AUDIT] purchase granted+recorded:", player.Name, player.UserId, "product", receiptInfo.ProductId, "purchase", purchaseId)
 
 	if onConfirmed then
 		task.spawn(onConfirmed, player)

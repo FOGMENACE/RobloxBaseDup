@@ -213,61 +213,70 @@ round(rewardCard, 16)
 local function column(x, title, tint)
 	local holder = create("Frame", {
 		Position = UDim2.fromOffset(x, 10),
-		Size = UDim2.fromOffset(170, 148),
+		Size = UDim2.fromOffset(160, 148),
 		BackgroundColor3 = tint,
 		BackgroundTransparency = 0.82,
 	}, rewardCard)
 	round(holder, 14)
 
+	-- header pill
+	local header = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 8),
+		Size = UDim2.fromOffset(136, 26),
+		BackgroundColor3 = tint,
+		BackgroundTransparency = 0.25,
+	}, holder)
+	round(header, 13)
 	label({
-		Size = UDim2.new(1, 0, 0, 24),
-		Position = UDim2.fromOffset(0, 4),
+		Size = UDim2.fromScale(1, 1),
 		Text = title,
 		TextColor3 = CREAM,
-		TextSize = 16,
-		StrokeThickness = 2,
+		TextSize = 15,
+		StrokeThickness = 2.5,
+	}, header)
+
+	-- row 1: OIL BARREL icon, then its multiplier on the right
+	local oilIcon = label({
+		Position = UDim2.fromOffset(8, 42),
+		Size = UDim2.fromOffset(56, 48),
+		Text = "🛢️",
+		TextColor3 = INK,
+		TextSize = 42,
+		StrokeThickness = 0,
+	}, holder)
+	local oilText = label({
+		Position = UDim2.fromOffset(66, 42),
+		Size = UDim2.fromOffset(88, 48),
+		Text = "x1",
+		TextColor3 = Color3.fromRGB(205, 175, 255),
+		TextSize = 34,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		StrokeThickness = 3,
 	}, holder)
 
-	-- wins (trophy)
-	create("ImageLabel", {
-		Position = UDim2.fromOffset(14, 34),
-		Size = UDim2.fromOffset(44, 44),
+	-- row 2 (under it): TROPHY icon, then the wins multiplier on the right
+	local winsIcon = create("ImageLabel", {
+		Position = UDim2.fromOffset(12, 94),
+		Size = UDim2.fromOffset(46, 46),
 		BackgroundTransparency = 1,
 		Image = UiAssets.TrophyImage,
 		ScaleType = Enum.ScaleType.Fit,
 	}, holder)
 	local winsText = label({
-		Position = UDim2.fromOffset(64, 34),
-		Size = UDim2.fromOffset(98, 44),
+		Position = UDim2.fromOffset(66, 94),
+		Size = UDim2.fromOffset(88, 46),
 		Text = "x1",
-		TextColor3 = CREAM,
-		TextSize = 30,
+		TextColor3 = Color3.fromRGB(255, 226, 120),
+		TextSize = 34,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		StrokeThickness = 3,
 	}, holder)
 
-	-- oil (barrel)
-	label({
-		Position = UDim2.fromOffset(12, 86),
-		Size = UDim2.fromOffset(48, 48),
-		Text = "🛢️",
-		TextColor3 = INK,
-		TextSize = 36,
-		StrokeThickness = 0,
-	}, holder)
-	local oilText = label({
-		Position = UDim2.fromOffset(64, 86),
-		Size = UDim2.fromOffset(98, 48),
-		Text = "x1",
-		TextColor3 = CREAM,
-		TextSize = 30,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, holder)
-
-	return winsText, oilText
+	return winsText, oilText, winsIcon, oilIcon
 end
-
-local nowWins, nowOil = column(14, "NOW", Color3.fromRGB(200, 200, 230))
-local nextWins, nextOil = column(268, "AFTER REBIRTH", GREEN)
+local nowWins, nowOil, nowWinsIcon, nowOilIcon = column(14, "NOW", Color3.fromRGB(200, 200, 230))
+local nextWins, nextOil, nextWinsIcon, nextOilIcon = column(260, "AFTER REBIRTH", GREEN)
 
 label({
 	AnchorPoint = Vector2.new(0.5, 0.5),
@@ -283,6 +292,7 @@ label({
 --------------------------------------------------
 
 local rebirthButton = create("TextButton", {
+	Name = "RebirthNowButton",
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 404),
 	Size = UDim2.fromOffset(300, 62),
@@ -296,6 +306,39 @@ local rebirthButton = create("TextButton", {
 round(rebirthButton, 16)
 stroke(rebirthButton, 4)
 Shine.Attach(rebirthButton, { Offset = 0.5 })
+
+-- During the tutorial the first rebirth is FREE: a gold tag hangs over the
+-- button (TutorialStep 4, TutorialService).
+local freeTag = create("TextLabel", {
+	Name = "FreeTag",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 0, 398),
+	Size = UDim2.fromOffset(170, 50),
+	BackgroundColor3 = Color3.fromRGB(255, 205, 60),
+	Font = FONT,
+	Text = "FREE!",
+	TextColor3 = Color3.fromRGB(30, 20, 60),
+	TextSize = 36,
+	Visible = false,
+	ZIndex = 30,
+}, panel)
+round(freeTag, 14)
+
+local freeTagScale = create("UIScale", { Scale = 1 }, freeTag)
+
+local function refreshFreeTag()
+	freeTag.Visible = player:GetAttribute("TutorialStep") == 4
+end
+player:GetAttributeChangedSignal("TutorialStep"):Connect(refreshFreeTag)
+refreshFreeTag()
+task.spawn(function()
+	while true do
+		task.wait()
+		if freeTag.Visible then
+			freeTagScale.Scale = 1 + math.sin(os.clock() * 6) * 0.07
+		end
+	end
+end)
 
 local statusLabel = label({
 	AnchorPoint = Vector2.new(0.5, 0),
@@ -391,7 +434,7 @@ local busy = false
 local function refreshUI()
 	local level = math.floor(player:GetAttribute("Level") or 1)
 	local rebirths = player:GetAttribute("Rebirths") or 0
-	local requirement = math.max(player:GetAttribute("RebirthLevelRequirement") or 65, 2)
+	local requirement = math.max(player:GetAttribute("RebirthLevelRequirement") or 2, 2)
 	local levelProgress = player:GetAttribute("LevelProgress") or 0
 	local canRebirth = player:GetAttribute("RebirthMaxReached") == true
 	skipButton.Visible = not canRebirth
@@ -418,6 +461,13 @@ local function refreshUI()
 	nowOil.Text = "x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths))
 	nextWins.Text = "x" .. formatNumber(RebirthBonuses.WinsMultiplier(rebirths + 1))
 	nextOil.Text = "x" .. formatNumber(RebirthBonuses.OilMultiplier(rebirths + 1))
+
+	-- The wins multiplier is a surprise: it stays hidden until a rebirth that
+	-- actually grants it (rebirth 2), then the rows appear.
+	local showWins = RebirthBonuses.WinsMultiplier(rebirths + 1) > 1 or RebirthBonuses.WinsMultiplier(rebirths) > 1
+	for _, object in ipairs({ nowWins, nextWins, nowWinsIcon, nextWinsIcon }) do
+		object.Visible = showWins
+	end
 
 	if busy then
 		rebirthButton.Text = "REBIRTHING..."
@@ -460,6 +510,23 @@ rebirthButton.Activated:Connect(function()
 	refreshUI()
 	statusLabel.Text = "Processing rebirth..."
 	statusLabel.TextColor3 = GOLD
+
+	-- never stay stuck: if no answer arrives, unlock the button after a few
+	-- seconds (the rebirth count tells us whether it went through)
+	local rebirthsBefore = player:GetAttribute("Rebirths") or 0
+	task.delay(6, function()
+		if busy then
+			busy = false
+			refreshUI()
+			if (player:GetAttribute("Rebirths") or 0) > rebirthsBefore then
+				statusLabel.Text = "REBIRTH COMPLETE!"
+				statusLabel.TextColor3 = GREEN
+			else
+				statusLabel.Text = "No answer - try again."
+				statusLabel.TextColor3 = RED
+			end
+		end
+	end)
 
 	local success, err = pcall(function()
 		rebirthRemote:FireServer("Rebirth")
