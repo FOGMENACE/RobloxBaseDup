@@ -481,7 +481,7 @@ for _, entry in ipairs({ { "GlobalBadge", 44 }, { "LevelPanel", 20 }, { "OilChip
 			Position = panel.Position + UDim2.fromOffset(0, 6),
 			Size = panel.Size,
 			BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = 0.62,
+			BackgroundTransparency = 0.82,
 			ZIndex = 0,
 		}, hud)
 		round(shadow, entry[2])

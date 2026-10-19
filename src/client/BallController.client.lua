@@ -918,21 +918,25 @@ if UserInputService.TouchEnabled and not getControls() then
 		local f = Instance.new("Frame")
 		f.AnchorPoint = Vector2.new(0.5, 0.5)
 		f.Size = UDim2.fromOffset(size, size)
-		f.BackgroundColor3 = Color3.fromRGB(255, 247, 232)
+		f.BackgroundColor3 = Color3.new(1, 1, 1)
 		f.BackgroundTransparency = transparency
 		f.BorderSizePixel = 0
 		f.Parent = sGui
 		Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
 		local s = Instance.new("UIStroke")
-		s.Color = Color3.fromRGB(24, 22, 34)
-		s.Transparency = 0.4
-		s.Thickness = 2
+		s.Color = Color3.new(1, 1, 1)
+		s.Transparency = 0.8 -- faint at rest; brightened while held
+		s.Thickness = 3
 		s.Parent = f
 		return f
 	end
 
-	local base = circle(STICK_RADIUS * 2, 0.9)
-	local knob = circle(54, 0.7)
+	-- Light and see-through so it never darkens the game: the base is just a thin
+	-- ring (no fill), the knob a faint white disc.
+	local base = circle(STICK_RADIUS * 2, 1)
+	local knob = circle(54, 0.88)
+	local baseStroke = base:FindFirstChildOfClass("UIStroke")
+	local knobStroke = knob:FindFirstChildOfClass("UIStroke")
 	local restPos = UDim2.new(0, 110, 1, -110)
 	base.Position = restPos
 	knob.Position = restPos
@@ -945,8 +949,9 @@ if UserInputService.TouchEnabled and not getControls() then
 		stickX, stickZ = 0, 0
 		base.Position = restPos
 		knob.Position = restPos
-		base.BackgroundTransparency = 0.9
-		knob.BackgroundTransparency = 0.7
+		knob.BackgroundTransparency = 0.88
+		baseStroke.Transparency = 0.8
+		knobStroke.Transparency = 0.8
 	end
 
 	local function drag(pos)
@@ -975,8 +980,9 @@ if UserInputService.TouchEnabled and not getControls() then
 		activeTouch = input
 		origin = Vector2.new(input.Position.X, input.Position.Y)
 		base.Position = UDim2.fromOffset(origin.X, origin.Y)
-		base.BackgroundTransparency = 0.6
-		knob.BackgroundTransparency = 0.3
+		knob.BackgroundTransparency = 0.55
+		baseStroke.Transparency = 0.35
+		knobStroke.Transparency = 0.35
 		drag(origin)
 	end)
 
@@ -1006,11 +1012,12 @@ if UserInputService.TouchEnabled then
 	button.Name = "JumpButton"
 	button.AnchorPoint = Vector2.new(1, 1)
 	button.Position = UDim2.new(1, -24, 1, -24)
-	button.Size = UDim2.fromOffset(84, 84)
-	button.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-	button.BackgroundTransparency = 0.25
+	button.Size = UDim2.fromOffset(76, 76)
+	-- light and mostly see-through (was a dark disc that covered the lane)
+	button.BackgroundColor3 = Color3.fromRGB(255, 247, 232)
+	button.BackgroundTransparency = 0.45
 	button.Text = "JUMP"
-	button.TextColor3 = Color3.new(1, 1, 1)
+	button.TextColor3 = Color3.fromRGB(24, 22, 34)
 	button.Font = Enum.Font.GothamBold
 	button.TextSize = 18
 	button.Parent = gui
