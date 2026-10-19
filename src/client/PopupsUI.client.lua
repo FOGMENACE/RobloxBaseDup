@@ -156,7 +156,7 @@ x6Holder.Position = randomSpot()
 
 task.spawn(function()
 	while true do
-		if player:GetAttribute("X6Mode") == "Ready" and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
+		if player:GetAttribute("X6Mode") == "Ready" and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
 			x6Holder.Position = randomSpot()
 			x6Holder.Visible = true
 			x6Scale.Scale = 0
@@ -164,7 +164,7 @@ task.spawn(function()
 			ding()
 
 			local sinceMove = 0
-			while player:GetAttribute("X6Mode") == "Ready" and (player:GetAttribute("RunState") or "Waiting") == "Waiting" do
+			while player:GetAttribute("X6Mode") == "Ready" and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" do
 				task.wait(0.25)
 				sinceMove += 0.25
 
@@ -212,73 +212,117 @@ local leaveDim = create("TextButton", {
 local leaveFrame = create("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(660, 430),
-	BackgroundColor3 = Color3.fromRGB(52, 36, 140),
+	Size = UDim2.fromOffset(660, 400),
+	BackgroundColor3 = Color3.fromRGB(35, 37, 39), -- the dark grey of Roblox's own menus
 	Visible = false,
 	ZIndex = 50,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 36) }, leaveFrame)
-create("UIStroke", { Color = Color3.fromRGB(255, 214, 70), Thickness = 7 }, leaveFrame)
-create("UIGradient", {
-	Color = ColorSequence.new(Color3.fromRGB(96, 64, 210), Color3.fromRGB(34, 22, 96)),
-	Rotation = 90,
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, leaveFrame)
+local leaveStroke = create("UIStroke", {
+	Color = Color3.fromRGB(86, 88, 94),
+	Thickness = 2,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 }, leaveFrame)
 local leaveScale = create("UIScale", { Scale = 0 }, leaveFrame)
 
-local function label(text, y, h, size, color, parent)
-	local l = create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 10, 0, y),
-		Size = UDim2.new(1, -20, 0, h),
-		Font = FONT,
-		Text = text,
-		TextColor3 = color,
-		TextSize = size,
-		TextWrapped = true,
-		ZIndex = 51,
-	}, parent)
-	create("UIStroke", { Color = INK, Thickness = 4 }, l)
+-- big enough to be unmissable (and not hidden behind Roblox's own menu): about
+-- 80% of the screen width / 85% of its height at most
+local function leaveTarget()
+	local size = gui.AbsoluteSize
+	return math.clamp(math.min(size.X * 0.8 / 660, size.Y * 0.85 / 400), 0.7, 1.5)
+end
+
+local function label(text, props, parent)
+	props.BackgroundTransparency = 1
+	props.Font = FONT
+	props.Text = text
+	props.ZIndex = props.ZIndex or 52
+	local l = create("TextLabel", props, parent)
+	if props.NoStroke ~= true then
+		create("UIStroke", { Color = Color3.fromRGB(18, 19, 21), Thickness = 1.5, Transparency = 0.2 }, l)
+	end
 	return l
 end
 
-local leaveHeader = label("WAIT! DON'T LEAVE!", 22, 74, 62, Color3.fromRGB(255, 226, 80), leaveFrame)
-label("Stay and grab a FREE gift:", 104, 34, 26, CREAM, leaveFrame)
-label("+360 WINS", 142, 74, 64, Color3.fromRGB(120, 255, 150), leaveFrame)
-label("+ x4 XP for 8 minutes", 222, 44, 32, Color3.fromRGB(255, 160, 225), leaveFrame)
+local leaveHeader = label("WAIT! DON'T LEAVE!", {
+	Position = UDim2.fromOffset(20, 34),
+	Size = UDim2.new(1, -40, 0, 64),
+	TextColor3 = Color3.fromRGB(255, 72, 72),
+	TextSize = 52,
+}, leaveFrame)
+label("You're about to miss your free gift!", {
+	Position = UDim2.fromOffset(20, 98),
+	Size = UDim2.new(1, -40, 0, 30),
+	Font = Enum.Font.GothamBold,
+	TextColor3 = Color3.fromRGB(255, 120, 120),
+	TextSize = 20,
+}, leaveFrame)
+
+-- the gift
+local gift = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 144),
+	Size = UDim2.new(1, -72, 0, 122),
+	BackgroundColor3 = Color3.fromRGB(57, 59, 61),
+	ZIndex = 51,
+}, leaveFrame)
+create("UICorner", { CornerRadius = UDim.new(0, 14) }, gift)
+create("UIStroke", { Color = Color3.fromRGB(86, 88, 94), Thickness = 1.5 }, gift)
+label("FREE GIFT", {
+	Position = UDim2.fromOffset(0, 8),
+	Size = UDim2.new(1, 0, 0, 22),
+	Font = Enum.Font.GothamBold,
+	TextColor3 = Color3.fromRGB(190, 192, 198),
+	TextSize = 15,
+}, gift)
+label("+360 WINS", {
+	Position = UDim2.fromOffset(0, 28),
+	Size = UDim2.new(1, 0, 0, 56),
+	TextColor3 = Color3.fromRGB(120, 255, 150),
+	TextSize = 50,
+}, gift)
+label("+ x4 XP for 8 minutes", {
+	Position = UDim2.fromOffset(0, 84),
+	Size = UDim2.new(1, 0, 0, 30),
+	TextColor3 = Color3.fromRGB(255, 170, 230),
+	TextSize = 24,
+}, gift)
 
 local leaveClaimButton = create("TextButton", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 282),
-	Size = UDim2.fromOffset(420, 92),
+	Position = UDim2.new(0.5, 0, 0, 292),
+	Size = UDim2.fromOffset(380, 76),
 	BackgroundColor3 = GREEN,
 	Font = FONT,
 	Text = "CLAIM & STAY!",
 	TextColor3 = CREAM,
-	TextSize = 44,
-	ZIndex = 51,
+	TextSize = 36,
+	AutoButtonColor = false,
+	ZIndex = 52,
 }, leaveFrame)
-create("UICorner", { CornerRadius = UDim.new(0, 28) }, leaveClaimButton)
-create("UIStroke", { Color = INK, Thickness = 5 }, leaveClaimButton)
+create("UICorner", { CornerRadius = UDim.new(0, 14) }, leaveClaimButton)
+create("UIStroke", { Color = INK, Thickness = 2, Transparency = 0.2 }, leaveClaimButton)
 create("UIGradient", {
-	Color = ColorSequence.new(Color3.fromRGB(130, 240, 140), Color3.fromRGB(48, 170, 80)),
+	Color = ColorSequence.new(Color3.fromRGB(100, 220, 120), Color3.fromRGB(48, 170, 80)),
 	Rotation = 90,
 }, leaveClaimButton)
 local claimPulse = create("UIScale", { Scale = 1 }, leaveClaimButton)
 Shine.Attach(leaveClaimButton, { Offset = 0 })
 
--- small and far from the big button on purpose
+-- small, grey and easy to overlook on purpose: top-right corner
 local leaveNo = create("TextButton", {
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 392),
-	Size = UDim2.fromOffset(200, 28),
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -10, 0, 8),
+	Size = UDim2.fromOffset(24, 24),
 	BackgroundTransparency = 1,
-	Font = FONT,
-	Text = "no thanks",
-	TextColor3 = Color3.fromRGB(190, 190, 225),
-	TextSize = 16,
-	ZIndex = 51,
+	Font = Enum.Font.GothamMedium,
+	Text = "X",
+	TextColor3 = Color3.fromRGB(110, 112, 118),
+	TextTransparency = 0.45,
+	TextSize = 14,
+	AutoButtonColor = false,
+	ZIndex = 52,
 }, leaveFrame)
-
 -- the headline bobs and the claim button pulses while it is open
 RunService.RenderStepped:Connect(function()
 	if not leaveFrame.Visible then
@@ -286,7 +330,10 @@ RunService.RenderStepped:Connect(function()
 	end
 	local t = os.clock()
 	claimPulse.Scale = 1 + math.sin(t * 5) * 0.035
-	leaveHeader.Rotation = math.sin(t * 3) * 1.2
+	leaveHeader.TextSize = 50 + math.sin(t * 6) * 1.5
+	-- urgent: the border breathes between the menu grey and alarm red
+	local k = (math.sin(t * 5) + 1) / 2
+	leaveStroke.Color = Color3.fromRGB(86, 88, 94):Lerp(Color3.fromRGB(255, 60, 60), k)
 end)
 
 local function setLeaveOpen(open)
@@ -297,7 +344,7 @@ local function setLeaveOpen(open)
 		leaveFrame.Visible = true
 		leaveClaimButton.Text = "CLAIM & STAY!"
 		leaveScale.Scale = 0.3
-		tweenScale(leaveScale, 1, 0.4)
+		tweenScale(leaveScale, leaveTarget(), 0.4)
 		ding()
 	else
 		TweenService:Create(leaveDim, TweenInfo.new(0.2), { BackgroundTransparency = 1 }):Play()
@@ -339,7 +386,7 @@ end)
 
 GuiService.MenuOpened:Connect(function()
 	local nextAt = player:GetAttribute("LeaveRewardNextAt")
-	if typeof(nextAt) == "number" and os.time() >= nextAt and not leaveFrame.Visible then
+	if typeof(nextAt) == "number" and os.time() >= nextAt and not leaveFrame.Visible and player:GetAttribute("SettingPopups") ~= false then
 		setLeaveOpen(true)
 	end
 end)
@@ -377,41 +424,147 @@ end)
 
 --------------------------------------------------
 -- CAPTAIN ANNOUNCEMENT (everyone in the server sees who bought the pack)
+--
+-- A volcano-style ERUPTION: a deep layered boom, a medium-small shake of the
+-- screen, and a full-screen announcement that fades in over the game, says what
+-- EVERYONE in the server now has, then fades out. Visual / audio only; the
+-- rewards themselves are granted by the server (ProductService).
 --------------------------------------------------
 
-local captainBanner = create("TextLabel", {
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, -270),
-	Size = UDim2.fromOffset(640, 92),
-	BackgroundColor3 = Color3.fromRGB(255, 190, 50),
-	Font = FONT,
-	Text = "",
-	TextColor3 = INK,
-	TextSize = 22,
-	TextWrapped = true,
+local RunService = game:GetService("RunService")
+
+local captainOverlay = create("Frame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(70, 18, 6),
+	BackgroundTransparency = 1,
+	Visible = false,
 	ZIndex = 90,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 18) }, captainBanner)
-create("UIStroke", { Color = INK, Thickness = 4 }, captainBanner)
-create("UIGradient", {
-	Color = ColorSequence.new(Color3.fromRGB(255, 240, 150), Color3.fromRGB(255, 150, 40)),
-	Rotation = 90,
-}, captainBanner)
 
-remotes:WaitForChild("CaptainAnnounce").OnClientEvent:Connect(function(name, wins, minutes)
-	if typeof(name) ~= "string" or typeof(wins) ~= "number" or typeof(minutes) ~= "number" then
+create("UIGradient", {
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 190, 60)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(230, 70, 20)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 10, 40)),
+	}),
+	Rotation = 90,
+}, captainOverlay)
+
+local function overlayText(name, y, height, size, color)
+	local label = create("TextLabel", {
+		Name = name,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, y, 0),
+		Size = UDim2.new(0.9, 0, 0, height),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = "",
+		TextColor3 = color,
+		TextSize = size,
+		TextWrapped = true,
+		TextTransparency = 1,
+		ZIndex = 91,
+	}, captainOverlay)
+	create("UIStroke", { Color = INK, Thickness = 5 }, label)
+	return label
+end
+
+local captainTitle = overlayText("Title", 0.30, 90, 64, Color3.fromRGB(255, 236, 130))
+local captainWho = overlayText("Who", 0.44, 56, 34, CREAM)
+local captainGets = overlayText("Gets", 0.62, 150, 40, Color3.fromRGB(190, 255, 190))
+
+-- screen shake: nudges the camera and the whole UI for a moment
+local shakeUntil = 0
+local shakeStrength = 0
+
+local function startShake(strength, duration)
+	shakeStrength = strength
+	shakeUntil = os.clock() + duration
+	local started = os.clock()
+
+	pcall(function()
+		RunService:UnbindFromRenderStep("CaptainShake")
+	end)
+	RunService:BindToRenderStep("CaptainShake", Enum.RenderPriority.Last.Value + 5, function()
+		local now = os.clock()
+		if now >= shakeUntil then
+			RunService:UnbindFromRenderStep("CaptainShake")
+			return
+		end
+
+		local fade = 1 - (now - started) / (shakeUntil - started)
+		local s = shakeStrength * fade
+		local camera = workspace.CurrentCamera
+		if camera then
+			camera.CFrame = camera.CFrame
+				* CFrame.Angles(math.rad((math.random() - 0.5) * s), math.rad((math.random() - 0.5) * s), 0)
+		end
+	end)
+end
+
+-- Layered built-in sounds, pitched down and run through reverb: a deep
+-- rumble, a boom, a splash and glass for the burst (volume follows SFX).
+local function eruptionSound()
+	if player:GetAttribute("SettingSfx") == false then
 		return
 	end
 
-	captainBanner.Text = string.format(
-		"CAPTAIN %s bought the Captain Oil Server Pack!\n+%d WINS for everyone and x2/x3 boosts for %d minutes!",
-		string.sub(name, 1, 24),
-		wins,
+	local layers = {
+		{ "rbxasset://sounds/bass.mp3", 1.0, 0.35, 0 },
+		{ "rbxasset://sounds/bass.mp3", 0.9, 0.5, 0.18 },
+		{ "rbxasset://sounds/impact_water.mp3", 0.9, 0.45, 0.1 },
+		{ "rbxasset://sounds/glassbreak.wav", 0.45, 0.4, 0.35 },
+		{ "rbxasset://sounds/splat.wav", 0.7, 0.5, 0.25 },
+		{ "rbxasset://sounds/snap.mp3", 0.5, 0.3, 0.5 },
+	}
+
+	for _, layer in ipairs(layers) do
+		task.delay(layer[4], function()
+			local sound = create("Sound", { SoundId = layer[1], Volume = layer[2], PlaybackSpeed = layer[3] }, SoundService)
+			create("ReverbSoundEffect", { DecayTime = 3.2, Density = 0.9, Diffusion = 0.9, DryLevel = -2, WetLevel = -3 }, sound)
+			sound:Play()
+			task.delay(8, function()
+				sound:Destroy()
+			end)
+		end)
+	end
+end
+
+local announcing = false
+
+remotes:WaitForChild("CaptainAnnounce").OnClientEvent:Connect(function(name, wins, minutes)
+	if typeof(name) ~= "string" or typeof(wins) ~= "number" or typeof(minutes) ~= "number" or announcing then
+		return
+	end
+	announcing = true
+
+	captainTitle.Text = "CAPTAIN OIL SERVER PACK!"
+	captainWho.Text = string.sub(name, 1, 24) .. " just bought it for the whole server!"
+	captainGets.Text = string.format(
+		"EVERYONE NOW HAS:\n+%s WINS   x2 OIL   x2 WINS   x3 CAPTAIN\nfor %d minutes!",
+		tostring(wins):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""),
 		minutes
 	)
-	ding()
-	TweenService:Create(captainBanner, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 16) }):Play()
-	task.delay(8, function()
-		TweenService:Create(captainBanner, TweenInfo.new(0.4), { Position = UDim2.new(0.5, 0, 0, -270) }):Play()
+
+	captainOverlay.Visible = true
+	eruptionSound()
+	startShake(7, 1.6)
+
+	local fadeIn = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(captainOverlay, fadeIn, { BackgroundTransparency = 0.45 }):Play()
+	for _, label in ipairs({ captainTitle, captainWho, captainGets }) do
+		TweenService:Create(label, fadeIn, { TextTransparency = 0 }):Play()
+	end
+
+	task.delay(6.5, function()
+		local fadeOut = TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		TweenService:Create(captainOverlay, fadeOut, { BackgroundTransparency = 1 }):Play()
+		for _, label in ipairs({ captainTitle, captainWho, captainGets }) do
+			TweenService:Create(label, fadeOut, { TextTransparency = 1 }):Play()
+		end
+		task.delay(1.3, function()
+			captainOverlay.Visible = false
+			announcing = false
+		end)
 	end)
 end)

@@ -50,6 +50,11 @@ end
 local function checkAll(player, announce)
 	for _, entry in pairs(ShopConfig.ExclusiveBalls) do
 		grant(player, entry, announce)
+		-- display only (the store shows the discounted Captain pack); the server
+		-- re-checks real ownership whenever it sells or grants anything
+		if entry.BallId == "OilBarrel" and entry.PassId ~= 0 and player.Parent then
+			player:SetAttribute("OwnsBarrelPass", owns(player, entry.PassId))
+		end
 	end
 end
 
@@ -68,7 +73,10 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passI
 
 	for _, entry in pairs(ShopConfig.ExclusiveBalls) do
 		if entry.PassId ~= 0 and entry.PassId == passId then
-			task.spawn(grant, player, entry, true)
+			task.spawn(function()
+				grant(player, entry, true)
+				checkAll(player, false) -- refresh the display flag
+			end)
 		end
 	end
 end)

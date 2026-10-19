@@ -329,6 +329,65 @@ end)
 
 local claiming = false
 
+-- Click hint: a mouse cursor that glides to the next button the player still
+-- has to press (LIKE, then JOIN, then CLAIM) and clicks it, with a ripple.
+-- Display only; hidden once the reward is claimed.
+local cursor = create("ImageLabel", {
+	Name = "ClickHint",
+	AnchorPoint = Vector2.new(0.12, 0.05),
+	Size = UDim2.fromOffset(60, 60),
+	BackgroundTransparency = 1,
+	Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
+	ZIndex = 60,
+	Visible = false,
+}, panel)
+local ripple = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Size = UDim2.fromOffset(10, 10),
+	BackgroundTransparency = 1,
+	ZIndex = 59,
+	Visible = false,
+}, panel)
+create("UICorner", { CornerRadius = UDim.new(1, 0) }, ripple)
+local rippleStroke = create("UIStroke", { Color = Color3.fromRGB(255, 226, 90), Thickness = 3 }, ripple)
+
+RunService.RenderStepped:Connect(function()
+	if not panel.Visible then
+		return
+	end
+	local target = nil
+	if state then
+		if not state.Liked then
+			target = likeButton
+		elseif not state.Group then
+			target = joinButton
+		elseif not state.Claimed then
+			target = claimButton
+		end
+	end
+	cursor.Visible = target ~= nil
+	ripple.Visible = target ~= nil
+	if not target then
+		return
+	end
+
+	local unit = panel.AbsoluteSize.X / 440
+	local c = (target.AbsolutePosition - panel.AbsolutePosition + target.AbsoluteSize / 2) / unit
+	local t = (os.clock() % 1.5) / 1.5
+	local away = 30 * (1 - math.min(t / 0.5, 1)) -- glides in from the bottom-right
+	local pressed = t > 0.5 and t < 0.7
+	cursor.Position = UDim2.fromOffset(c.X + away, c.Y + away)
+	cursor.Size = pressed and UDim2.fromOffset(50, 50) or UDim2.fromOffset(60, 60)
+	ripple.Position = UDim2.fromOffset(c.X, c.Y)
+	if t > 0.5 then
+		local k = (t - 0.5) / 0.5
+		ripple.Size = UDim2.fromOffset(10 + 54 * k, 10 + 54 * k)
+		rippleStroke.Transparency = k
+	else
+		rippleStroke.Transparency = 1
+	end
+end)
+
 claimButton.Activated:Connect(function()
 	if claiming or (state and state.Claimed) then
 		return

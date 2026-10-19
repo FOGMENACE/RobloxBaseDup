@@ -1142,239 +1142,525 @@ rebirthButton.Button.Activated:Connect(function()
 end)
 
 --------------------------------------------------
--- GAME PASS SHOP PANEL
+-- STORE PANEL
+--
+-- A large scrollable store: the Captain Oil Server Pack (with a discounted
+-- price for verified Oil Barrel owners), the Rainbow Oil Barrel, the two
+-- timed boosts (x2 wins / x2 oil) as their own tiles, and the game passes.
+-- Every tile has the shine sweep. The client only ASKS to buy: ids, prices
+-- charged and every reward stay on the server; prices shown here are labels.
 --------------------------------------------------
+
+local BoostConfig = require(ReplicatedStorage:WaitForChild("BoostConfig"))
+local ExclusiveOffer = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
+local ROBUX = utf8.char(0xE002)
+local STORE_W, STORE_H = 624, 620
+local NAVY = Color3.fromRGB(34, 36, 74)
+
+local function commas(value)
+	return (tostring(math.floor(value)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
+end
 
 local shopPanel = create("Frame", {
 	Name = "ShopPanel",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(420, 470),
-	BackgroundColor3 = LANE,
+	Size = UDim2.fromOffset(STORE_W, STORE_H),
+	BackgroundColor3 = NAVY,
 	Visible = false,
 	ZIndex = 20,
 }, gui)
-round(shopPanel, 16)
-outline(shopPanel, INK, 4)
+round(shopPanel, 20)
+outline(shopPanel, LANE, 5)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(58, 52, 120), Color3.fromRGB(26, 26, 58)),
+	Rotation = 90,
+}, shopPanel)
 local shopScale = create("UIScale", { Scale = 1 }, shopPanel)
 
+-- fits any screen: as large as it can be, never off screen
+local function fitStore()
+	local viewport = gui.AbsoluteSize
+	-- scale by width; the panel's own height then fills the screen height, so
+	-- short phone/tablet screens get a shorter (scrolling) panel at a readable
+	-- text size instead of a shrunken-to-nothing one
+	local s = math.clamp((viewport.X - 24) / STORE_W, 0.5, 1.25)
+	if viewport.Y < 500 then
+		s = math.min(s, 0.85)
+	end
+	shopScale.Scale = s
+	shopPanel.Size = UDim2.fromOffset(STORE_W, math.clamp((viewport.Y - 16) / s, 280, 700))
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitStore)
+fitStore()
+
+-- gold header ribbon
+local header = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 64),
+	BackgroundColor3 = LANE,
+	ZIndex = 21,
+}, shopPanel)
+round(header, 20)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 226, 120), Color3.fromRGB(236, 150, 50)),
+	Rotation = 90,
+}, header)
 create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(16, 10),
-	Size = UDim2.new(1, -80, 0, 34),
+	Position = UDim2.fromOffset(20, 8),
+	Size = UDim2.new(1, -90, 0, 48),
 	Font = FONT,
 	Text = "STORE",
 	TextColor3 = CREAM,
-	TextSize = 24,
+	TextSize = 38,
 	TextXAlignment = Enum.TextXAlignment.Left,
-	ZIndex = 21,
-}, shopPanel)
+	ZIndex = 22,
+}, header)
+create("UIStroke", { Color = INK, Thickness = 3 }, header:FindFirstChildOfClass("TextLabel"))
+Shine.Attach(header, { Offset = 0 })
 
 local shopClose = create("TextButton", {
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -12, 0, 12),
-	Size = UDim2.fromOffset(32, 32),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -14, 0.5, 0),
+	Size = UDim2.fromOffset(42, 42),
 	BackgroundColor3 = PIN_RED,
 	Font = FONT,
 	Text = "X",
 	TextColor3 = CREAM,
-	TextSize = 16,
-	ZIndex = 21,
-}, shopPanel)
-round(shopClose, 10)
+	TextSize = 22,
+	ZIndex = 23,
+}, header)
+round(shopClose, 12)
+outline(shopClose, INK, 3)
 
 local shopList = create("ScrollingFrame", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(12, 56),
-	Size = UDim2.new(1, -24, 1, -70),
+	Position = UDim2.fromOffset(14, 76),
+	Size = UDim2.new(1, -28, 1, -90),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 4,
+	ScrollBarThickness = 8,
+	ScrollBarImageColor3 = LANE,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
 	BorderSizePixel = 0,
 	ZIndex = 21,
 }, shopPanel)
-
 create("UIListLayout", {
-	Padding = UDim.new(0, 8),
+	Padding = UDim.new(0, 10),
 	SortOrder = Enum.SortOrder.LayoutOrder,
 }, shopList)
+-- left gutter: pop icons overhang a tile's left edge into it, unclipped
+create("UIPadding", { PaddingLeft = UDim.new(0, 44), PaddingRight = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12) }, shopList)
 
--- Captain Oil Server Pack (developer product). The client only asks; the
--- server owns the id and every reward.
-do
-	local row = create("Frame", {
-		LayoutOrder = 15,
-		Size = UDim2.new(1, -8, 0, 140),
-		BackgroundColor3 = Color3.fromRGB(255, 214, 90),
+-- "scroll for more" hint: shows while there is more below, bobs gently
+local moreHint = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -8),
+	Size = UDim2.fromOffset(170, 26),
+	BackgroundColor3 = Color3.fromRGB(30, 22, 80),
+	BackgroundTransparency = 0.15,
+	Font = FONT,
+	Text = "▼  MORE BELOW  ▼",
+	TextColor3 = Color3.fromRGB(255, 226, 140),
+	TextSize = 14,
+	ZIndex = 40,
+}, shopPanel)
+round(moreHint, 13)
+outline(moreHint, INK, 2)
+local function updateMoreHint()
+	moreHint.Visible = shopList.CanvasPosition.Y + shopList.AbsoluteWindowSize.Y < shopList.AbsoluteCanvasSize.Y - 24
+end
+shopList:GetPropertyChangedSignal("CanvasPosition"):Connect(updateMoreHint)
+shopList:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(updateMoreHint)
+shopList:GetPropertyChangedSignal("AbsoluteWindowSize"):Connect(updateMoreHint)
+RunService.RenderStepped:Connect(function()
+	if moreHint.Visible and shopPanel.Visible then
+		moreHint.Position = UDim2.new(0.5, 0, 1, -8 + math.sin(os.clock() * 4) * 3)
+	end
+end)
+task.defer(updateMoreHint)
+
+local function sectionTitle(order, text)
+	local label = create("TextLabel", {
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = text,
+		TextColor3 = Color3.fromRGB(255, 226, 140),
+		TextSize = 22,
+		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 22,
 	}, shopList)
-	round(row, 12)
-	outline(row, INK, 3)
-	create("UIGradient", {
-		Color = ColorSequence.new(Color3.fromRGB(255, 236, 140), Color3.fromRGB(255, 160, 50)),
-		Rotation = 90,
-	}, row)
+	create("UIStroke", { Color = INK, Thickness = 2.5 }, label)
+	return label
+end
 
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 6),
-		Size = UDim2.new(1, -176, 0, 24),
+-- one tile: gradient background, outline, shine sweep
+local function tile(order, height, top, bottom)
+	local row = create("Frame", {
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, height),
+		BackgroundColor3 = top,
+		ZIndex = 22,
+	}, shopList)
+	round(row, 16)
+	outline(row, INK, 3.5)
+	create("UIGradient", { Color = ColorSequence.new(top, bottom), Rotation = 90 }, row)
+	Shine.Attach(row, { Offset = (order % 7) * 0.8 })
+	return row
+end
+
+local function text(parent, props)
+	props.BackgroundTransparency = 1
+	props.Font = props.Font or FONT
+	props.ZIndex = props.ZIndex or 24
+	return create("TextLabel", props, parent)
+end
+
+local function buyButton(parent, color)
+	local button = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -12),
+		Size = UDim2.fromOffset(150, 48),
+		BackgroundColor3 = color or GREEN,
 		Font = FONT,
+		Text = "",
+		TextColor3 = CREAM,
+		TextSize = 22,
+		AutoButtonColor = true,
+		ZIndex = 25,
+	}, parent)
+	round(button, 12)
+	outline(button, INK, 3)
+	Shine.Attach(button, { Offset = 1.7 })
+	return button
+end
+
+-- Tiles that clip their children (shine sweep) cannot let an icon overhang
+-- their own edge, so a pop tile sits inside an unclipped wrapper and the icon
+-- lives in the wrapper, overlapping the tile's left edge (the list has a left
+-- gutter so it is not cut off).
+local INSET = 6
+local function popTile(order, height, top, bottom)
+	local row = tile(order, height, top, bottom)
+	local wrap = create("Frame", {
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, height),
+		BackgroundTransparency = 1,
+	}, shopList)
+	row.Parent = wrap
+	row.Position = UDim2.new()
+	row.Size = UDim2.fromScale(1, 1)
+	return row, wrap
+end
+
+-- the rolling rainbow oil barrel, hovering over the tile's left edge
+local function rollingBarrel(parent, width, height, position, anchor, zIndex)
+	local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
+	local viewport = create("ViewportFrame", {
+		AnchorPoint = anchor or Vector2.new(0.5, 0.5),
+		Position = position or UDim2.new(0, INSET + 2, 0.5, 0),
+		Size = UDim2.fromOffset(width, height),
+		BackgroundTransparency = 1,
+		ZIndex = zIndex or 30,
+	}, parent)
+
+	local barrel = Instance.new("Part")
+	barrel.Shape = Enum.PartType.Ball
+	barrel.Size = Vector3.new(2.8, 2.8, 2.8)
+	barrel.Anchored = true
+	barrel.CFrame = CFrame.new(0, 0, 0)
+	barrel.Parent = viewport
+	barrel:SetAttribute("PreviewSpeed", 9)
+
+	task.spawn(function()
+		BallAccessories.Apply(barrel, "OilBarrel")
+		BallAccessories.Pose(barrel, os.clock())
+	end)
+
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 34
+	cam.CFrame = CFrame.lookAt(Vector3.new(4.6, 3.4, 6.2), Vector3.new(0, -0.1, 0))
+	cam.Parent = viewport
+	viewport.CurrentCamera = cam
+
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		if not viewport.Parent then
+			conn:Disconnect()
+			return
+		end
+		if shopPanel.Visible then
+			BallAccessories.Pose(barrel, os.clock())
+		end
+	end)
+end
+
+-- 1) CAPTAIN OIL SERVER PACK ------------------------------------------------
+sectionTitle(6, "SERVER PACK")
+do
+	local row, wrap = popTile(7, 196, Color3.fromRGB(255, 236, 140), Color3.fromRGB(255, 150, 50))
+
+	text(row, {
+		Position = UDim2.fromOffset(16, 8),
+		Size = UDim2.new(1, -200, 0, 30),
 		Text = "CAPTAIN OIL SERVER PACK",
 		TextColor3 = INK,
-		TextSize = 17,
+		TextSize = 22,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 23,
-	}, row)
+	})
 
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 30),
-		Size = UDim2.new(1, -176, 0, 88),
-		Font = FONT,
-		Text = "YOU: 150,000 wins, the rainbow OIL BARREL ball, and x2 oil + x2 wins + x3 CAPTAIN boost for 1 hour." .. "\nEVERYONE in the server: 25,000 wins + boosts for 30 min!",
-		TextColor3 = Color3.fromRGB(110, 50, 20),
-		TextSize = 14,
+	local description = text(row, {
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -200, 0, 112),
+		Font = Enum.Font.GothamBold,
+		TextColor3 = Color3.fromRGB(90, 40, 10),
+		TextSize = 16,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		ZIndex = 23,
+	})
+
+	-- what the pack includes: a small icon row above the Robux button
+	local includes = create("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -14, 0, 8),
+		Size = UDim2.fromOffset(150, 40),
+		BackgroundTransparency = 1,
+		ZIndex = 26,
 	}, row)
-
-	-- Rolling rainbow Oil Barrel + wins icon: shows what the pack includes.
-	do
-		local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
-
-		local viewport = create("ViewportFrame", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -88, 0, 8),
-			Size = UDim2.fromOffset(60, 54),
-			BackgroundTransparency = 1,
-			ZIndex = 24,
-		}, row)
-
-		local barrel = Instance.new("Part")
-		barrel.Shape = Enum.PartType.Ball
-		barrel.Size = Vector3.new(2.8, 2.8, 2.8)
-		barrel.Anchored = true
-		barrel.CFrame = CFrame.new(0, 0, 0)
-		barrel.Parent = viewport
-		barrel:SetAttribute("PreviewSpeed", 9)
-
-		task.spawn(function()
-			BallAccessories.Apply(barrel, "OilBarrel")
-			BallAccessories.Pose(barrel, os.clock())
-		end)
-
-		local cam = Instance.new("Camera")
-		cam.FieldOfView = 34
-		cam.CFrame = CFrame.lookAt(Vector3.new(4.6, 3.4, 6.2), Vector3.new(0, -0.1, 0))
-		cam.Parent = viewport
-		viewport.CurrentCamera = cam
-
-		local conn
-		conn = RunService.RenderStepped:Connect(function()
-			if not viewport.Parent then
-				conn:Disconnect()
-				return
-			end
-			if row.Visible and shopPanel.Visible then
-				BallAccessories.Pose(barrel, os.clock())
-			end
-		end)
-
-		create("TextLabel", {
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -10, 0, 18),
-			Size = UDim2.fromOffset(76, 34),
-			BackgroundTransparency = 1,
-			Font = FONT,
-			Text = "🏆 150K",
-			TextColor3 = INK,
-			TextSize = 18,
-			ZIndex = 24,
-		}, row)
+	create("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 4),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, includes)
+	rollingBarrel(includes, 62, 40, nil, nil, 26)
+	for _, emoji in ipairs({ "🏆", "🛢️" }) do
+		text(includes, {
+			Size = UDim2.fromOffset(34, 34),
+			Text = emoji,
+			TextSize = 28,
+			TextColor3 = Color3.new(1, 1, 1),
+			ZIndex = 26,
+		})
 	end
-	local buy = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -10, 1, -10),
-		Size = UDim2.fromOffset(142, 42),
-		BackgroundColor3 = GREEN,
-		Font = FONT,
-		Text = utf8.char(0xE002) .. " 2,799",
+	local buy = buyButton(row)
+	buy.AnchorPoint = Vector2.new(1, 1)
+	buy.Position = UDim2.new(1, -14, 1, -30)
+	buy.Size = UDim2.fromOffset(150, 60)
+	local oldPrice = text(buy, {
+		Position = UDim2.fromOffset(0, 2),
+		Size = UDim2.new(1, 0, 0, 20),
+		RichText = true,
+		TextColor3 = Color3.fromRGB(230, 255, 230),
+		TextSize = 16,
+		ZIndex = 26,
+	})
+	local newPrice = text(buy, {
+		Position = UDim2.fromOffset(0, 18),
+		Size = UDim2.new(1, 0, 0, 28),
 		TextColor3 = CREAM,
-		TextSize = 18,
-		ZIndex = 23,
-	}, row)
-	round(buy, 10)
-	outline(buy, INK, 3)
-	Shine.Attach(buy, { Offset = 1 })
+		TextSize = 22,
+		ZIndex = 26,
+	})
+	create("UIStroke", { Color = INK, Thickness = 2 }, newPrice)
+
+	-- Owners of the paid Oil Barrel Game Pass see a different description and
+	-- the barrel's price struck off. This is DISPLAY only: the server decides
+	-- which product it prompts and re-verifies ownership on the receipt.
+	local function refresh()
+		local owner = player:GetAttribute("OwnsBarrelPass") == true
+		if owner then
+			description.Text = "YOU ALREADY OWN THE OIL BARREL, so the barrel is taken off the price!"
+				.. "\nYOU: 150,000 wins + x2 oil, x2 wins and x3 CAPTAIN for 1 hour."
+				.. "\nEVERYONE in the server: 25,000 wins + boosts for 30 min!"
+			oldPrice.Text = "<s>" .. ROBUX .. " " .. commas(ShopConfig.CaptainPrice) .. "</s>"
+			newPrice.Text = ROBUX .. " " .. commas(ShopConfig.CaptainOwnerPrice)
+		else
+			description.Text = "YOU: 150,000 wins, the rainbow OIL BARREL ball, and x2 oil + x2 wins + x3 CAPTAIN boost for 1 hour."
+				.. "\nEVERYONE in the server: 25,000 wins + boosts for 30 min!"
+			oldPrice.Text = ""
+			newPrice.Text = ROBUX .. " " .. commas(ShopConfig.CaptainPrice)
+		end
+	end
+	player:GetAttributeChangedSignal("OwnsBarrelPass"):Connect(refresh)
+	refresh()
 
 	buy.Activated:Connect(function()
 		ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StorePrompt"):FireServer("Captain")
 	end)
 end
 
-for index, pass in ipairs(ShopConfig.GamePasses) do
-	local row = create("Frame", {
-		LayoutOrder = index * 10,
-		Size = UDim2.new(1, -8, 0, 72),
-		BackgroundColor3 = INK_LIGHT,
-		ZIndex = 22,
-	}, shopList)
-	round(row, 12)
+-- 2) RAINBOW OIL BARREL -----------------------------------------------------
+sectionTitle(4, "EXCLUSIVE BALL")
+do
+	local entry = ShopConfig.ExclusiveBalls.OilBarrel
+	local row, wrap = popTile(5, 178, Color3.fromRGB(150, 110, 255), Color3.fromRGB(70, 200, 230))
+	-- the rolling barrel sits above the Robux button
+	rollingBarrel(row, 160, 96, UDim2.new(1, -89, 0, 6), Vector2.new(0.5, 0), 26)
 
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 6),
-		Size = UDim2.new(1, -112, 0, 26),
-		Font = FONT,
-		Text = pass.Name,
-		TextColor3 = INK,
-		TextSize = 18,
+	text(row, {
+		Position = UDim2.fromOffset(16, 8),
+		Size = UDim2.new(1, -190, 0, 30),
+		Text = "RAINBOW OIL BARREL",
+		TextColor3 = CREAM,
+		TextSize = 22,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 23,
-	}, row)
-
-	create("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 32),
-		Size = UDim2.new(1, -112, 0, 34),
-		Font = FONT,
-		Text = pass.Description,
-		TextColor3 = Color3.fromRGB(110, 70, 30),
-		TextSize = 13,
+	})
+	create("UIStroke", { Color = INK, Thickness = 2.5 }, row:FindFirstChildOfClass("TextLabel"))
+	text(row, {
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -190, 0, 80),
+		Font = Enum.Font.GothamBold,
+		Text = "The exclusive rainbow barrel ball. Everyone will know you are the Leader of All Oils!",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 16,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		ZIndex = 23,
-	}, row)
+	})
+
+	local buy = buyButton(row)
+	buy.Size = UDim2.fromOffset(150, 52)
+	buy.AnchorPoint = Vector2.new(1, 1)
+	buy.Position = UDim2.new(1, -14, 1, -12)
+	buy.Text = entry.PassId ~= 0 and (ROBUX .. " " .. entry.Price) or "SOON"
+	create("UIStroke", { Color = INK, Thickness = 2 }, buy)
+
+	task.spawn(function()
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(entry.PassId, Enum.InfoType.GamePass)
+		end)
+		if buy.Parent and ok and typeof(info) == "table" and info.PriceInRobux then
+			buy.Text = ROBUX .. " " .. info.PriceInRobux
+		end
+	end)
+
+	local function refreshOwned()
+		if player:GetAttribute("OwnsBarrelPass") == true or ExclusiveOffer.OwnsPass(entry.PassId) then
+			buy.Text = "OWNED"
+			buy.BackgroundColor3 = INK
+			buy.AutoButtonColor = false
+		end
+	end
+	player:GetAttributeChangedSignal("OwnsBarrelPass"):Connect(refreshOwned)
+	task.spawn(refreshOwned)
+
+	buy.Activated:Connect(function()
+		if entry.PassId ~= 0 and buy.Text ~= "OWNED" then
+			MarketplaceService:PromptGamePassPurchase(player, entry.PassId)
+		end
+	end)
+end
+
+-- 3) TIMED BOOSTS: x2 wins and x2 oil as their own tiles ---------------------
+sectionTitle(1, "BOOSTS (30 MIN)")
+do
+	local tiles = {
+		{ Icon = "🏆", Key = "Wins2x", Order = 2, Top = Color3.fromRGB(255, 220, 70), Bottom = Color3.fromRGB(255, 130, 30), Text = "x2 WINS", Sub = "Double wins from every win course for 30 minutes." },
+		{ Icon = "🛢️", Key = "Oil2x", Order = 3, Top = Color3.fromRGB(110, 110, 135), Bottom = Color3.fromRGB(36, 36, 56), Text = "x2 OIL", Sub = "Double oil from every platform you collect for 30 minutes." },
+	}
+
+	for _, spec in ipairs(tiles) do
+		local boost = BoostConfig.Boosts[spec.Key]
+		local row, wrap = popTile(spec.Order, 114, spec.Top, spec.Bottom)
+
+		local title = text(row, {
+			Position = UDim2.fromOffset(50, 8),
+			Size = UDim2.new(1, -226, 0, 36),
+			Text = spec.Text,
+			TextColor3 = CREAM,
+			TextSize = 30,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		})
+		create("UIStroke", { Color = INK, Thickness = 3 }, title)
+		-- icon popping out of the tile's left edge (about a third outside it)
+		text(wrap, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0, INSET + 2, 0.5, 0),
+			Size = UDim2.fromOffset(64, 64),
+			Text = spec.Icon,
+			TextSize = 52,
+			Rotation = -12,
+			TextColor3 = Color3.new(1, 1, 1),
+			ZIndex = 30,
+		})
+		text(row, {
+			Position = UDim2.fromOffset(50, 48),
+			Size = UDim2.new(1, -226, 0, 44),
+			Font = Enum.Font.GothamBold,
+			Text = spec.Sub,
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextSize = 16,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+		})
+
+		local available = boost and boost.ProductId ~= 0 and boost.PriceRobux
+		local buy = buyButton(row)
+		buy.AnchorPoint = Vector2.new(1, 0.5)
+		buy.Position = UDim2.new(1, -14, 0.5, 0)
+		buy.Size = UDim2.fromOffset(150, 52)
+		buy.Text = available and (ROBUX .. " " .. boost.PriceRobux) or "SOON"
+		buy.BackgroundColor3 = available and GREEN or INK
+		if available then
+			buy.Activated:Connect(function()
+				ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("BoostPrompt"):FireServer(spec.Key)
+			end)
+		end
+	end
+end
+
+-- 4) GAME PASSES --------------------------------------------------------------
+sectionTitle(8, "GAME PASSES")
+local STORE_PASSES = {} -- the store lists only the Starter Pack (other passes stay elsewhere)
+for _, pass in ipairs(ShopConfig.GamePasses) do
+	if pass.Name == "STARTER PACK" then
+		table.insert(STORE_PASSES, pass)
+	end
+end
+for index, pass in ipairs(STORE_PASSES) do
+	local row = popTile(10 + index, 124, Color3.fromRGB(255, 250, 240), Color3.fromRGB(240, 214, 160))
+
+	text(row, {
+		Position = UDim2.fromOffset(16, 8),
+		Size = UDim2.new(1, -190, 0, 28),
+		Text = pass.Name,
+		TextColor3 = INK,
+		TextSize = 20,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	text(row, {
+		Position = UDim2.fromOffset(16, 38),
+		Size = UDim2.new(1, -190, 0, 58),
+		Font = Enum.Font.GothamBold,
+		Text = pass.Description,
+		TextColor3 = Color3.fromRGB(110, 70, 30),
+		TextSize = 15,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	})
 
 	local available = pass.PassId ~= 0
-	local buy = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
-		Size = UDim2.fromOffset(84, 36),
-		BackgroundColor3 = available and GREEN or INK,
-		Font = FONT,
-		Text = available and "BUY" or "SOON",
-		TextColor3 = CREAM,
-		TextSize = 15,
-		AutoButtonColor = available,
-		Active = available,
-		ZIndex = 23,
-	}, row)
-	round(buy, 10)
-	buy.Size = UDim2.fromOffset(104, 36)
+	local buy = buyButton(row, available and GREEN or INK)
+	buy.AnchorPoint = Vector2.new(1, 0.5)
+	buy.Position = UDim2.new(1, -14, 0.5, 0)
+	buy.Size = UDim2.fromOffset(150, 52)
+	buy.Text = available and "BUY" or "SOON"
+	buy.AutoButtonColor = available
 
 	if available then
-		-- show the real price (read from Roblox; display only)
 		task.spawn(function()
 			local ok, info = pcall(function()
 				return MarketplaceService:GetProductInfo(pass.PassId, Enum.InfoType.GamePass)
 			end)
 			if buy.Parent and ok and typeof(info) == "table" and info.PriceInRobux then
-				buy.Text = utf8.char(0xE002) .. " " .. info.PriceInRobux
+				buy.Text = ROBUX .. " " .. info.PriceInRobux
 			end
 		end)
 
@@ -1383,18 +1669,6 @@ for index, pass in ipairs(ShopConfig.GamePasses) do
 		end)
 	end
 end
-
--- Hovering Oil Barrel offer: pokes out over the bottom edge of the Store.
-local ExclusiveOffer = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
-
-local storeBarrelOffer = ExclusiveOffer.Create(shopPanel, {
-	BallId = "OilBarrel",
-	AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, 58),
-	Size = UDim2.fromOffset(410, 124),
-	ZIndex = 40,
-})
-
 PanelManager.Register("Store", shopPanel)
 
 local function setShopOpen(open)

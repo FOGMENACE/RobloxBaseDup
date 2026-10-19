@@ -45,9 +45,16 @@ local gui = create("ScreenGui", {
 local column = create("Frame", {
 	AnchorPoint = Vector2.new(1, 0.5),
 	Position = UDim2.new(1, -12, 0.5, -30),
-	Size = UDim2.fromOffset(160, 220),
+	Size = UDim2.fromOffset(160, 0),
+	AutomaticSize = Enum.AutomaticSize.Y, -- grows when the Captain tile shows
 	BackgroundTransparency = 1,
 }, gui)
+local columnLayout = create("UIListLayout", {
+	Padding = UDim.new(0, 8),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	HorizontalAlignment = Enum.HorizontalAlignment.Right,
+}, column)
+
 -- Big on large screens, but it must stay clear of the Music / camera-zoom /
 -- jump buttons stacked in the bottom-right (their top edge is 266 px above the
 -- bottom), so it shrinks on short screens.
@@ -55,26 +62,26 @@ local columnScale = Instance.new("UIScale")
 columnScale.Parent = column
 local function fitColumn()
 	local h = gui.AbsoluteSize.Y
+	-- AbsoluteContentSize includes the UIScale, so divide it out; and only touch
+	-- the scale when it really changes (setting it re-fires this signal)
+	local content = math.max(columnLayout.AbsoluteContentSize.Y / math.max(columnScale.Scale, 0.01), 220)
 	if h < 520 then
 		-- phone-height screens: tuck it into the top-right corner, above the
 		-- Music / zoom buttons
 		column.AnchorPoint = Vector2.new(1, 0)
 		column.Position = UDim2.new(1, -12, 0, 8)
-		columnScale.Scale = math.clamp((h - 266 - 16) / 220, 0.4, 0.55)
+		local s = math.clamp((h - 266 - 16) / content, 0.4, 0.55)
+		if math.abs(s - columnScale.Scale) > 0.005 then columnScale.Scale = s end
 	else
 		column.AnchorPoint = Vector2.new(1, 0.5)
 		column.Position = UDim2.new(1, -12, 0.5, -30)
-		columnScale.Scale = math.clamp((h / 2 - 244) / 110, 0.55, 1.15)
+		local s = math.clamp((h / 2 - 244) / (content / 2), 0.55, 1.15)
+		if math.abs(s - columnScale.Scale) > 0.005 then columnScale.Scale = s end
 	end
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitColumn)
+columnLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fitColumn)
 fitColumn()
-create("UIListLayout", {
-	Padding = UDim.new(0, 8),
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Right,
-}, column)
-
 local STYLES = {
 	Wins2x = { Order = 1, Top = Color3.fromRGB(255, 214, 60), Bottom = Color3.fromRGB(255, 130, 30), Attr = "BoostWinsUntil" },
 	Oil2x = { Order = 2, Top = Color3.fromRGB(90, 90, 110), Bottom = Color3.fromRGB(30, 30, 44), Attr = "BoostOilUntil" },
@@ -112,6 +119,7 @@ for key, style in pairs(STYLES) do
 		}, button)
 		create("UIStroke", { Color = INK, Thickness = 2.5 }, label)
 
+
 		local price = create("TextLabel", {
 			BackgroundTransparency = 1,
 			Position = UDim2.fromOffset(0, 64),
@@ -141,6 +149,52 @@ for key, style in pairs(STYLES) do
 	end
 end
 
+-- CAPTAIN x3 timer tile: shown only while the Captain pack's boost is active
+-- (granted to the buyer and the whole server). Not a button: it cannot be
+-- bought on its own.
+local captainTile = create("Frame", {
+	LayoutOrder = 5,
+	Size = UDim2.fromOffset(160, 62),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	Visible = false,
+}, column)
+create("UICorner", { CornerRadius = UDim.new(0, 14) }, captainTile)
+create("UIStroke", { Color = INK, Thickness = 3 }, captainTile)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 236, 120), Color3.fromRGB(255, 120, 30)),
+	Rotation = 90,
+}, captainTile)
+local captainTitleLabel = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 4),
+	Size = UDim2.new(1, 0, 0, 28),
+	Font = FONT,
+	Text = "CAPTAIN x3",
+	TextColor3 = CREAM,
+	TextSize = 24,
+}, captainTile)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, captainTitleLabel)
+local captainTimeLabel = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 32),
+	Size = UDim2.new(1, 0, 0, 26),
+	Font = FONT,
+	Text = "",
+	TextColor3 = Color3.fromRGB(255, 255, 255),
+	TextSize = 22,
+}, captainTile)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, captainTimeLabel)
+Shine.Attach(captainTile, { Offset = 0.4 })
+
+local function refreshCaptainTile()
+	local left = (player:GetAttribute("BoostCaptainUntil") or 0) - os.time()
+	captainTile.Visible = left > 0
+	if left > 0 then
+		captainTimeLabel.Text = string.format("%d:%02d", left // 60, left % 60)
+	end
+end
+player:GetAttributeChangedSignal("BoostCaptainUntil"):Connect(refreshCaptainTile)
+refreshCaptainTile()
 task.spawn(function()
 	while true do
 		for _, entry in pairs(entries) do
@@ -154,6 +208,7 @@ task.spawn(function()
 				entry.Price.Text = " " .. entry.Rate .. " ONLY!"
 			end
 		end
+		refreshCaptainTile()
 		task.wait(0.5)
 	end
 end)

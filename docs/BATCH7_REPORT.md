@@ -276,3 +276,11 @@ Verified in the BACKUP place (Studio play), not production:
 - Rebirth XP / Pass XP wording: 16 px, right-aligned just above the run oil chip (was 19 px over the level panel). Seen in Studio.
 - Invitations (PromptManager): first one after 60 s (was 180 s), then one every 120 s (was 420 s), alternating group / favorite, so each comes back about every 4 minutes until done. Still lobby-only, dismissible (25 s auto-hide). Timing is by constant; I did not sit through the intervals.
 - Multiplayer platform glitch check: simulated by adding 3 extra overlapping PlayerCourse_* folders (other players' courses) during a run: client shows only its own (24 OilAmount labels). Real multiplayer (several actual players) still UNTESTED; Studio here has one player.
+
+
+## Batch 8 additions (captain pack, store, mobile, settings)
+
+Verified in Studio (single player): store panel layout and owner-discount display; Captain announcement overlay and the CAPTAIN x3 tile in the boost column (simulated via CaptainAnnounce + BoostCaptainUntil; no runtime errors after fixes); Settings panel, server-validated setting remote (unknown keys/non-booleans rejected), Low graphics (shadows + emitters off/on); fading screen border.
+
+Implemented but NOT verified (needs real devices / real purchases / audio): eruption sound and camera shake feel; owner product 3719866685 receipt flow (server grants only if the paid Oil Barrel pass is verified, else receipt stays pending/not granted; price in Creator Hub must be 2300); native Roblox group-join and favorite prompts (GroupService:PromptJoinAsync / AvatarEditorService:PromptSetFavorite, no custom card); landscape lock (Orientation.client.lua); on-screen joystick for touch (BallController, only when PlayerModule is absent) and larger jump button; SFX mute; idle music duck (40 s without input); settings persistence (DataStore UiSettings_v1).
+Not done: phone-size UI fit pass beyond existing scaling formulas.

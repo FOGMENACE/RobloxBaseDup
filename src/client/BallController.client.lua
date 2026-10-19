@@ -139,6 +139,10 @@ end
 
 local cachedControls = nil
 
+-- On-screen joystick state (touch devices without Roblox's PlayerModule, which
+-- this place does not ship). x = right, z = forward, both -1..1.
+local stickX, stickZ = 0, 0
+
 local function getControls()
 	if cachedControls then
 		return cachedControls
@@ -251,6 +255,10 @@ local function updateKeys()
 				z = -moveVector.Z
 			end
 		end
+	end
+
+	if x == 0 and z == 0 and (stickX ~= 0 or stickZ ~= 0) then
+		x, z = stickX, stickZ
 	end
 
 	inputX = x
@@ -894,6 +902,99 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
+-- On-screen joystick: a floating stick that appears where the left-hand thumb
+-- lands (left 45% of the screen, outside any button/panel). Only used when
+-- Roblox's own control module is absent, so there is never a second stick.
+if UserInputService.TouchEnabled and not getControls() then
+	local STICK_RADIUS = 60
+	local sGui = Instance.new("ScreenGui")
+	sGui.Name = "BallJoystick"
+	sGui.ResetOnSpawn = false
+	sGui.DisplayOrder = 5
+	sGui.IgnoreGuiInset = true
+	sGui.Parent = player:WaitForChild("PlayerGui")
+
+	local function circle(size, transparency)
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Size = UDim2.fromOffset(size, size)
+		f.BackgroundColor3 = Color3.fromRGB(255, 247, 232)
+		f.BackgroundTransparency = transparency
+		f.BorderSizePixel = 0
+		f.Parent = sGui
+		Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.fromRGB(24, 22, 34)
+		s.Transparency = 0.4
+		s.Thickness = 2
+		s.Parent = f
+		return f
+	end
+
+	local base = circle(STICK_RADIUS * 2, 0.9)
+	local knob = circle(54, 0.7)
+	local restPos = UDim2.new(0, 110, 1, -110)
+	base.Position = restPos
+	knob.Position = restPos
+
+	local activeTouch = nil
+	local origin = Vector2.zero
+
+	local function release()
+		activeTouch = nil
+		stickX, stickZ = 0, 0
+		base.Position = restPos
+		knob.Position = restPos
+		base.BackgroundTransparency = 0.9
+		knob.BackgroundTransparency = 0.7
+	end
+
+	local function drag(pos)
+		local delta = pos - origin
+		local mag = delta.Magnitude
+		if mag > STICK_RADIUS then
+			delta = delta * (STICK_RADIUS / mag)
+		end
+		knob.Position = UDim2.fromOffset(origin.X + delta.X, origin.Y + delta.Y)
+		local nx, nz = delta.X / STICK_RADIUS, -delta.Y / STICK_RADIUS
+		if math.sqrt(nx * nx + nz * nz) < 0.15 then
+			nx, nz = 0, 0 -- dead zone
+		end
+		stickX, stickZ = nx, nz
+	end
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or activeTouch or input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		local cam = workspace.CurrentCamera
+		local size = cam and cam.ViewportSize or Vector2.new(800, 400)
+		if input.Position.X > size.X * 0.45 then
+			return
+		end
+		activeTouch = input
+		origin = Vector2.new(input.Position.X, input.Position.Y)
+		base.Position = UDim2.fromOffset(origin.X, origin.Y)
+		base.BackgroundTransparency = 0.6
+		knob.BackgroundTransparency = 0.3
+		drag(origin)
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if activeTouch and input == activeTouch then
+			drag(Vector2.new(input.Position.X, input.Position.Y))
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if activeTouch and input == activeTouch then
+			release()
+		end
+	end)
+
+	UserInputService.WindowFocusReleased:Connect(release)
+end
+
 if UserInputService.TouchEnabled then
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "BallJumpControls"
@@ -904,14 +1005,14 @@ if UserInputService.TouchEnabled then
 	local button = Instance.new("TextButton")
 	button.Name = "JumpButton"
 	button.AnchorPoint = Vector2.new(1, 1)
-	button.Position = UDim2.new(1, -16, 1, -80)
-	button.Size = UDim2.fromOffset(64, 64)
+	button.Position = UDim2.new(1, -24, 1, -24)
+	button.Size = UDim2.fromOffset(84, 84)
 	button.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
 	button.BackgroundTransparency = 0.25
 	button.Text = "JUMP"
 	button.TextColor3 = Color3.new(1, 1, 1)
 	button.Font = Enum.Font.GothamBold
-	button.TextSize = 14
+	button.TextSize = 18
 	button.Parent = gui
 
 	local corner = Instance.new("UICorner")

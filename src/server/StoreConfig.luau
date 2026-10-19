@@ -18,6 +18,14 @@ StoreConfig.Captain = {
 	BadgeId = 3538420544972784,
 }
 
+-- Same pack for players who already own the paid Oil Barrel Game Pass: the barrel's
+-- price is taken off. The price that is charged is the one set on THIS developer
+-- product in the Creator Hub (R$ 2799 - 499 = 2300); the server only sells it to
+-- verified Game Pass owners (ProductService).
+StoreConfig.CaptainOwner = {
+	ProductId = 3719866685,
+}
+
 -- Skip one quest (Developer Product, R$ 29)
 StoreConfig.QuestSkip = { ProductId = 3719263200 }
 

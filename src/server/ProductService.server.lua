@@ -235,44 +235,84 @@ local function grantBoosts(player, seconds)
 end
 
 local captain = StoreConfig.Captain
+local captainOwner = StoreConfig.CaptainOwner
+local ShopConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("ShopConfig"))
 
-PurchaseService.RegisterProduct(captain.ProductId, function(player, receiptInfo)
-	if not player or not player:IsDescendantOf(Players) then
-		return false
+-- The owner discount is only for players who PAID for the Oil Barrel Game Pass.
+-- Owning the ball is not enough (it is also a free calendar reward and part of
+-- this very pack), and the client's word is never used: ownership is read from
+-- Roblox. Returns (owns, verified).
+local function ownsBarrelPass(player)
+	local entry = ShopConfig.ExclusiveBalls.OilBarrel
+	if not entry or entry.PassId == 0 then
+		return false, true
 	end
 
-	return ReceiptLedger.Consume(player, receiptInfo, function()
-		-- The captain: the biggest reward and the longest boost.
-		if not PlayerDataService.AddWins(player, captain.BuyerWins) then
+	local ok, result = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, entry.PassId)
+	end)
+
+	return ok and result == true, ok
+end
+
+local function registerCaptainProduct(productId, ownerOnly)
+	PurchaseService.RegisterProduct(productId, function(player, receiptInfo)
+		if not player or not player:IsDescendantOf(Players) then
 			return false
 		end
-		grantBoosts(player, captain.BuyerBoostSeconds)
 
-		-- exclusive reward: the rainbow Oil Barrel ball (buyer only)
-		PlayerDataService.AddOwnedBall(player, "OilBarrel")
-
-		-- Everyone else in the server: a thank-you from the captain.
-		for _, other in ipairs(Players:GetPlayers()) do
-			if other ~= player then
-				PlayerDataService.AddWins(other, captain.OthersWins)
-				grantBoosts(other, captain.ServerBoostSeconds)
-				task.spawn(PlayerDataService.SavePlayer, other)
+		if ownerOnly then
+			-- someone can prompt ANY product id from a modified client, so the
+			-- discounted pack is validated again when the receipt arrives
+			local owns, verified = ownsBarrelPass(player)
+			if not verified then
+				warn("[AUDIT] owner-pack ownership check unavailable, receipt stays pending:", player.Name, receiptInfo.PurchaseId)
+				return false
+			end
+			if not owns then
+				warn("[AUDIT] owner-pack bought WITHOUT the barrel pass, NOT granted:", player.Name, player.UserId, receiptInfo.PurchaseId)
+				return false
 			end
 		end
 
-		return true
-	end, function(buyer)
-		-- Confirmed (granted, saved, recorded): badge + announcement.
-		BadgeAwards.Award(buyer, "Captain")
-		captainAnnounce:FireAllClients(
-			buyer.DisplayName,
-			captain.OthersWins,
-			math.floor(captain.ServerBoostSeconds / 60)
-		)
-		purchaseConfirmed:FireClient(buyer, "CAPTAIN OIL SERVER PACK")
-	end)
-end)
+		return ReceiptLedger.Consume(player, receiptInfo, function()
+			-- The captain: the biggest reward and the longest boost.
+			if not PlayerDataService.AddWins(player, captain.BuyerWins) then
+				return false
+			end
+			grantBoosts(player, captain.BuyerBoostSeconds)
 
+			-- exclusive reward: the rainbow Oil Barrel ball (idempotent for owners)
+			PlayerDataService.AddOwnedBall(player, "OilBarrel")
+
+			-- Everyone else in the server: a thank-you from the captain.
+			for _, other in ipairs(Players:GetPlayers()) do
+				if other ~= player then
+					PlayerDataService.AddWins(other, captain.OthersWins)
+					grantBoosts(other, captain.ServerBoostSeconds)
+					task.spawn(PlayerDataService.SavePlayer, other)
+				end
+			end
+
+			return true
+		end, function(buyer)
+			-- Confirmed (granted, saved, recorded): the same badge for both
+			-- versions of the pack, then the server-wide announcement.
+			BadgeAwards.Award(buyer, "Captain")
+			captainAnnounce:FireAllClients(
+				buyer.DisplayName,
+				captain.OthersWins,
+				math.floor(captain.ServerBoostSeconds / 60)
+			)
+			purchaseConfirmed:FireClient(buyer, "CAPTAIN OIL SERVER PACK")
+		end)
+	end)
+end
+
+registerCaptainProduct(captain.ProductId, false)
+if captainOwner and captainOwner.ProductId ~= 0 then
+	registerCaptainProduct(captainOwner.ProductId, true)
+end
 -- Skip Rebirth: a rebirth without the level requirement.
 local rebirthSkip = StoreConfig.RebirthSkip
 
@@ -296,7 +336,11 @@ storePrompt.OnServerEvent:Connect(function(player, key)
 
 	local productId
 	if key == "Captain" then
+		-- the SERVER picks the version: the owner pack only for verified owners
 		productId = captain.ProductId
+		if captainOwner and captainOwner.ProductId ~= 0 and (ownsBarrelPass(player)) then
+			productId = captainOwner.ProductId
+		end
 	elseif key == "RebirthSkip" then
 		-- no point selling a skip the player cannot use
 		if (PlayerDataService.GetRebirths(player) or 0) >= 1000 then

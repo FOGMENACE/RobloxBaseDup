@@ -260,12 +260,8 @@ local function offerGroup(groupId)
 		end
 	end
 
-	showCard(
-		"JOIN OUR GROUP!",
-		"Join the community for news, updates and giveaways.",
-		"JOIN",
-		SKY
-	)
+	-- the regular Roblox join-group prompt, in the middle of the screen (no custom card)
+	task.spawn(activeAction)
 end
 
 local favoriteBusy = false
@@ -300,12 +296,8 @@ local function offerFavorite()
 		end
 	end
 
-	showCard(
-		"LIKE THE GAME?",
-		"Tap FAVORITE so you never lose your lane.",
-		"FAVORITE",
-		PIN_RED
-	)
+	-- the regular Roblox favorite prompt, in the middle of the screen (no custom card)
+	task.spawn(activeAction)
 end
 
 --------------------------------------------------
@@ -335,6 +327,12 @@ task.spawn(function()
 			end
 			if not state.FavoriteDone then
 				table.insert(pending, "Favorite")
+			end
+
+			-- Settings > Pop ups OFF: no invitations (the loop keeps checking)
+			if player:GetAttribute("SettingPopups") == false then
+				task.wait(PROMPT_INTERVAL)
+				continue
 			end
 
 			if #pending == 0 then

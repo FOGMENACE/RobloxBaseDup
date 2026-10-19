@@ -83,8 +83,18 @@ local masterIndex = 1
 local focusMultiplier = 1
 local lastFocusStamp = 0
 
+-- Idle ducking: after IDLE_SECONDS without any input the music drops to the
+-- same level as when the game window loses focus, and returns on input.
+local IDLE_SECONDS = 40
+local idleMultiplier = 1
+local lastInput = os.clock()
+
 local function master()
-	return AudioConfig.DefaultMasterVolume * masterLevels[masterIndex] * focusMultiplier
+	-- Settings > Music OFF (attribute set by SettingsUI; nil = default on)
+	if player:GetAttribute("SettingMusic") == false then
+		return 0
+	end
+	return AudioConfig.DefaultMasterVolume * masterLevels[masterIndex] * focusMultiplier * idleMultiplier
 end
 
 local currentScene = nil
@@ -99,6 +109,37 @@ local function applyVolumes(duration)
 		):Play()
 	end
 end
+
+local function setIdle(idle)
+	local target = idle and AudioConfig.UnfocusedMultiplier or 1
+	if idleMultiplier ~= target then
+		idleMultiplier = target
+		applyVolumes(idle and 1.5 or 0.5)
+	end
+end
+
+UserInputService.InputBegan:Connect(function()
+	lastInput = os.clock()
+	setIdle(false)
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+		lastInput = os.clock()
+		setIdle(false)
+	end
+end)
+task.spawn(function()
+	while true do
+		task.wait(2)
+		if os.clock() - lastInput > IDLE_SECONDS then
+			setIdle(true)
+		end
+	end
+end)
+
+player:GetAttributeChangedSignal("SettingMusic"):Connect(function()
+	applyVolumes(0.3)
+end)
 
 -- Focus-aware ducking.
 UserInputService.WindowFocusReleased:Connect(function()

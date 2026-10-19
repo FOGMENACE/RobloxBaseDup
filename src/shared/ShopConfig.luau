@@ -33,6 +33,11 @@ ShopConfig.ExclusiveBalls = {
 	},
 }
 
+-- Captain Oil Server Pack display prices (labels only; the charged price is the
+-- developer product's). The owner price is the full price minus the barrel's.
+ShopConfig.CaptainPrice = 2799
+ShopConfig.CaptainOwnerPrice = 2799 - ShopConfig.ExclusiveBalls.OilBarrel.Price
+
 ShopConfig.RobuxPrices = {
 	CatPlz = 17,
 	Thrifty = 24,
