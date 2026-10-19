@@ -74,6 +74,10 @@ overlay.ResetOnSpawn = false
 overlay.IgnoreGuiInset = true
 overlay.DisplayOrder = 1000
 overlay.Enabled = false
+-- cover the whole physical screen, notch areas included
+pcall(function()
+	overlay.ScreenInsets = Enum.ScreenInsets.None
+end)
 -- this one must stay readable in whatever orientation the device is in
 pcall(function()
 	overlay.ScreenOrientation = Enum.ScreenOrientation.Sensor

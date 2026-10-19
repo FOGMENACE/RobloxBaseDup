@@ -1149,11 +1149,19 @@ zoomCorner.Parent = zoomButton
 
 local ZOOM_LABELS = { "NEAR", "MID", "FAR" }
 
+-- The on-screen zoom control is for phones/tablets only (touch, no keyboard, no
+-- mouse); on PC the zoom is changed with the mouse wheel / keys as before.
+local function isMobileDevice()
+	return UserInputService.TouchEnabled
+		and not UserInputService.KeyboardEnabled
+		and not UserInputService.MouseEnabled
+end
+
 local function refreshZoomButton()
 	zoomButton.Text = ZOOM_LABELS[currentLobbyZoom] or "ZOOM"
 
 	local ball = getBall()
-	zoomButton.Visible = ball ~= nil and getCameraMode(ball) == "Lobby"
+	zoomButton.Visible = isMobileDevice() and ball ~= nil and getCameraMode(ball) == "Lobby"
 end
 
 zoomButton.Activated:Connect(function()

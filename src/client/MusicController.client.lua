@@ -12,7 +12,7 @@
 -- WinCourse starts that build during the 5-second countdown, so the
 -- drop lands on GO.
 --
--- Also: a music button (cycles 100% / 50% / off) and focus-aware
+-- Also: Settings > Music on/off (SettingMusic attribute) and focus-aware
 -- fading (music ducks when the game window loses focus).
 --------------------------------------------------
 
@@ -78,7 +78,7 @@ end)
 -- MASTER VOLUME + FOCUS
 --------------------------------------------------
 
-local masterLevels = { 1, 0.5, 0 } -- button cycle
+local masterLevels = { 1 }
 local masterIndex = 1
 local focusMultiplier = 1
 local lastFocusStamp = 0
@@ -253,78 +253,19 @@ player:GetAttributeChangedSignal("RunState"):Connect(refreshScene)
 player:GetAttributeChangedSignal("WinTravelBudget"):Connect(refreshScene)
 
 --------------------------------------------------
--- MUSIC BUTTON
+-- MUSIC ON/OFF
+--
+-- There is no on-screen music button any more: Settings > Music (saved by the
+-- server as the SettingMusic attribute) is the only control. master() reads the
+-- attribute, so toggling it fades the music in/out through applyVolumes (hooked
+-- to the attribute above).
 --------------------------------------------------
 
-local old = playerGui:FindFirstChild("MusicControls")
-if old then
-	old:Destroy()
+-- remove the old button's gui if a previous version left one behind
+local oldControls = playerGui:FindFirstChild("MusicControls")
+if oldControls then
+	oldControls:Destroy()
 end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "MusicControls"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 5
-gui.Parent = playerGui
-
-local button = Instance.new("TextButton")
-button.Name = "MusicButton"
-button.AnchorPoint = Vector2.new(1, 1)
-button.Position = UDim2.new(1, -16, 1, -214)
-button.Size = UDim2.fromOffset(52, 52)
-button.BackgroundColor3 = Color3.fromRGB(240, 178, 82)
-button.Text = "MUSIC"
-button.TextColor3 = Color3.fromRGB(24, 22, 34)
-button.Font = Enum.Font.FredokaOne
-button.TextSize = 11
-button.Parent = gui
-
-Instance.new("UICorner", button).CornerRadius = UDim.new(1, 0)
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(24, 22, 34)
-stroke.Thickness = 3
-stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-stroke.Parent = button
-
-local function refreshButton()
-	local labels = { "MUSIC\nON", "MUSIC\n50%", "MUSIC\nOFF" }
-	button.Text = labels[masterIndex]
-end
-
--- The Settings > Music switch and this button are one control: the button's OFF
--- step is SettingMusic = false (saved by the server), and a change of the setting
--- from the Settings panel moves the button.
-local settingRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SettingSet")
-
-button.Activated:Connect(function()
-	local before = masterIndex
-	masterIndex = masterIndex % #masterLevels + 1
-	if masterIndex == #masterLevels then
-		settingRemote:FireServer("SettingMusic", false)
-	elseif before == #masterLevels then
-		settingRemote:FireServer("SettingMusic", true)
-	end
-	refreshButton()
-	applyVolumes(0.3)
-end)
-
-local function syncFromSetting()
-	local on = player:GetAttribute("SettingMusic") ~= false
-	if not on and masterIndex ~= #masterLevels then
-		masterIndex = #masterLevels
-	elseif on and masterIndex == #masterLevels then
-		masterIndex = 1
-	else
-		return
-	end
-	refreshButton()
-	applyVolumes(0.3)
-end
-player:GetAttributeChangedSignal("SettingMusic"):Connect(syncFromSetting)
-task.defer(syncFromSetting)
-
-refreshButton()
-
 --------------------------------------------------
 -- START
 --------------------------------------------------

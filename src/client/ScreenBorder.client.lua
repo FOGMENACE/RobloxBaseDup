@@ -20,6 +20,13 @@ gui.Name = "ScreenBorder"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.DisplayOrder = 0
+-- On phones/tablets Roblox pushes ScreenGuis inside the safe area (notch, camera
+-- cut-out, rounded corners), so the border would float inward from the real
+-- screen edge. ScreenInsets.None pins it to the physical screen edges instead
+-- (no-op where the property or insets do not exist).
+pcall(function()
+	gui.ScreenInsets = Enum.ScreenInsets.None
+end)
 gui.Parent = playerGui
 
 local THICKNESS = 0.07 -- fraction of the shorter side, set below
