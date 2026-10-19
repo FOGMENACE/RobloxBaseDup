@@ -30,8 +30,11 @@ local promptState = remotes:WaitForChild("PromptState")
 local promptDone = remotes:WaitForChild("PromptDone")
 
 -- Timing (seconds)
-local FIRST_PROMPT_DELAY = 180
-local PROMPT_INTERVAL = 420
+-- First invitation after about a minute of play, then one every 2 minutes,
+-- alternating group / favorite, so each one comes back about every 4 minutes
+-- until it is done (dismissible, lobby only, never over a run or a panel).
+local FIRST_PROMPT_DELAY = 60
+local PROMPT_INTERVAL = 120
 local AUTO_DISMISS = 25
 
 --------------------------------------------------

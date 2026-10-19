@@ -415,13 +415,13 @@ end)
 -- multipliers (RebirthBonuses / GamePassService).
 --------------------------------------------------
 
--- Wording only (no background frame), right-aligned to the top-right corner of
--- the level panel (which spans x 98..398).
+-- Wording only (no background frame), right-aligned to the right edge of the
+-- run oil chip (x 410..540) and sitting just above it.
 local bonusPill = create("Frame", {
 	Name = "XPBonusPill",
 	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.fromOffset(398, 10),
-	Size = UDim2.fromOffset(280, 46),
+	Position = UDim2.fromOffset(540, 16),
+	Size = UDim2.fromOffset(240, 38),
 	BackgroundTransparency = 1,
 }, hud)
 local bonusScale = create("UIScale", { Scale = 1 }, bonusPill)
@@ -430,11 +430,11 @@ local function bonusLine(y, color)
 	local line = create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, y),
-		Size = UDim2.new(1, 0, 0, 23),
+		Size = UDim2.new(1, 0, 0, 19),
 		Font = FONT,
 		Text = "",
 		TextColor3 = color,
-		TextSize = 19,
+		TextSize = 16,
 		TextXAlignment = Enum.TextXAlignment.Right,
 	}, bonusPill)
 	create("UIStroke", { Color = INK, Thickness = 2.5 }, line)
@@ -442,7 +442,7 @@ local function bonusLine(y, color)
 end
 
 local rebirthBonusLine = bonusLine(0, Color3.fromRGB(214, 170, 255))
-local passBonusLine = bonusLine(23, Color3.fromRGB(140, 240, 165))
+local passBonusLine = bonusLine(19, Color3.fromRGB(140, 240, 165))
 
 local function percentText(value)
 	value = math.floor(value + 0.5)
