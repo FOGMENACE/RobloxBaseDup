@@ -291,11 +291,37 @@ local function refreshButton()
 	button.Text = labels[masterIndex]
 end
 
+-- The Settings > Music switch and this button are one control: the button's OFF
+-- step is SettingMusic = false (saved by the server), and a change of the setting
+-- from the Settings panel moves the button.
+local settingRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SettingSet")
+
 button.Activated:Connect(function()
+	local before = masterIndex
 	masterIndex = masterIndex % #masterLevels + 1
+	if masterIndex == #masterLevels then
+		settingRemote:FireServer("SettingMusic", false)
+	elseif before == #masterLevels then
+		settingRemote:FireServer("SettingMusic", true)
+	end
 	refreshButton()
 	applyVolumes(0.3)
 end)
+
+local function syncFromSetting()
+	local on = player:GetAttribute("SettingMusic") ~= false
+	if not on and masterIndex ~= #masterLevels then
+		masterIndex = #masterLevels
+	elseif on and masterIndex == #masterLevels then
+		masterIndex = 1
+	else
+		return
+	end
+	refreshButton()
+	applyVolumes(0.3)
+end
+player:GetAttributeChangedSignal("SettingMusic"):Connect(syncFromSetting)
+task.defer(syncFromSetting)
 
 refreshButton()
 

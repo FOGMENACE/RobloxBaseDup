@@ -205,7 +205,7 @@ create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 5 }, banner
 local bannerScale = create("UIScale", { Scale = 1 }, banner)
 local function fitBanner()
 	local viewport = gui.AbsoluteSize
-	bannerScale.Scale = math.clamp(viewport.X / 740, 0.6, 1.1)
+	bannerScale.Scale = math.clamp(math.min(viewport.X / 740, viewport.Y / 520), 0.55, 1.1)
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitBanner)
 fitBanner()

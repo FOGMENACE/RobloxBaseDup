@@ -2,17 +2,21 @@
 -- PROMPT MANAGER
 --
 -- CLIENT ONLY.
---   1. Friendly, dismissible invitations to JOIN THE GROUP and to
---      FAVORITE the game. They only appear in the lobby (RunState
---      Waiting), never while a run, the shop or a panel is open, and they
---      loop on a timer until the player has done them. The server says
---      what is already done (PromptService) and re-checks group
---      membership itself.
+--   1. Invitations to JOIN THE GROUP and to FAVORITE the game, using
+--      Roblox's own native prompts (GroupService:PromptJoinAsync and
+--      AvatarEditorService:PromptSetFavorite) in the middle of the screen.
+--      Each one runs on its own timer, so they may overlap or follow each
+--      other closely, and they repeat until that task is done. They are
+--      allowed over the store and other panels, and only held back during a
+--      run. A short, non-blocking "do it now" banner appears with each one.
+--      The server says what is already done (PromptService) and re-checks
+--      group membership itself.
 --   2. Anti-AFK: keeps Roblox from kicking idle players (20 minute idle
 --      timeout) by sending a harmless virtual click when the idle event
 --      fires.
 --
--- Nothing here grants a reward; it is purely an invitation.
+-- Nothing here grants a reward; it is purely an invitation. The Settings
+-- "Pop ups" switch turns the invitations off.
 --------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -29,13 +33,12 @@ local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local promptState = remotes:WaitForChild("PromptState")
 local promptDone = remotes:WaitForChild("PromptDone")
 
--- Timing (seconds)
--- First invitation after about a minute of play, then one every 2 minutes,
--- alternating group / favorite, so each one comes back about every 4 minutes
--- until it is done (dismissible, lobby only, never over a run or a panel).
-local FIRST_PROMPT_DELAY = 60
-local PROMPT_INTERVAL = 120
-local AUTO_DISMISS = 25
+-- Timing (seconds). Each invitation has its own clock (small random jitter so
+-- the two drift in and out of sync): first one about half a minute in, then
+-- about every minute until that task is done.
+local FIRST_DELAY = { Group = 35, Favorite = 55 }
+local REPEAT_EVERY = 65
+local JITTER = 12
 
 --------------------------------------------------
 -- ANTI-AFK
@@ -49,270 +52,126 @@ player.Idled:Connect(function()
 end)
 
 --------------------------------------------------
--- STYLE
+-- "DO IT NOW" BANNER (small, non-blocking, never takes input)
 --------------------------------------------------
-
-local INK = Color3.fromRGB(24, 22, 34)
-local CREAM = Color3.fromRGB(255, 247, 232)
-local LANE = Color3.fromRGB(240, 178, 82)
-local PIN_RED = Color3.fromRGB(230, 70, 70)
-local GREEN = Color3.fromRGB(88, 196, 110)
-local SKY = Color3.fromRGB(86, 168, 240)
-local FONT = Enum.Font.FredokaOne
-
-local function create(className, props, parent)
-	local inst = Instance.new(className)
-	for key, value in pairs(props) do
-		inst[key] = value
-	end
-	inst.Parent = parent
-	return inst
-end
 
 local old = playerGui:FindFirstChild("PromptManagerUI")
 if old then
 	old:Destroy()
 end
 
-local gui = create("ScreenGui", {
-	Name = "PromptManagerUI",
-	ResetOnSpawn = false,
-	DisplayOrder = 11,
-}, playerGui)
+local gui = Instance.new("ScreenGui")
+gui.Name = "PromptManagerUI"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 30
+gui.Parent = playerGui
 
-local card = create("Frame", {
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, 380, 0.45, 0), -- off-screen, slides in
-	Size = UDim2.fromOffset(340, 150),
-	BackgroundColor3 = LANE,
-	Visible = false,
-}, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 16) }, card)
-create("UIStroke", { Color = INK, Thickness = 4 }, card)
-local cardScale = create("UIScale", { Scale = 1 }, card)
+local banner = Instance.new("TextLabel")
+banner.AnchorPoint = Vector2.new(0.5, 0)
+banner.Position = UDim2.new(0.5, 0, 0, -60)
+banner.Size = UDim2.fromOffset(380, 40)
+banner.BackgroundColor3 = Color3.fromRGB(35, 37, 39)
+banner.Font = Enum.Font.FredokaOne
+banner.TextSize = 20
+banner.TextColor3 = Color3.fromRGB(255, 226, 90)
+banner.Text = ""
+banner.Visible = false
+banner.Parent = gui
+Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 12)
+local bannerStroke = Instance.new("UIStroke")
+bannerStroke.Color = Color3.fromRGB(255, 226, 90)
+bannerStroke.Thickness = 2
+bannerStroke.Parent = banner
 
-local function fitCard()
-	cardScale.Scale = math.clamp(gui.AbsoluteSize.X / 900, 0.6, 1)
-end
-gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitCard)
-fitCard()
-
-local title = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(14, 8),
-	Size = UDim2.new(1, -28, 0, 30),
-	Font = FONT,
-	Text = "",
-	TextColor3 = CREAM,
-	TextSize = 24,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, card)
-create("UIStroke", { Color = INK, Thickness = 2.5 }, title)
-
-local body = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(14, 42),
-	Size = UDim2.new(1, -28, 0, 44),
-	Font = Enum.Font.GothamMedium,
-	Text = "",
-	TextColor3 = INK,
-	TextSize = 15,
-	TextWrapped = true,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	TextYAlignment = Enum.TextYAlignment.Top,
-}, card)
-
-local yesButton = create("TextButton", {
-	Position = UDim2.new(0, 14, 1, -52),
-	Size = UDim2.fromOffset(150, 40),
-	BackgroundColor3 = GREEN,
-	Font = FONT,
-	Text = "",
-	TextColor3 = CREAM,
-	TextSize = 18,
-}, card)
-create("UICorner", { CornerRadius = UDim.new(0, 12) }, yesButton)
-create("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, yesButton)
-
-local laterButton = create("TextButton", {
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -14, 1, -52),
-	Size = UDim2.fromOffset(110, 40),
-	BackgroundColor3 = CREAM,
-	Font = FONT,
-	Text = "NOT NOW",
-	TextColor3 = INK,
-	TextSize = 16,
-}, card)
-create("UICorner", { CornerRadius = UDim.new(0, 12) }, laterButton)
-create("UIStroke", { Color = INK, Thickness = 3, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, laterButton)
-
---------------------------------------------------
--- SHOW / HIDE
---------------------------------------------------
-
-local visible = false
-local currentToken = 0
-
-local function hideCard()
-	if not visible then
-		return
-	end
-	visible = false
-	currentToken += 1
-
-	local tween = TweenService:Create(
-		card,
-		TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-		{ Position = UDim2.new(1, 380, 0.45, 0) }
-	)
-	tween.Completed:Once(function()
-		if not visible then
-			card.Visible = false
-		end
-	end)
-	tween:Play()
-end
-
-local function showCard(heading, text, yesText, color)
-	visible = true
-	currentToken += 1
-	local token = currentToken
-
-	title.Text = heading
-	body.Text = text
-	yesButton.Text = yesText
-	yesButton.BackgroundColor3 = color
-
-	card.Visible = true
-	TweenService:Create(
-		card,
-		TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Position = UDim2.new(1, -16, 0.45, 0) }
-	):Play()
-
-	task.delay(AUTO_DISMISS, function()
-		if visible and token == currentToken then
-			hideCard()
+local bannerToken = 0
+local function showBanner(text)
+	bannerToken += 1
+	local token = bannerToken
+	banner.Text = text
+	banner.Visible = true
+	TweenService:Create(banner, TweenInfo.new(0.35, Enum.EasingStyle.Back), {
+		Position = UDim2.new(0.5, 0, 0, 14),
+	}):Play()
+	task.delay(5, function()
+		if bannerToken == token then
+			local hide = TweenService:Create(banner, TweenInfo.new(0.3), { Position = UDim2.new(0.5, 0, 0, -80) })
+			hide.Completed:Once(function()
+				if bannerToken == token then
+					banner.Visible = false
+				end
+			end)
+			hide:Play()
 		end
 	end)
 end
-
--- Single, permanent click handlers (connected once, below) that act on
--- whichever prompt is current, so reopening never stacks connections.
-local activeAction = nil
-
-yesButton.Activated:Connect(function()
-	local action = activeAction
-	hideCard()
-	if action then
-		task.spawn(action)
-	end
-end)
-
-laterButton.Activated:Connect(function()
-	hideCard()
-end)
 
 --------------------------------------------------
 -- WHEN IS IT OK TO INTERRUPT?
 --------------------------------------------------
 
+-- Lobby only: never in the middle of a run. (Panels such as the store are fine.)
 local function canInterrupt()
 	local runState = player:GetAttribute("RunState")
-	if not (runState == nil or runState == "" or runState == "Waiting") then
-		return false
-	end
-
-	-- Never over the shop, calendar or other panels.
-	for _, name in ipairs({ "BallShopUI" }) do
-		local other = playerGui:FindFirstChild(name)
-		if other and other:IsA("ScreenGui") and other.Enabled then
-			return false
-		end
-	end
-
-	local hub = playerGui:FindFirstChild("HubUI")
-	if hub then
-		for _, panelName in ipairs({ "ShopPanel", "CalendarPanel" }) do
-			local panel = hub:FindFirstChild(panelName)
-			if panel and panel.Visible then
-				return false
-			end
-		end
-	end
-
-	return true
+	return runState == nil or runState == "" or runState == "Waiting"
 end
 
 --------------------------------------------------
--- THE TWO INVITATIONS
+-- THE TWO INVITATIONS (native Roblox prompts)
 --------------------------------------------------
-
-local function offerGroup(groupId)
-	activeAction = function()
-		local ok, status = pcall(function()
-			return GroupService:PromptJoinAsync(groupId)
-		end)
-
-		if not ok then
-			warn("[PromptManager] Group prompt failed:", status)
-		end
-	end
-
-	-- the regular Roblox join-group prompt, in the middle of the screen (no custom card)
-	task.spawn(activeAction)
-end
 
 local favoriteBusy = false
 
-local function offerFavorite()
-	activeAction = function()
-		if favoriteBusy then
-			return
-		end
-		favoriteBusy = true
-
-		local connection
-		connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)
-			favoriteBusy = false
-			connection:Disconnect()
-
-			-- The event passes an Enum.AvatarPromptResult (always truthy), so
-			-- only an explicit Success counts; "No"/dismiss must not.
-			if result == Enum.AvatarPromptResult.Success then
-				promptDone:FireServer("Favorite")
-			end
-		end)
-
-		local ok, err = pcall(function()
-			AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
-		end)
-
-		if not ok then
-			favoriteBusy = false
-			connection:Disconnect()
-			warn("[PromptManager] Favorite prompt failed:", err)
-		end
+local function offerGroup(groupId)
+	showBanner("JOIN OUR COMMUNITY for free wins!")
+	local ok, status = pcall(function()
+		return GroupService:PromptJoinAsync(groupId)
+	end)
+	if not ok then
+		warn("[PromptManager] Group prompt failed:", status)
 	end
+end
 
-	-- the regular Roblox favorite prompt, in the middle of the screen (no custom card)
-	task.spawn(activeAction)
+local function offerFavorite()
+	if favoriteBusy then
+		return
+	end
+	favoriteBusy = true
+	showBanner("LIKE THE GAME - tap Yes to favorite!")
+
+	local connection
+	connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)
+		favoriteBusy = false
+		connection:Disconnect()
+		-- The event passes an Enum.AvatarPromptResult (always truthy), so only
+		-- an explicit Success counts; "No"/dismiss must not.
+		if result == Enum.AvatarPromptResult.Success then
+			promptDone:FireServer("Favorite")
+		end
+	end)
+
+	local ok, err = pcall(function()
+		AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
+	end)
+	if not ok then
+		favoriteBusy = false
+		connection:Disconnect()
+		warn("[PromptManager] Favorite prompt failed:", err)
+	end
 end
 
 --------------------------------------------------
--- LOOP
+-- LOOPS (one per invitation, independent so they can overlap)
 --------------------------------------------------
 
-task.spawn(function()
-	task.wait(FIRST_PROMPT_DELAY)
+local rng = Random.new()
 
-	local turn = 0
+local function runLoop(kind)
+	task.wait(FIRST_DELAY[kind])
 
 	while true do
-		-- Wait for a good moment.
-		while not canInterrupt() or visible do
-			task.wait(5)
+		-- wait for a good moment, and for Pop ups to be on
+		while not canInterrupt() or player:GetAttribute("SettingPopups") == false do
+			task.wait(4)
 		end
 
 		local ok, state = pcall(function()
@@ -320,36 +179,22 @@ task.spawn(function()
 		end)
 
 		if ok and typeof(state) == "table" then
-			local pending = {}
-
-			if not state.GroupDone then
-				table.insert(pending, "Group")
-			end
-			if not state.FavoriteDone then
-				table.insert(pending, "Favorite")
-			end
-
-			-- Settings > Pop ups OFF: no invitations (the loop keeps checking)
-			if player:GetAttribute("SettingPopups") == false then
-				task.wait(PROMPT_INTERVAL)
-				continue
-			end
-
-			if #pending == 0 then
-				-- Everything done: stop for the rest of the session.
-				break
-			end
-
-			turn += 1
-			local pick = pending[(turn - 1) % #pending + 1]
-
-			if pick == "Group" then
+			if kind == "Group" then
+				if state.GroupDone then
+					return -- done: stop for the rest of the session
+				end
 				offerGroup(state.GroupId)
 			else
+				if state.FavoriteDone then
+					return
+				end
 				offerFavorite()
 			end
 		end
 
-		task.wait(PROMPT_INTERVAL)
+		task.wait(REPEAT_EVERY + rng:NextNumber(-JITTER, JITTER))
 	end
-end)
+end
+
+task.spawn(runLoop, "Group")
+task.spawn(runLoop, "Favorite")

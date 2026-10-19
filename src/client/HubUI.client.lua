@@ -1646,6 +1646,18 @@ for index, pass in ipairs(STORE_PASSES) do
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})
 
+	-- present icon above the buy button (absolute-positioned: does not change the tile size)
+	text(row, {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(1, -89, 0, 2),
+		Size = UDim2.fromOffset(34, 34),
+		Text = "🎁",
+		TextSize = 28,
+		Rotation = -8,
+		TextColor3 = Color3.new(1, 1, 1),
+		ZIndex = 26,
+	})
+
 	local available = pass.PassId ~= 0
 	local buy = buyButton(row, available and GREEN or INK)
 	buy.AnchorPoint = Vector2.new(1, 0.5)

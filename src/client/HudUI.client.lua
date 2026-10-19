@@ -500,7 +500,7 @@ local running = false
 
 local function applyHudScale(animated)
 	local viewport = gui.AbsoluteSize
-	local target = math.clamp(viewport.X / 560, 0.55, 1.3) * (running and 0.76 or 1)
+	local target = math.clamp(math.min(viewport.X / 560, viewport.Y / 540), 0.55, 1.3) * (running and 0.76 or 1)
 
 	if animated then
 		TweenService:Create(hudScale, TweenInfo.new(0.3, Enum.EasingStyle.Quad), { Scale = target }):Play()
