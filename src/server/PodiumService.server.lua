@@ -118,7 +118,7 @@ local circle = part(
 	"CommunityCircle",
 	CYL,
 	Vector3.new(0.3, 4.6, 4.6),
-	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.5, 0)) * upright,
+	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.35, 0)) * upright, -- sits on the ring (0.2 thick), ring sits on the floor
 	Color3.fromRGB(255, 205, 80)
 )
 
@@ -127,7 +127,7 @@ part(
 	"CommunityRing",
 	CYL,
 	Vector3.new(0.2, 5.6, 5.6),
-	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.38, 0)) * upright,
+	CFrame.new(CENTER + TO_MIDDLE * 8 + Vector3.new(0, 0.1, 0)) * upright,
 	Color3.fromRGB(255, 247, 232)
 )
 
@@ -173,12 +173,33 @@ do
 end
 
 -- A little smaller overall (podium, mic and circle), standing on the floor.
+-- The lowest point is measured per part in WORLD space: Model:GetBoundingBox()
+-- is oriented to the first part, and the cylinders here are rotated 90 degrees,
+-- so it measured the wrong axis and left the whole podium floating ~1.5 studs.
 do
 	model:ScaleTo(0.75)
-	local cf, size = model:GetBoundingBox()
-	local bottom = cf.Position.Y - size.Y / 2
-	model:PivotTo(model:GetPivot() + Vector3.new(0, FLOOR_Y - bottom, 0))
+
+	local lowest = math.huge
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			local cf, size = descendant.CFrame, descendant.Size
+			local right, up, look = cf.RightVector, cf.UpVector, cf.LookVector
+			local halfHeight = (math.abs(right.Y) * size.X + math.abs(up.Y) * size.Y + math.abs(look.Y) * size.Z) / 2
+			lowest = math.min(lowest, cf.Position.Y - halfHeight)
+		end
+	end
+
+	-- the real floor under the podium (falls back to FLOOR_Y)
+	local floorY = FLOOR_Y
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { model }
+	local hit = Workspace:Raycast(CENTER + Vector3.new(0, 6, 0), Vector3.new(0, -30, 0), params)
+	if hit then
+		floorY = hit.Position.Y
+	end
+
+	model:PivotTo(model:GetPivot() + Vector3.new(0, floorY - lowest, 0))
 	prompt.MaxActivationDistance = 8
 end
-
 print("[PodiumService] READY")
