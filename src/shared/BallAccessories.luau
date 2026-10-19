@@ -63,6 +63,49 @@ local function waitForBarrelMesh()
 	end
 	return barrelMesh
 end
+-- Cone for spikes, prongs, horns and teeth. SpecialMesh MeshType.Pyramid no
+-- longer renders at all, so every "Pyramid" accessory was invisible. The cone
+-- is generated once in code (EditableMesh -> MeshPart, no uploaded asset) and
+-- cloned per spike; if that API is unavailable a stretched sphere is used.
+local coneTemplate = nil
+local coneFailed = false
+
+task.spawn(function()
+	local ok, part = pcall(function()
+		local em = AssetService:CreateEditableMesh()
+		local SIDES = 12
+		local tip = em:AddVertex(Vector3.new(0, 0.5, 0))
+		local bottom = em:AddVertex(Vector3.new(0, -0.5, 0))
+		local ring = {}
+		for index = 0, SIDES - 1 do
+			local angle = index / SIDES * math.pi * 2
+			ring[index] = em:AddVertex(Vector3.new(math.cos(angle) * 0.5, -0.5, math.sin(angle) * 0.5))
+		end
+		for index = 0, SIDES - 1 do
+			local nextIndex = (index + 1) % SIDES
+			em:AddTriangle(tip, ring[nextIndex], ring[index])
+			em:AddTriangle(bottom, ring[index], ring[nextIndex])
+		end
+		return AssetService:CreateMeshPartAsync(Content.fromObject(em))
+	end)
+
+	if ok and part then
+		coneTemplate = part
+	else
+		coneFailed = true
+		warn("[BallAccessories] Cone mesh unavailable, spikes use stretched spheres:", part)
+	end
+end)
+
+local function waitForCone()
+	local waited = 0
+	while not coneTemplate and not coneFailed and waited < 3 do
+		task.wait(0.1)
+		waited += 0.1
+	end
+	return coneTemplate
+end
+
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 
@@ -138,8 +181,18 @@ local function make(ball, spec)
 	local kind = spec.Kind or "Block"
 
 	local part
+	local cone = (kind == "Pyramid") and waitForCone() or nil
 	if spec.Template then
 		part = spec.Template:Clone()
+	elseif cone then
+		part = cone:Clone()
+	elseif kind == "Pyramid" then
+		-- fallback: a stretched sphere still reads as a spike (a Ball-shaped part
+		-- is always round, so a Sphere SpecialMesh stretches to the part size)
+		part = Instance.new("Part")
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = part
 	elseif kind == "Wedge" then
 		part = Instance.new("WedgePart")
 	else
@@ -158,6 +211,9 @@ local function make(ball, spec)
 	part.Color = spec.Color or CREAM
 	part.Material = spec.Mat or Enum.Material.SmoothPlastic
 	part.Transparency = spec.Transp or 0
+	if part:IsA("MeshPart") then
+		part.DoubleSided = false
+	end
 	if part:IsA("Part") or part:IsA("WedgePart") then
 		part.TopSurface = Enum.SurfaceType.Smooth
 		part.BottomSurface = Enum.SurfaceType.Smooth
@@ -170,14 +226,19 @@ local function make(ball, spec)
 	part.Anchored = ball.Anchored or detachMode
 	part.Reflectance = spec.Refl or 0
 
-	if kind == "Pyramid" then
-		local mesh = Instance.new("SpecialMesh")
-		mesh.MeshType = Enum.MeshType.Pyramid
-		mesh.Parent = part
-	end
 
 	local mode = spec.Mode or "Rolling"
 	part:SetAttribute("AccMode", mode)
+	-- optional idle animation (see Pose): Bob/BobSpeed/Spin move Upright parts,
+	-- Glow pulses transparency, Flicker flashes the part (and its light) like lightning
+	for _, key in ipairs({ "Bob", "BobSpeed", "Spin", "Glow", "Flicker", "AnimPhase" }) do
+		if spec[key] ~= nil then
+			part:SetAttribute(key, spec[key])
+		end
+	end
+	if spec.Glow or spec.Flicker then
+		part:SetAttribute("BaseTransp", part.Transparency)
+	end
 	part:SetAttribute("BaseSize", spec.Size)
 	part:SetAttribute("BaseC0", spec.CF)
 
@@ -484,6 +545,13 @@ end
 designs.PainMoon = function(ball)
 	local moon = rgb(235, 240, 255)
 
+	-- cratered moon surface: darker rimmed dents rolling with the ball
+	for index, dir in ipairs(sphereDirections(9)) do
+		local size = (index % 3 == 0) and 1.3 or 0.85
+		P(ball, "CraterRim" .. index, "Cylinder", Vector3.new(0.12, size * 1.25, size * 1.25), orientY(dir * (R - 0.02), dir) * CFrame.Angles(0, 0, math.pi / 2), rgb(150, 150, 165))
+		P(ball, "Crater" .. index, "Cylinder", Vector3.new(0.14, size, size), orientY(dir * (R - 0.01), dir) * CFrame.Angles(0, 0, math.pi / 2), rgb(70, 70, 82))
+	end
+
 	for index = 1, 9 do
 		local t = (index - 5) / 4 -- -1 .. 1 along the arc
 		local size = 0.8 * (1 - math.abs(t) * 0.55)
@@ -574,29 +642,64 @@ end
 -- 18  STORMGATHERER: a storm cloud with rain and lightning
 ----------------------------------------------------------------
 designs.StormGatherer = function(ball)
-	local cloud = rgb(120, 130, 150)
-	local up = { Mode = "Upright" }
-
-	for index, c in ipairs({ { 0, 0, 1.5 }, { 0.9, 0.1, 1.1 }, { -0.9, 0.05, 1.2 }, { 0.3, 0.45, 0.9 }, { -0.4, 0.5, 0.95 } }) do
-		P(ball, "Cloud" .. index, "Ball", Vector3.new(c[3], c[3] * 0.7, c[3]), at(c[1], 3.4 + c[2], 0), cloud, { Mode = "Upright" })
+	-- A living storm cloud above the ball (Upright, massless, non-colliding):
+	-- the whole cloud slowly swirls, every puff breathes on its own, lightning
+	-- flashes with a real light, plus mist and rain. It sits high enough to
+	-- never cover the lane.
+	local top = rgb(222, 228, 240)
+	local mid = rgb(158, 166, 186)
+	local base = rgb(92, 100, 122)
+	local H = 4.1
+	local random = Random.new(18)
+	local puffs = {
+		{ 0, 0.4, 0, 1.6, top }, { 0.9, 0.3, 0.2, 1.3, top }, { -0.9, 0.25, -0.15, 1.35, top },
+		{ 0.35, 0.7, -0.4, 1.1, top }, { -0.4, 0.65, 0.45, 1.05, top }, { 0.1, 0.85, 0.1, 0.9, top },
+		{ 1.55, -0.05, -0.15, 1.0, mid }, { -1.6, -0.05, 0.2, 1.0, mid }, { 0.55, -0.05, 0.8, 1.05, mid },
+		{ -0.5, -0.05, -0.8, 1.05, mid }, { 1.0, -0.1, -0.65, 0.9, mid }, { -1.0, -0.1, 0.7, 0.9, mid },
+		{ 0, -0.35, 0, 1.7, base }, { 0.85, -0.35, 0.25, 1.15, base }, { -0.85, -0.35, -0.2, 1.2, base },
+		{ 0.3, -0.38, -0.7, 1.0, base }, { -0.3, -0.38, 0.7, 1.0, base },
+	}
+	for index, c in ipairs(puffs) do
+		P(ball, "Cloud" .. index, "Ball", Vector3.new(c[4], c[4], c[4]), at(c[1], H + c[2], c[3]), c[5], {
+			Mode = "Upright", Mat = Enum.Material.SmoothPlastic,
+			Spin = 0.35, Bob = 0.07 + random:NextNumber() * 0.06, BobSpeed = 1.4 + random:NextNumber(), AnimPhase = random:NextNumber() * 6,
+		})
 	end
 
-	-- Lightning bolt zig-zag under the cloud
-	local bolt = rgb(255, 235, 90)
-	local pieces = { { 0.1, 2.6, 0.2 }, { -0.15, 2.2, -0.35 }, { 0.15, 1.8, 0.4 } }
-	for index, piece in ipairs(pieces) do
-		P(ball, "Bolt" .. index, "Block", Vector3.new(0.18, 0.6, 0.12), at(piece[1], piece[2] + 0.9, -0.6) * CFrame.Angles(0, 0, piece[3]), bolt, { Mode = "Upright", Mat = Enum.Material.Neon })
+	local mist = P(ball, "Mist", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, H, 0), mid, { Mode = "Upright", Transp = 1 })
+	emitter(mist, {
+		Texture = SMOKE, Rate = 7, Lifetime = NumberRange.new(2, 3), Speed = NumberRange.new(0.1, 0.4),
+		SpreadAngle = Vector2.new(180, 180), Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-15, 15),
+		Color = ColorSequence.new(rgb(196, 202, 218)), Size = NumberSequence.new(2.4, 3.2),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.72), NumberSequenceKeypoint.new(1, 1) }),
+	})
+
+	-- two lightning bolts that flash at different times, one lights the ball
+	local bolt = rgb(255, 240, 130)
+	for b, x in ipairs({ -0.45, 0.55 }) do
+		local zig = { { 0.0, -0.8, 0.4, 0.6 }, { -0.15, -1.3, -0.5, 0.65 }, { 0.1, -1.8, 0.45, 0.55 } }
+		for index, piece in ipairs(zig) do
+			local part = P(ball, "Bolt" .. b .. "_" .. index, "Block", Vector3.new(0.12, piece[4], 0.08),
+				at(x + piece[1], H + piece[2], -0.35) * CFrame.Angles(0, 0, piece[3]), bolt,
+				{ Mode = "Upright", Mat = Enum.Material.Neon, Flicker = true, AnimPhase = b * 1.3, Spin = 0.35 })
+			if index == 2 and b == 1 then
+				local light = Instance.new("PointLight")
+				light.Color = rgb(200, 220, 255)
+				light.Brightness = 3
+				light.Range = 12
+				light.Parent = part
+			end
+		end
 	end
 
-	local rain = P(ball, "Rain", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, 3.2, 0), cloud, { Mode = "Upright", Transp = 1 })
+	local rain = P(ball, "Rain", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, H - 0.6, 0), base, { Mode = "Upright", Transp = 1 })
 	emitter(rain, {
-		Rate = 26, Lifetime = NumberRange.new(0.6, 0.9), Speed = NumberRange.new(6, 8),
-		SpreadAngle = Vector2.new(25, 25), EmissionDirection = Enum.NormalId.Bottom,
-		Color = ColorSequence.new(rgb(120, 190, 255)), Size = NumberSequence.new(0.18),
-		LightEmission = 0.4,
+		Rate = 34, Lifetime = NumberRange.new(0.35, 0.5), Speed = NumberRange.new(7, 9),
+		SpreadAngle = Vector2.new(20, 20), EmissionDirection = Enum.NormalId.Bottom,
+		Color = ColorSequence.new(rgb(150, 205, 255)), Size = NumberSequence.new(0.08),
+		Transparency = NumberSequence.new(0.2, 0.6), LightEmission = 0.3,
 	})
 end
-
 ----------------------------------------------------------------
 -- 19  SINGLEKNOT: a dragon flying around the ball
 ----------------------------------------------------------------
@@ -829,6 +932,266 @@ designs.OilBarrel = function(ball)
 	})
 end
 
+----------------------------------------------------------------
+-- 2  AFTERSHOCK: glowing fault-line cracks and a pulsing shock ring
+----------------------------------------------------------------
+designs.Aftershock = function(ball)
+	local glow = rgb(170, 120, 255)
+	-- jagged crack lines that roll with the ball
+	local cracks = {
+		{ Vector3.new(0, 1, 0), 0.0 }, { Vector3.new(1, 0.2, 0), 1.1 }, { Vector3.new(-0.6, -0.3, 0.8), 2.3 },
+		{ Vector3.new(0.3, -0.8, -0.6), 0.6 }, { Vector3.new(-0.8, 0.5, -0.4), 1.8 },
+	}
+	for index, crack in ipairs(cracks) do
+		local dir = crack[1].Unit
+		for segment = -1, 1 do
+			P(ball, "Crack" .. index .. "_" .. segment, "Block", Vector3.new(0.14, 0.06, 0.95),
+				orientY(dir * (R + 0.01), dir) * CFrame.Angles(0, crack[2] + segment * 0.7, 0) * CFrame.new(0, 0, segment * 0.75),
+				glow, { Mat = Enum.Material.Neon })
+		end
+	end
+	-- two flat rings orbiting like a shock wave
+	for index = 1, 2 do
+		for piece = 1, 10 do
+			P(ball, "Shock" .. index .. "_" .. piece, "Block", Vector3.new(0.18, 0.08, 0.5), CFrame.new(), glow, {
+				Mat = Enum.Material.Neon, Transp = 0.35, Mode = "Orbit",
+				Orbit = { Radius = 2.9 + index * 0.35, Speed = index == 1 and 2.2 or -1.7, Height = -0.8 + index * 0.3, Phase = (piece / 10) * math.pi * 2, Tilt = 0 },
+			})
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- 4  THRIFTY: a gold coin band, a price tag and a few orbiting coins
+----------------------------------------------------------------
+designs.Thrifty = function(ball)
+	local gold = rgb(255, 205, 70)
+	P(ball, "Band", "Cylinder", Vector3.new(0.55, 4.12, 4.12), CFrame.Angles(0, 0, math.pi / 2), gold, { Mat = Enum.Material.Metal })
+	for index = 1, 8 do
+		local angle = index / 8 * math.pi * 2
+		local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		P(ball, "Stud" .. index, "Cylinder", Vector3.new(0.12, 0.42, 0.42), orientY(dir * (R + 0.08), dir) * CFrame.Angles(0, 0, math.pi / 2), rgb(255, 240, 170), { Mat = Enum.Material.Neon })
+	end
+	-- price tag hanging upright beside the ball
+	P(ball, "Tag", "Block", Vector3.new(0.9, 0.55, 0.08), at(1.6, 1.9, -0.6) * CFrame.Angles(0, 0, -0.35), CREAM, { Mode = "Upright" })
+	P(ball, "TagHole", "Cylinder", Vector3.new(0.1, 0.16, 0.16), at(1.35, 2.05, -0.65) * CFrame.Angles(0, math.pi / 2, 0), INK, { Mode = "Upright" })
+	P(ball, "TagMark", "Block", Vector3.new(0.4, 0.1, 0.1), at(1.65, 1.85, -0.66) * CFrame.Angles(0, 0, -0.35), rgb(60, 160, 80), { Mode = "Upright" })
+	for index = 1, 3 do
+		P(ball, "Coin" .. index, "Cylinder", Vector3.new(0.12, 0.8, 0.8), CFrame.new(), gold, {
+			Mat = Enum.Material.Metal, Mode = "Orbit",
+			Orbit = { Radius = 3.0, Speed = 1.3, Height = 0.4, Phase = index * 2.09, Tilt = 0.25, Bob = 0.35 },
+		})
+	end
+end
+
+----------------------------------------------------------------
+-- QUALITY PASS: extra detail and idle animation on top of each design
+----------------------------------------------------------------
+local function extend(ballId, extra)
+	local original = designs[ballId]
+	designs[ballId] = function(ball)
+		if original then
+			original(ball)
+		end
+		extra(ball)
+	end
+end
+
+local function animateUpright(ball, props)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child:IsA("BasePart") and child:GetAttribute("AccMode") == "Upright" then
+			for key, value in pairs(props) do
+				if child:GetAttribute(key) == nil then
+					child:SetAttribute(key, value)
+				end
+			end
+		end
+	end
+end
+
+local function sparkles(ball, color, rate, height)
+	local holder = P(ball, "Sparkles", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, height or 0, 0), color, { Mode = "Upright", Transp = 1 })
+	emitter(holder, {
+		Texture = SPARKLE, Rate = rate or 6, Lifetime = NumberRange.new(0.6, 1.1),
+		Speed = NumberRange.new(0.5, 1.5), SpreadAngle = Vector2.new(180, 180),
+		Color = ColorSequence.new(color), Size = NumberSequence.new(0.45, 0), LightEmission = 1,
+	})
+	holder:FindFirstChildOfClass("ParticleEmitter").Shape = Enum.ParticleEmitterShape.Sphere
+	return holder
+end
+
+-- 1  STRAIGHTBALL: proper gold-rimmed finger holes
+extend("StraightBall", function(ball)
+	local up = Vector3.new(0, 0.55, -1).Unit
+	for index, offset in ipairs({ Vector3.new(-0.28, 0.12, 0), Vector3.new(0.28, 0.12, 0), Vector3.new(0, -0.32, 0) }) do
+		local dir = (up + offset).Unit
+		P(ball, "HoleRim" .. index, "Cylinder", Vector3.new(0.08, 0.5, 0.5), orientY(dir * (R - 0.01), dir) * CFrame.Angles(0, 0, math.pi / 2), rgb(255, 205, 70), { Mat = Enum.Material.Metal })
+		P(ball, "Hole" .. index, "Cylinder", Vector3.new(0.1, 0.36, 0.36), orientY(dir * (R + 0.005), dir) * CFrame.Angles(0, 0, math.pi / 2), INK)
+	end
+end)
+
+-- 2  AFTERSHOCK: rock debris circling and cracks that throb
+extend("Aftershock", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name:find("^Acc_Crack") then
+			child:SetAttribute("Glow", 0.5)
+			child:SetAttribute("BaseTransp", 0)
+		end
+	end
+	local random = Random.new(2)
+	for index = 1, 6 do
+		local s = 0.35 + random:NextNumber() * 0.3
+		P(ball, "Debris" .. index, "Block", Vector3.new(s, s * 0.8, s), CFrame.Angles(random:NextNumber() * 3, random:NextNumber() * 3, 0), rgb(90, 70, 120), {
+			Mat = Enum.Material.Slate, Mode = "Orbit",
+			Orbit = { Radius = 3.2, Speed = 1.1, Height = -0.6, Phase = index * 1.05, Tilt = 0.15, Bob = 0.5 },
+		})
+	end
+end)
+
+-- 3  CATPLZ: the cat breathes, gets a collar and a bell
+extend("CatPlz", function(ball)
+	P(ball, "Collar", "Cylinder", Vector3.new(0.18, 1.25, 1.25), at(0, 3.0, -0.15) * CFrame.Angles(0, 0, math.pi / 2), rgb(230, 60, 90), { Mode = "Upright" })
+	P(ball, "Bell", "Ball", Vector3.new(0.3, 0.3, 0.3), at(0, 2.85, -0.78), rgb(255, 205, 70), { Mode = "Upright", Mat = Enum.Material.Metal })
+	animateUpright(ball, { Bob = 0.06, BobSpeed = 2.2 })
+end)
+
+-- 4  THRIFTY: the tag sways, coins glint
+extend("Thrifty", function(ball)
+	animateUpright(ball, { Bob = 0.08, BobSpeed = 1.8 })
+	sparkles(ball, rgb(255, 225, 120), 4, 0)
+end)
+
+-- 5  VOLTAGE: crackling arcs that flash between the prongs
+extend("Voltage", function(ball)
+	for index, dir in ipairs(sphereDirections(6)) do
+		P(ball, "Arc" .. index, "Block", Vector3.new(0.08, 0.08, 1.6), orientY(dir * (R + 0.45), dir) * CFrame.Angles(0, index, math.pi / 2), rgb(180, 230, 255), {
+			Mat = Enum.Material.Neon, Flicker = true, AnimPhase = index * 0.43,
+		})
+	end
+end)
+
+-- 6  VENOM: toxic bubbles rising off the spikes
+extend("Venom", function(ball)
+	local bubbles = P(ball, "Toxic", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, 1.2, 0), rgb(120, 255, 90), { Mode = "Upright", Transp = 1 })
+	emitter(bubbles, {
+		Rate = 8, Lifetime = NumberRange.new(0.8, 1.4), Speed = NumberRange.new(1, 2.5),
+		SpreadAngle = Vector2.new(40, 40), Color = ColorSequence.new(rgb(150, 255, 90)),
+		Size = NumberSequence.new(0.3, 0.05), Transparency = NumberSequence.new(0.2, 1), LightEmission = 0.6,
+	})
+end)
+
+-- 7  SNOTOOZE: slime glistens and drips
+extend("SnotOoze", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name:find("^Acc_Blob") then
+			child.Reflectance = 0.25
+		end
+	end
+	local drip = P(ball, "Dripper", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, -1.6, 0), rgb(150, 225, 60), { Mode = "Upright", Transp = 1 })
+	emitter(drip, {
+		Rate = 5, Lifetime = NumberRange.new(0.5, 0.8), Speed = NumberRange.new(0, 1),
+		Acceleration = Vector3.new(0, -25, 0), SpreadAngle = Vector2.new(60, 60),
+		Color = ColorSequence.new(rgb(150, 225, 60)), Size = NumberSequence.new(0.28, 0.12),
+	})
+end)
+
+-- 8  METEOR: molten seams throb, embers drift up
+extend("Meteor", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name:find("^Acc_Glow") then
+			child:SetAttribute("Glow", 0.45)
+			child:SetAttribute("BaseTransp", 0)
+		end
+	end
+	sparkles(ball, rgb(255, 150, 60), 10, 0.5)
+end)
+
+-- 9  ATTITUDEPAUSIBLE: bling on the chain, the shades glint
+extend("AttitudePausible", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name == "Acc_Glint" then
+			child:SetAttribute("Flicker", true)
+			child:SetAttribute("BaseTransp", 0)
+		end
+	end
+	sparkles(ball, rgb(255, 230, 120), 5, -0.5)
+end)
+
+-- 10  GREENNATURE: the flower turns to the sun, leaves drift off
+extend("GreenNature", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name:find("^Acc_Petal") or child.Name == "Acc_FlowerCenter" then
+			child:SetAttribute("Spin", 0.6)
+			child:SetAttribute("Bob", 0.08)
+		end
+	end
+	local leaves = P(ball, "Leaves", "Ball", Vector3.new(0.4, 0.4, 0.4), at(0, 1.5, 0), rgb(90, 200, 90), { Mode = "Upright", Transp = 1 })
+	emitter(leaves, {
+		Rate = 2, Lifetime = NumberRange.new(1.5, 2.2), Speed = NumberRange.new(0.5, 1.2),
+		Acceleration = Vector3.new(0, -2, 0), SpreadAngle = Vector2.new(90, 90), Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-90, 90), Color = ColorSequence.new(rgb(90, 200, 90)), Size = NumberSequence.new(0.35, 0.25),
+	})
+end)
+
+-- 11  DETAILO: a glowing core inside the gyroscope
+extend("Detailo", function(ball)
+	P(ball, "Core", "Ball", Vector3.new(4.25, 4.25, 4.25), CFrame.new(), rgb(120, 220, 255), { Mat = Enum.Material.ForceField, Transp = 0.1, Glow = 0.5 })
+end)
+
+-- 12  NEONVESTOFF: a hazard beacon on top
+extend("NeonVestOff", function(ball)
+	local beacon = P(ball, "Beacon", "Ball", Vector3.new(0.6, 0.6, 0.6), at(0, 2.4, 0), rgb(255, 150, 30), { Mode = "Upright", Mat = Enum.Material.Neon, Flicker = true })
+	local light = Instance.new("PointLight")
+	light.Color = rgb(255, 150, 30)
+	light.Range = 8
+	light.Parent = beacon
+	P(ball, "BeaconBase", "Cylinder", Vector3.new(0.25, 0.7, 0.7), at(0, 2.08, 0) * CFrame.Angles(0, 0, math.pi / 2), rgb(40, 40, 46), { Mode = "Upright" })
+end)
+
+-- 13  STARDOODLE: twinkling stardust
+extend("StarDoodle", function(ball)
+	sparkles(ball, rgb(255, 235, 120), 9, 0.3)
+end)
+
+-- 14  PAINMOON: a soft lunar halo
+extend("PainMoon", function(ball)
+	P(ball, "Halo", "Ball", Vector3.new(4.9, 4.9, 4.9), CFrame.new(), rgb(170, 200, 255), { Mat = Enum.Material.ForceField, Transp = 0.2, Glow = 0.4 })
+end)
+
+-- 15  VOIDMINTER: the void orb swirls and leaks sparks
+extend("VoidMinter", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name == "Acc_Void" or child.Name == "Acc_VoidRim" then
+			child:SetAttribute("Bob", 0.15)
+		end
+		if child.Name == "Acc_VoidRim" then
+			child:SetAttribute("Glow", 0.2)
+			child:SetAttribute("BaseTransp", child.Transparency)
+		end
+	end
+	sparkles(ball, rgb(170, 90, 255), 8, 3.0)
+end)
+
+-- 16  VOIDWALKER: eyes blink
+extend("Voidwalker", function(ball)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name == "Acc_Eye" then
+			child:SetAttribute("Glow", 0.6)
+			child:SetAttribute("BaseTransp", 0)
+		end
+	end
+end)
+
+-- 17  PINKMONSTER: bounces happily
+extend("PinkMonster", function(ball)
+	animateUpright(ball, { Bob = 0.1, BobSpeed = 3 })
+end)
+
+-- 19  SINGLEKNOT: golden embers around the dragon's ball
+extend("SingleKnot", function(ball)
+	sparkles(ball, rgb(255, 190, 80), 8, 0)
+end)
+
 --------------------------------------------------
 --------------------------------------------------
 -- PUBLIC API
@@ -922,7 +1285,22 @@ function BallAccessories.Pose(ball, now)
 	for _, child in ipairs(ball:GetChildren()) do
 		if child:IsA("BasePart") then
 			local mode = child:GetAttribute("AccMode")
+			local animPhase = child:GetAttribute("AnimPhase") or 0
 
+			local glow = child:GetAttribute("Glow")
+			if glow then
+				child.Transparency = (child:GetAttribute("BaseTransp") or 0) + (math.sin(now * 3 + animPhase) + 1) * 0.5 * glow
+			end
+			if child:GetAttribute("Flicker") then
+				-- two quick flashes, then a pause (about every 2.6 s)
+				local k = (now + animPhase) % 2.6
+				local on = k < 0.09 or (k > 0.18 and k < 0.27)
+				child.Transparency = on and (child:GetAttribute("BaseTransp") or 0) or 1
+				local light = child:FindFirstChildOfClass("PointLight")
+				if light then
+					light.Enabled = on
+				end
+			end
 			if mode == "Upright" or mode == "Orbit" then
 				local weld = child:FindFirstChild("AccWeld")
 				local baseCF = child:GetAttribute("BaseC0")
@@ -940,7 +1318,19 @@ function BallAccessories.Pose(ball, now)
 					end
 
 					if mode == "Upright" then
-						world = CFrame.new(center + baseCF.Position * scale) * (baseCF - baseCF.Position)
+						local offset = baseCF.Position * scale
+						local rotation = baseCF - baseCF.Position
+						local spin = child:GetAttribute("Spin")
+						if spin then
+							local turn = CFrame.Angles(0, now * spin, 0)
+							offset = turn * offset
+							rotation = turn * rotation
+						end
+						local bob = child:GetAttribute("Bob")
+						if bob then
+							offset += Vector3.new(0, math.sin(now * (child:GetAttribute("BobSpeed") or 2) + animPhase) * bob * scale, 0)
+						end
+						world = CFrame.new(center + offset) * rotation
 					else
 						local speed = child:GetAttribute("OrbitSpeed") or 1
 						local phase = child:GetAttribute("OrbitPhase") or 0
