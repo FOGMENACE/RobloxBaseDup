@@ -1346,6 +1346,13 @@ Players.PlayerRemoving:Connect(
 )
 
 
+-- A forced respawn / reset (RunController) clears this player's busy flag.
+task.spawn(function()
+	ServerScriptService:WaitForChild("ForceResetRun").Event:Connect(function(player)
+		winCourseBusy[player] = nil
+	end)
+end)
+
 --------------------------------------------------
 -- START WIN COURSE
 --------------------------------------------------

@@ -1383,6 +1383,148 @@ end
 
 
 --------------------------------------------------
+-- FORCED RESET / RESPAWN RECOVERY
+--
+-- Players cannot reset from the menu (client/NoReset), but an exploiter or a
+-- lethal glitch can still respawn the character. A respawn creates a NEW ball
+-- and used to leave the run, win course, old course and RunState untouched, so
+-- the player could not move and several scripts kept stale state.
+--
+-- On every RESPAWN (not the first spawn) the run is cut: other services drop
+-- their per-run state (ForceResetRun event), this run's course and oil are
+-- cleared, nothing is paid out for the unfinished run, progression that was
+-- already credited is saved, and RunState returns to Waiting.
+--------------------------------------------------
+
+local forceResetEvent = ServerScriptService:FindFirstChild("ForceResetRun")
+if not forceResetEvent then
+	forceResetEvent = Instance.new("BindableEvent")
+	forceResetEvent.Name = "ForceResetRun"
+	forceResetEvent.Parent = ServerScriptService
+end
+
+local recovering = {}
+
+local function recoverFromRespawn(player)
+	if recovering[player] then
+		return
+	end
+	recovering[player] = true
+
+	local previous = player:GetAttribute("RunState")
+	print("[AUDIT] respawn recovery:", player.Name, player.UserId, "RunState was", previous)
+
+	-- 1) other services drop their state for this player
+	pcall(function()
+		forceResetEvent:Fire(player)
+	end)
+
+	-- 2) this run's course, oil and attributes
+	removeOldPlayerCourse(player)
+	resetRunCollectionState(player)
+	for _, name in ipairs({ "WinTravelBudget", "WinDistanceTravelled", "WinSpeed" }) do
+		player:SetAttribute(name, nil)
+	end
+
+	-- 3) the new ball must be a plain lobby ball
+	task.spawn(function()
+		local balls = workspace:WaitForChild("PlayerBalls")
+		local ball
+		for _ = 1, 60 do
+			ball = balls:FindFirstChild("PlayerBall_" .. player.UserId)
+			if ball then
+				break
+			end
+			task.wait(0.1)
+		end
+		if ball then
+			ball:SetAttribute("WinCourseActive", false)
+			for _, name in ipairs({ "WinCourseLinearVelocity" }) do
+				local leftover = ball:FindFirstChild(name)
+				if leftover then
+					leftover:Destroy()
+				end
+			end
+			ball.Anchored = false
+		end
+
+		-- 4) back to the lobby, progress saved (only what was already credited)
+		player:SetAttribute("RunState", "Waiting")
+
+		pcall(function()
+			require(
+				ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
+			).SavePlayer(player)
+		end)
+
+		recovering[player] = nil
+	end)
+end
+
+local function watchRespawns(player)
+	local spawnedOnce = false
+	player.CharacterAdded:Connect(function()
+		if spawnedOnce then
+			recoverFromRespawn(player)
+		end
+		spawnedOnce = true
+	end)
+end
+
+Players.PlayerAdded:Connect(watchRespawns)
+for _, existing in ipairs(Players:GetPlayers()) do
+	watchRespawns(existing)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	recovering[player] = nil
+end)
+
+--------------------------------------------------
+-- DUPLICATE COURSE SWEEP
+--
+-- There must be at most ONE oil course folder per player and no leftover
+-- LobbyCourse preview during a run. A stray extra copy draws a second set of
+-- platform numbers on top of the real ones.
+--------------------------------------------------
+
+task.spawn(function()
+	while true do
+		task.wait(2)
+
+		local seen = {}
+		for _, child in ipairs(course:GetChildren()) do
+			if child:IsA("Folder") then
+				local id = child.Name:match("^PlayerCourse_(%d+)$")
+				if id then
+					local owner = Players:GetPlayerByUserId(tonumber(id))
+					if not owner then
+						child:Destroy() -- course of a player who left
+					elseif seen[id] then
+						warn("[AUDIT] duplicate PlayerCourse removed for", id)
+						child:Destroy()
+					else
+						seen[id] = child
+					end
+				end
+			end
+		end
+
+		-- the lobby preview must not stay once anyone is running
+		local lobby = course:FindFirstChild("LobbyCourse")
+		if lobby then
+			for _, player in ipairs(Players:GetPlayers()) do
+				local state = player:GetAttribute("RunState")
+				if state == "Running" or state == "Starting" or state == "Finishing" then
+					lobby:Destroy()
+					break
+				end
+			end
+		end
+	end
+end)
+
+--------------------------------------------------
 -- MAIN LOOP
 --------------------------------------------------
 

@@ -2082,7 +2082,9 @@ local function finishRun(
 			RESULT_DISPLAY_TIME
 		)
 
-		if player.Parent then
+		if run.ForceReset then
+			-- the run was cut by a respawn; nothing to return
+		elseif player.Parent then
 
 			returnBallToLobby(
 				player,
@@ -3205,6 +3207,27 @@ RunService.Heartbeat:Connect(
 -- PLAYER REMOVING
 --------------------------------------------------
 
+-- A forced respawn / reset (RunController) cuts the run: stop it, drop state.
+task.spawn(function()
+	local forceReset = ServerScriptService:WaitForChild("ForceResetRun")
+	forceReset.Event:Connect(function(player)
+		local run = activeRuns[player]
+		if run then
+			run.Finished = true
+			run.ForceReset = true
+			pcall(removePhysicsController, run)
+			if run.Ball and run.Ball.Parent then
+				run.Ball:SetAttribute("WinCourseActive", false)
+			end
+		end
+		activeRuns[player] = nil
+		returningPlayers[player] = nil
+		creditedThisRun[player] = nil
+		for _, name in ipairs({ "WinTravelBudget", "WinDistanceTravelled", "WinSpeed" }) do
+			player:SetAttribute(name, nil)
+		end
+	end)
+end)
 Players.PlayerRemoving:Connect(
 	function(player)
 
