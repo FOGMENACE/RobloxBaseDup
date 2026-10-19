@@ -1425,7 +1425,7 @@ do
 	-- what the pack includes: a small icon row above the Robux button
 	local includes = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, 8),
+		Position = UDim2.new(1, -14, 0, 40),
 		Size = UDim2.fromOffset(150, 40),
 		BackgroundTransparency = 1,
 		ZIndex = 26,
@@ -1449,7 +1449,7 @@ do
 	end
 	local buy = buyButton(row)
 	buy.AnchorPoint = Vector2.new(1, 1)
-	buy.Position = UDim2.new(1, -14, 1, -30)
+	buy.Position = UDim2.new(1, -14, 1, -44)
 	buy.Size = UDim2.fromOffset(150, 60)
 	local oldPrice = text(buy, {
 		Position = UDim2.fromOffset(0, 2),
