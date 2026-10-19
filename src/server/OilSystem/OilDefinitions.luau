@@ -147,7 +147,7 @@ local OilDefinitions = {
 	--------------------------------------------------
 	-- LEGENDARY
 	--
-	-- The jackpot: only ever a POSITIVE (green) platform, about 1 in 100 platforms.
+	-- The jackpot: only ever a POSITIVE (green) platform, about 1 in 100 platforms at rebirth 0, rarer as rebirths rise.
 	-- Random reward: 3,000 - 4,500 (before the per-course scale)
 	--------------------------------------------------
 

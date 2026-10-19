@@ -44,10 +44,31 @@ local gui = create("ScreenGui", {
 
 local column = create("Frame", {
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -12, 0.5, 40),
-	Size = UDim2.fromOffset(128, 180),
+	Position = UDim2.new(1, -12, 0.5, -30),
+	Size = UDim2.fromOffset(160, 220),
 	BackgroundTransparency = 1,
 }, gui)
+-- Big on large screens, but it must stay clear of the Music / camera-zoom /
+-- jump buttons stacked in the bottom-right (their top edge is 266 px above the
+-- bottom), so it shrinks on short screens.
+local columnScale = Instance.new("UIScale")
+columnScale.Parent = column
+local function fitColumn()
+	local h = gui.AbsoluteSize.Y
+	if h < 520 then
+		-- phone-height screens: tuck it into the top-right corner, above the
+		-- Music / zoom buttons
+		column.AnchorPoint = Vector2.new(1, 0)
+		column.Position = UDim2.new(1, -12, 0, 8)
+		columnScale.Scale = math.clamp((h - 266 - 16) / 220, 0.4, 0.55)
+	else
+		column.AnchorPoint = Vector2.new(1, 0.5)
+		column.Position = UDim2.new(1, -12, 0.5, -30)
+		columnScale.Scale = math.clamp((h / 2 - 244) / 110, 0.55, 1.15)
+	end
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitColumn)
+fitColumn()
 create("UIListLayout", {
 	Padding = UDim.new(0, 8),
 	SortOrder = Enum.SortOrder.LayoutOrder,
@@ -66,12 +87,12 @@ for key, style in pairs(STYLES) do
 	if boost and boost.ProductId ~= 0 then
 		local holder = create("Frame", {
 			LayoutOrder = style.Order,
-			Size = UDim2.fromOffset(128, 76),
+			Size = UDim2.fromOffset(160, 96),
 			BackgroundTransparency = 1,
 		}, column)
 
 		local button = create("TextButton", {
-			Size = UDim2.new(1, 0, 0, 50),
+			Size = UDim2.new(1, 0, 0, 62),
 			BackgroundColor3 = Color3.new(1, 1, 1),
 			Text = "",
 			AutoButtonColor = false,
@@ -87,18 +108,18 @@ for key, style in pairs(STYLES) do
 			Font = FONT,
 			Text = boost.Label,
 			TextColor3 = CREAM,
-			TextSize = 24,
+			TextSize = 30,
 		}, button)
 		create("UIStroke", { Color = INK, Thickness = 2.5 }, label)
 
 		local price = create("TextLabel", {
 			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(0, 52),
-			Size = UDim2.new(1, 0, 0, 22),
+			Position = UDim2.fromOffset(0, 64),
+			Size = UDim2.new(1, 0, 0, 28),
 			Font = FONT,
 			Text = " " .. boost.PriceRobux .. " ONLY!",
 			TextColor3 = Color3.fromRGB(255, 240, 120),
-			TextSize = 15,
+			TextSize = 19,
 		}, holder)
 		create("UIStroke", { Color = INK, Thickness = 2 }, price)
 
@@ -140,12 +161,12 @@ end)
 -- Friend bonus (+10% XP per friend in the server, computed by the server).
 local friendLabel = create("TextLabel", {
 	LayoutOrder = 10,
-	Size = UDim2.fromOffset(128, 24),
+	Size = UDim2.fromOffset(160, 28),
 	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "",
 	TextColor3 = Color3.fromRGB(150, 255, 190),
-	TextSize = 14,
+	TextSize = 17,
 	Visible = false,
 }, column)
 create("UIStroke", { Color = INK, Thickness = 2 }, friendLabel)

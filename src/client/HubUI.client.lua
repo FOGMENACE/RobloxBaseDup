@@ -122,16 +122,39 @@ local gui = create("ScreenGui", {
 local left = create("Frame", {
 	Name = "Left",
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 10, 0.3, 0),
+	-- lower than before so the Roblox chat window does not cover the wins counter
+	Position = UDim2.new(0, 10, 0.37, 0),
 	Size = UDim2.fromOffset(176, 440),
 }, gui)
 
 local rootScale = create("UIScale", { Scale = 1 }, left)
 
+-- The column starts below the Roblox chat window and must end above the
+-- rebirth panel in the bottom-left corner (HudUI: 132 tall, scaled by
+-- width / 900 up to 1, 10 px from the bottom). It is as big as the screen
+-- allows: scaled to fit that gap, and if the screen is too short it starts
+-- higher instead of overlapping.
+local COLUMN_HEIGHT = 326 -- content height at scale 1
 local function updateRootScale()
 	local viewport = gui.AbsoluteSize
-	rootScale.Scale = math.clamp(viewport.Y / 800, 0.7, 1.15)
+	local rebirthScale = math.clamp(viewport.X / 900, 0.65, 1)
+	local rebirthTop = viewport.Y - 10 - 132 * rebirthScale - 10
+
+	local topFraction = 0.335
+	local fit = (rebirthTop - topFraction * viewport.Y) / COLUMN_HEIGHT
+	if fit < 0.75 then
+		topFraction = 0.28
+		fit = (rebirthTop - topFraction * viewport.Y) / COLUMN_HEIGHT
+	end
+	if fit < 0.75 then
+		topFraction = 0.2
+		fit = (rebirthTop - topFraction * viewport.Y) / COLUMN_HEIGHT
+	end
+
+	left.Position = UDim2.new(0, 10, topFraction, 0)
+	rootScale.Scale = math.clamp(math.min(viewport.Y / 760, fit), 0.5, 1.2)
 end
+
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateRootScale)
 updateRootScale()
 

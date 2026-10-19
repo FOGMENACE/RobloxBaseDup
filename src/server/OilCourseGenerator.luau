@@ -703,6 +703,13 @@ local function rollSpecialCaps()
 	helperUsed, hurtUsed = 0, 0
 end
 
+-- DIFFICULTY (0..1, reaches 1 at rebirth 40): the better a platform tier is, the
+-- harder it is to GET as rebirths rise. Good (green) Rare / Epic / Legendary get
+-- rarer, the same tiers on the red side get more common, and fewer rows are
+-- green/green. Sizes are unchanged; only how often the big ones can be caught.
+local difficulty = 0
+local TIER_HARDNESS = { Rare = 0.3, Epic = 0.6, Legendary = 0.7 }
+
 local function chooseOilType(isPositive)
 	local eligibleTypes = {}
 	local totalWeight = 0
@@ -735,12 +742,22 @@ local function chooseOilType(isPositive)
 				and isFiniteNumber(definition.Weight)
 				and definition.Weight > 0 then
 
+				local weight = definition.Weight
+				local hardness = kind == "Normal" and TIER_HARDNESS[oilType]
+				if hardness then
+					if isPositive then
+						weight *= (1 - hardness * difficulty)
+					else
+						weight *= (1 + hardness * difficulty * 1.5)
+					end
+				end
+
 				table.insert(eligibleTypes, {
 					Name = oilType,
-					Weight = definition.Weight,
+					Weight = weight,
 				})
 
-				totalWeight += definition.Weight
+				totalWeight += weight
 			end
 		end
 	end
@@ -847,8 +864,8 @@ local function buildPolarityPlan(platformCount)
 	-- 2 = green / red
 	-- 3 = red / red
 
-	local doubleGreenRows = math.floor(rowCount * 0.20)
-	local doubleRedRows = math.floor(rowCount * 0.10)
+	local doubleGreenRows = math.floor(rowCount * (0.20 - 0.08 * difficulty))
+	local doubleRedRows = math.floor(rowCount * (0.10 + 0.08 * difficulty))
 
 	local mixedRows = rowCount - doubleGreenRows - doubleRedRows
 
@@ -1205,6 +1222,7 @@ function OilCourseGenerator.Generate(player)
 	playerCourse:SetAttribute("NegativeChance", NEGATIVE_CHANCE)
 
 	oilScale = computeOilScale(player)
+	difficulty = math.clamp((tonumber(player:GetAttribute("Rebirths")) or 0) / 40, 0, 1)
 	rollSpecialCaps()
 	playerCourse:SetAttribute("OilScale", oilScale)
 	playerCourse:SetAttribute("PositivePlatforms", 0)

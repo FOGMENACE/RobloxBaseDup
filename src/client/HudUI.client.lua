@@ -498,7 +498,7 @@ local running = false
 
 local function applyHudScale(animated)
 	local viewport = gui.AbsoluteSize
-	local target = math.clamp(viewport.X / 620, 0.5, 1.15) * (running and 0.76 or 1)
+	local target = math.clamp(viewport.X / 560, 0.55, 1.3) * (running and 0.76 or 1)
 
 	if animated then
 		TweenService:Create(hudScale, TweenInfo.new(0.3, Enum.EasingStyle.Quad), { Scale = target }):Play()
@@ -647,7 +647,7 @@ end)
 
 local function fitRebirth()
 	local viewport = gui.AbsoluteSize
-	rebirthScale.Scale = math.clamp(viewport.X / 900, 0.6, 1)
+	rebirthScale.Scale = math.clamp(viewport.X / 900, 0.65, 1)
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitRebirth)
 fitRebirth()

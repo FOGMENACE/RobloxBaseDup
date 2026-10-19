@@ -51,12 +51,18 @@ end
 
 local function save(player, step)
 	task.spawn(function()
-		local ok, err = pcall(function()
-			store:SetAsync(key(player), { Step = step, Version = VERSION })
-		end)
+		-- retried, so a DataStore hiccup does not lose the player's tutorial progress
+		for attempt = 1, 4 do
+			local ok, err = pcall(function()
+				store:SetAsync(key(player), { Step = step, Version = VERSION })
+			end)
 
-		if not ok then
-			warn("[TutorialService] Save failed:", player.Name, err)
+			if ok then
+				return
+			end
+
+			warn("[TutorialService] Save failed (attempt " .. attempt .. "):", player.Name, err)
+			task.wait(2 * attempt)
 		end
 	end)
 end
@@ -116,6 +122,17 @@ local function loadPlayer(player)
 	end
 
 	step = math.clamp(step, 1, DONE)
+
+	-- Steps 2, 6 and 10 mean "a run is in progress". If the player left during one,
+	-- they come back in the lobby and would instantly count as having finished it,
+	-- so rewind them to the step that starts that run.
+	if step == 2 then
+		step = 1
+	elseif step == 6 then
+		step = 5
+	elseif step == 10 then
+		step = 9
+	end
 
 	-- Veterans (rebirthed before this tutorial existed, or past it) never
 	-- see the early steps again.
