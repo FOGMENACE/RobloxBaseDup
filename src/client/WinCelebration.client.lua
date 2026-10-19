@@ -46,6 +46,37 @@ local function play(id, volume, speed)
 	end)
 end
 
+-- A soft, airy "welcome back" chime for when the ball returns to the spawn
+-- after the WinCourse: a gentle whoosh, then a rising pentatonic sparkle on a
+-- light reverb. Built from the sounds the game already uses.
+local PING_SOUND = "rbxasset://sounds/electronicpingshort.wav"
+
+local function playReturnChime()
+	local function note(id, volume, speed, delay)
+		task.delay(delay, function()
+			local sound = create("Sound", { SoundId = id, Volume = volume, PlaybackSpeed = speed }, SoundService)
+			create("ReverbSoundEffect", {
+				DecayTime = 1.9,
+				Density = 0.85,
+				Diffusion = 0.9,
+				DryLevel = -2,
+				WetLevel = -5,
+			}, sound)
+			sound:Play()
+			task.delay(5, function()
+				sound:Destroy()
+			end)
+		end)
+	end
+
+	note(FANFARE_SOUND, 0.32, 1.35, 0) -- airy whoosh
+	local scale = { 1, 1.122, 1.335, 1.498, 1.682, 2 } -- major pentatonic climb
+	for index, speed in ipairs(scale) do
+		note(PING_SOUND, 0.16 + index * 0.02, speed, 0.12 + (index - 1) * 0.075)
+	end
+	note(PING_SOUND, 0.3, 2, 0.12 + #scale * 0.075 + 0.04) -- bright final note
+end
+
 local old = playerGui:FindFirstChild("WinCelebration")
 if old then
 	old:Destroy()
@@ -447,7 +478,10 @@ winCourse.OnClientEvent:Connect(function(eventName, value)
 		if amount and amount > 0 then
 			addLive(amount)
 		end
-	elseif eventName == "WinCourseFinished" or eventName == "ReturnedToLobby" then
+	elseif eventName == "ReturnedToLobby" then
+		liveLabel.Visible = false
+		playReturnChime()
+	elseif eventName == "WinCourseFinished" then
 		-- the result sequence (or the lobby) takes over from here
 		liveLabel.Visible = false
 	end

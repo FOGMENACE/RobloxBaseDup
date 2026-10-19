@@ -42,6 +42,8 @@ end
 local last = player:GetAttribute("CurrentOil") or 0
 local lastRunState = player:GetAttribute("RunState")
 
+local RunTiming = require(game:GetService("ReplicatedStorage"):WaitForChild("RunTiming"))
+
 local function onOilChanged()
 	local state = player:GetAttribute("RunState")
 	local now = player:GetAttribute("CurrentOil")
@@ -52,6 +54,33 @@ local function onOilChanged()
 	-- only while rolling the oil course (not the reset at run start / end)
 	if state == "Running" and lastRunState == "Running" then
 		local change = now - last
+
+		-- wait until the ball the player SEES reaches the gate (see RunTiming)
+		local wait = RunTiming.Delay()
+		if wait > 0.02 then
+			local prev = last
+			task.delay(wait, function()
+				local c = now - prev
+				if c > 0 then
+					local big = prev > 0 and now >= prev * 1.9 and c >= 200
+					local pitch = math.clamp(1 + math.log10(math.max(c, 1)) * 0.08, 1, 1.5)
+					play(SNAP, 0.45, pitch)
+					play(PING, 0.32, pitch * 1.15, 0.06)
+					if big then
+						play(PING, 0.34, pitch * 1.5, 0.2)
+						play(PING, 0.34, pitch * 1.9, 0.34)
+					end
+				elseif c < 0 then
+					local halved = prev > 0 and now <= prev * 0.55 and -c >= 200
+					play(SPLAT, 0.5, halved and 0.6 or 0.8)
+					play(HIT, 0.4, 0.55, 0.05)
+					if halved then
+						play(THUMP, 0.5, 0.6, 0.1)
+					end
+				end
+			end)
+			change = 0
+		end
 
 		if change > 0 then
 			local big = last > 0 and now >= last * 1.9 and change >= 200

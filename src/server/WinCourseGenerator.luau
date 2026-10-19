@@ -890,95 +890,6 @@ end
 -- WinCourseProgressService will use for the ball.
 --------------------------------------------------
 
--- FLOW ARROWS (decor): white chevrons pointing down the course on both
--- side lanes of every tile, so the direction of travel reads at speed.
--- They are non-colliding, non-touchable, and live inside the tile model.
-local ARROW_COLOR = Color3.fromRGB(255, 255, 255)
-
-local function makeFlowArrow(tile, center)
-	local width, length = 9, 10
-	local base = Instance.new("Part")
-	base.Name = "FlowArrow"
-	base.Size = Vector3.new(width, 0.05, length)
-	base.CFrame = CFrame.new(center) * CFrame.Angles(0, math.pi / 2, 0) -- tip points +Z
-	base.Anchored = true
-	base.CanCollide = false
-	base.CanTouch = false
-	base.CanQuery = false
-	base.CastShadow = false
-	base.Transparency = 1
-
-	local gui = Instance.new("SurfaceGui")
-	gui.Face = Enum.NormalId.Top
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-	gui.CanvasSize = Vector2.new(300, 300 * length / width)
-	gui.LightInfluence = 0
-	gui.Parent = base
-
-	local canvas = gui.CanvasSize
-	local phi = math.rad(36)
-	local armLength = canvas.X * 0.5
-	local thickness = math.min(canvas.X, canvas.Y) * 0.17
-	local apex = Vector2.new(canvas.X / 2, canvas.Y * 0.2)
-
-	for _, side in ipairs({ -1, 1 }) do
-		local direction = Vector2.new(side * math.cos(phi), math.sin(phi))
-		local centre = apex + direction * (armLength / 2)
-
-		local arm = Instance.new("Frame")
-		arm.AnchorPoint = Vector2.new(0.5, 0.5)
-		arm.Position = UDim2.fromOffset(centre.X, centre.Y)
-		arm.Size = UDim2.fromOffset(armLength, thickness)
-		arm.Rotation = side * math.deg(phi)
-		arm.BackgroundColor3 = ARROW_COLOR
-		arm.BackgroundTransparency = 0.12
-		arm.BorderSizePixel = 0
-		arm.Parent = gui
-
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 8)
-		corner.Parent = arm
-	end
-
-	base.Parent = tile
-end
-
-local function addFlowArrows(tile, index)
-	for _, old in ipairs(tile:GetChildren()) do
-		if old.Name == "FlowArrow" then
-			old:Destroy()
-		end
-	end
-
-	local objects = getTileObjects(tile)
-	if not objects then
-		return
-	end
-
-	local floor = objects.Floor
-	local length = tile:GetAttribute("TileLength")
-	if typeof(length) ~= "number" then
-		return
-	end
-
-	local alongX = math.abs(floor.CFrame.RightVector:Dot(COURSE_DIRECTION)) > 0.5
-	local laneWidth = alongX and floor.Size.Z or floor.Size.X
-	local topY = floor.Position.Y + floor.Size.Y / 2 + 0.06
-
-	local startZ = START_POSITION.Z + tileStartDistance(index)
-	local sideOffset = laneWidth * 0.36
-
-	for _, fraction in ipairs({ 0.3, 0.72 }) do
-		for _, side in ipairs({ -1, 1 }) do
-			makeFlowArrow(tile, Vector3.new(
-				floor.Position.X + side * sideOffset,
-				topY,
-				startZ + length * fraction
-			))
-		end
-	end
-end
-
 local function positionTile(
 	tile,
 	index
@@ -1012,8 +923,6 @@ local function positionTile(
 		rotationOnly
 	)
 
-
-	addFlowArrows(tile, index)
 
 	print(
 		"[WinCourseGenerator] Positioned:",

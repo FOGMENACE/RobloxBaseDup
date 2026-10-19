@@ -824,6 +824,22 @@ local function refreshOil()
 		return
 	end
 
+	-- while rolling the oil course, show a platform's result when the ball the
+	-- player SEES reaches it (the server counts it a little earlier)
+	local wait = (player:GetAttribute("RunState") == "Running" and lastOil ~= nil and oil ~= lastOil)
+		and require(ReplicatedStorage:WaitForChild("RunTiming")).Delay() or 0
+	if wait > 0.02 then
+		local previous = lastOil
+		lastOil = oil
+		task.delay(wait, function()
+			oilLabel.Text = formatNumber(player:GetAttribute("CurrentOil") or oil)
+			if oil > previous then
+				bump(oilScale, 1.12)
+			end
+		end)
+		return
+	end
+
 	oilLabel.Text = formatNumber(oil)
 
 	if lastOil ~= nil and oil > lastOil then

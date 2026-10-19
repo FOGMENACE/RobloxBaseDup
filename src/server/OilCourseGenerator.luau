@@ -634,6 +634,11 @@ local function configureOilLabel(platform, oilType, definition, amount)
 		label.Text = "-" .. tostring(displayAmount)
 	end
 
+	-- rare tiers get their own colour so a big one is spotted at a glance
+	if typeof(definition.LabelColor) == "Color3" then
+		label.TextColor3 = definition.LabelColor
+	end
+
 	return true
 end
 
@@ -711,7 +716,7 @@ local function chooseOilType(isPositive)
 			local eligible = false
 
 			if kind == "Normal" then
-				eligible = true
+				eligible = isPositive == true or definition.PositiveOnly ~= true
 
 			elseif kind == "Multiplier" then
 				eligible = isPositive == true

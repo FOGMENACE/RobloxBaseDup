@@ -261,11 +261,13 @@ assert(
 local LOBBY_SPEED =
 	24
 
+-- Enter the course at (about) the lobby speed instead of dropping to 10 and
+-- crawling back up over ~3.5 s, which made the start wall feel delayed.
 local COURSE_START_SPEED =
-	10
+	26
 
 local COURSE_ACCELERATION =
-	12
+	34
 
 local MIN_COURSE_SPEED =
 	6

@@ -198,45 +198,45 @@ local function flyWins(amount)
 
 	local viewport = gui.AbsoluteSize
 	local startPosition = UDim2.fromOffset(
-		viewport.X * 0.3 + math.random(-30, 30),
-		viewport.Y * 0.5 + math.random(-40, 40)
+		viewport.X * 0.3 + math.random(-40, 40),
+		viewport.Y * 0.5 + math.random(-60, 60)
 	)
 
 	local token = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = startPosition,
-		Size = UDim2.fromOffset(120, 40),
+		Size = UDim2.fromOffset(200, 64),
 		BackgroundTransparency = 1,
 		ZIndex = 30,
 	}, gui)
 
 	create("ImageLabel", {
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(34, 34),
-		Position = UDim2.fromOffset(0, 3),
+		Size = UDim2.fromOffset(56, 56),
+		Position = UDim2.fromOffset(0, 4),
 		Image = TROPHY_IMAGE,
 		ZIndex = 30,
 	}, token)
 
 	local label = create("TextLabel", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(38, 0),
-		Size = UDim2.new(1, -38, 1, 0),
+		Position = UDim2.fromOffset(62, 0),
+		Size = UDim2.new(1, -62, 1, 0),
 		Font = FONT,
 		Text = "+" .. formatNumber(amount),
 		TextColor3 = CREAM,
-		TextSize = 26,
+		TextSize = 44,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 30,
 	}, token)
-	create("UIStroke", { Color = INK, Thickness = 3 }, label)
+	create("UIStroke", { Color = INK, Thickness = 4.5 }, label)
 
-	-- Pop in, hold a beat, then drag into the counter.
-	token.Size = UDim2.fromOffset(60, 20)
+	-- Pop in big, hold a beat, then drag into the counter (shrinking as it goes).
+	token.Size = UDim2.fromOffset(90, 30)
 	TweenService:Create(
 		token,
-		TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Size = UDim2.fromOffset(120, 40) }
+		TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Size = UDim2.fromOffset(200, 64) }
 	):Play()
 
 	task.delay(0.28, function()
@@ -246,13 +246,13 @@ local function flyWins(amount)
 		local tween = TweenService:Create(
 			token,
 			TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ Position = UDim2.fromOffset(target.X + 40, target.Y) }
+			{ Position = UDim2.fromOffset(target.X + 40, target.Y), Size = UDim2.fromOffset(120, 38) }
 		)
 		tween.Completed:Once(function()
 			token:Destroy()
 			inFlight -= 1
 			setDisplayedWins(displayedWins + amount)
-			bump(winsScale, 1.1)
+			bump(winsScale, 1.2)
 			playWinSound()
 		end)
 		tween:Play()

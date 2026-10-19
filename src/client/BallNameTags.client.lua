@@ -149,18 +149,35 @@ RunService.RenderStepped:Connect(function(deltaTime)
 
 			-- dead-reckon so a fast-moving ball (win course) does not leave
 			-- the tag behind/under it between replication steps
-			if not entry.Track or (entry.Track - position).Magnitude > 40 then
+			if not entry.Track or (entry.Track - position).Magnitude > 40 + velocity.Magnitude * 0.45 then
 				entry.Track = position
 				entry.Velocity = velocity
 			end
-			entry.Velocity = entry.Velocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+			-- slowing down is followed at once so the tag never overshoots a stopped ball
+			if velocity.Magnitude < entry.Velocity.Magnitude then
+				entry.Velocity = velocity
+			else
+				entry.Velocity = entry.Velocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+			end
 			entry.Track = (entry.Track + entry.Velocity * deltaTime):Lerp(position, 1 - math.exp(-5 * deltaTime))
 			local tracked = entry.Track
 
 			entry.Smoothed += (tracked.Y - entry.Smoothed) * alpha
 			-- never let the tag sink below the top of the ball
 			entry.Smoothed = math.max(entry.Smoothed, tracked.Y - 0.5)
-			entry.Anchor.CFrame = CFrame.new(tracked.X, entry.Smoothed + entry.Height, tracked.Z)
+
+			local camera = workspace.CurrentCamera
+			if entry.Player == Players.LocalPlayer and ball:GetAttribute("WinCourseActive") == true and camera then
+				-- WinCourse: the chase camera keeps the ball in the middle of the
+				-- frame, so the tag is pinned to the CAMERA (right above that
+				-- spot) instead of chasing a ball that moves hundreds of studs
+				-- per second. It cannot jitter, drift or end up under the ball.
+				local cf = camera.CFrame
+				local depth = math.max((tracked - cf.Position):Dot(cf.LookVector), 4)
+				entry.Anchor.CFrame = CFrame.new(cf.Position + cf.LookVector * depth + cf.UpVector * (entry.Height * 0.85))
+			else
+				entry.Anchor.CFrame = CFrame.new(tracked.X, entry.Smoothed + entry.Height, tracked.Z)
+			end
 		end
 	end
 end)

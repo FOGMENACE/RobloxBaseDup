@@ -11,6 +11,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
@@ -85,48 +86,62 @@ anchor.Transparency = 1
 anchor.Size = Vector3.new(0.2, 0.2, 0.2)
 anchor.Parent = workspace
 
-local function makeTrail(sideX)
+local TRAIL_COLOR = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(200, 228, 255)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 190, 255)),
+})
+
+-- Thin, tapered air ribbons (like vapour off a fast object) instead of two
+-- fat flat bars: four of them around the ball at different heights.
+local function makeTrail(sideX, height, width, lifetime)
 	local a0 = Instance.new("Attachment")
-	a0.Position = Vector3.new(sideX, -0.5, 0)
+	a0.Position = Vector3.new(sideX, height - width / 2, 0)
 	a0.Parent = anchor
 
 	local a1 = Instance.new("Attachment")
-	a1.Position = Vector3.new(sideX, 0.9, 0)
+	a1.Position = Vector3.new(sideX, height + width / 2, 0)
 	a1.Parent = anchor
 
 	local trail = Instance.new("Trail")
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
-	trail.Lifetime = 0.32
-	trail.MinLength = 0.1
+	trail.Lifetime = lifetime
+	trail.MinLength = 0.05
 	trail.FaceCamera = true
-	trail.LightEmission = 0.5
-	trail.Color = ColorSequence.new(TINT)
+	trail.LightEmission = 0.75
+	trail.Color = TRAIL_COLOR
 	trail.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(0, 0.45),
+		NumberSequenceKeypoint.new(0.35, 0.7),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	trail.WidthScale = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(1, 0.1),
+		NumberSequenceKeypoint.new(1, 0),
 	})
 	trail.Enabled = false
 	trail.Parent = anchor
 	return trail
 end
 
-local trails = { makeTrail(-1.9), makeTrail(1.9) }
-
+local trails = {
+	makeTrail(-2.1, 0.2, 0.35, 0.26),
+	makeTrail(2.1, 0.2, 0.35, 0.26),
+	makeTrail(-1.3, 1.1, 0.25, 0.2),
+	makeTrail(1.3, 1.1, 0.25, 0.2),
+}
 local wind = Instance.new("ParticleEmitter")
 wind.Rate = 0
-wind.Lifetime = NumberRange.new(0.25, 0.4)
-wind.Speed = NumberRange.new(10, 16)
-wind.SpreadAngle = Vector2.new(6, 6)
+wind.Lifetime = NumberRange.new(0.22, 0.38)
+wind.Speed = NumberRange.new(26, 44)
+wind.SpreadAngle = Vector2.new(14, 14)
+wind.Squash = NumberSequence.new(-0.85)
 wind.EmissionDirection = Enum.NormalId.Front -- local -Z: behind the ball
 wind.Orientation = Enum.ParticleOrientation.VelocityParallel
 wind.Size = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 1.4),
-	NumberSequenceKeypoint.new(1, 0.1),
+	NumberSequenceKeypoint.new(0, 0.9),
+	NumberSequenceKeypoint.new(1, 0.05),
 })
 wind.Transparency = NumberSequence.new({
 	NumberSequenceKeypoint.new(0, 0.5),
@@ -144,6 +159,33 @@ local function getOwnBall()
 	return playerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
 end
 
+-- WINCOURSE PULSE: the dash switches ON when a tile is hit and fades back OFF\n-- before the next one, so the speed effect follows the rhythm of the tiles.
+local lastHit = 0
+local lastInterval = 0.4
+
+task.spawn(function()
+	local winRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WinCourse")
+	winRemote.OnClientEvent:Connect(function(eventName)
+		if eventName == "WinCourseTileCollected" then
+			local now = os.clock()
+			if lastHit > 0 then
+				lastInterval = math.clamp(now - lastHit, 0.08, 0.7)
+			end
+			lastHit = now
+			end
+		end)
+end)
+
+local function winPulse()
+	local age = os.clock() - lastHit
+	local span = lastInterval * 0.85
+	if age >= span then
+		return 0
+	end
+	-- sharp flash that decays smoothly
+	return (1 - age / span) ^ 1.5
+end
+
 local function racing()
 	local state = player:GetAttribute("RunState")
 	return state == "Running" or typeof(player:GetAttribute("WinTravelBudget")) == "number"
@@ -158,6 +200,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 
 	local intensity = math.clamp((speed - MIN_SPEED) / (FULL_SPEED - MIN_SPEED), 0, 1)
+	if ball and ball:GetAttribute("WinCourseActive") == true then
+		intensity *= winPulse()
+	end
 
 	-- world dash
 	if ball and intensity > 0 then

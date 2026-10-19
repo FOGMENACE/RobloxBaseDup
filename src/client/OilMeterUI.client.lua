@@ -377,10 +377,34 @@ local function refresh()
 		title.Text = "OIL"
 		setTheme("oil")
 		runOil = oil
+		fill.Size = UDim2.fromScale(1, 1)
+
+		-- a platform's result shows when the ball the player SEES reaches it
+		-- (the server counts it a little earlier, see RunTiming)
+		local wait = (runState == "Running" and oil ~= lastCurrentOil)
+			and require(game:GetService("ReplicatedStorage"):WaitForChild("RunTiming")).Delay() or 0
+		if wait > 0.02 then
+			local previous = lastCurrentOil
+			lastCurrentOil = oil
+			task.delay(wait, function()
+				if displayOverride == nil then
+					valueLabel.Text = formatNumber(player:GetAttribute("CurrentOil") or oil)
+				end
+				if oil > previous then
+					if displayOverride == nil then
+						flyDroplet(oil - previous)
+					end
+					kickTilt(math.clamp(5 + (oil - previous) / 300, 5, 12))
+				end
+			end)
+			hideToken += 1
+			setShown(true)
+			return
+		end
+
 		if displayOverride == nil then
 			valueLabel.Text = formatNumber(oil)
 		end
-		fill.Size = UDim2.fromScale(1, 1)
 
 		if oil > lastCurrentOil then
 			-- the finish-wall multiplier jump has its own animation

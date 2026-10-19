@@ -143,6 +143,35 @@ prompt.MaxActivationDistance = 8
 prompt.RequiresLineOfSight = false
 prompt.Parent = promptHolder
 
+-- A thin glowing ring on the floor all the way around the podium: built from
+-- short flat segments (a cylinder cannot be hollow), a gold neon ring with a
+-- fainter cream ring just outside it.
+do
+	local SEGMENTS = 96
+	-- centred between the podium and the gold prompt circle so the ring
+	-- encloses BOTH (the circle stays inside it)
+	local RING_CENTER = CENTER + TO_MIDDLE * 3.3
+	local function ring(name, radius, width, color, material, transparency)
+		local length = (2 * math.pi * radius / SEGMENTS) * 1.12 -- slight overlap, no gaps
+		for index = 1, SEGMENTS do
+			local angle = (index / SEGMENTS) * math.pi * 2
+			local position = RING_CENTER + Vector3.new(math.cos(angle) * radius, 0.04, math.sin(angle) * radius)
+			local segment = part(
+				name,
+				BLOCK,
+				Vector3.new(length, 0.08, width),
+				CFrame.new(position) * CFrame.Angles(0, -angle + math.pi / 2, 0),
+				color,
+				material
+			)
+			segment.Transparency = transparency or 0
+		end
+	end
+
+	ring("PodiumRingGlow", 8.8, 0.9, Color3.fromRGB(255, 220, 120), Enum.Material.Neon, 0.82)
+	ring("PodiumRing", 8.4, 0.32, Color3.fromRGB(255, 205, 80), Enum.Material.Neon, 0)
+end
+
 -- A little smaller overall (podium, mic and circle), standing on the floor.
 do
 	model:ScaleTo(0.75)

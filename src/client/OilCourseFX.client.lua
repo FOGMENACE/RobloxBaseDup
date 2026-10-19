@@ -14,6 +14,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
+local RunTiming = require(game:GetService("ReplicatedStorage"):WaitForChild("RunTiming"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -138,7 +139,13 @@ RunService.RenderStepped:Connect(function(deltaTime)
 				-- the half the ball actually rolled through.
 				local ball = getOwnBall()
 				if ball and math.abs(ball.Position.X - gate.Position.X) < 6.2 then
-					burst(ball.Position, colorFor(gate))
+					-- pop when the VISIBLE ball reaches the gate (the server counts a bit earlier)
+					local popColor = colorFor(gate)
+					task.delay(RunTiming.Delay(), function()
+						if ball.Parent then
+							burst(ball.Position, popColor)
+						end
+					end)
 				end
 			end
 

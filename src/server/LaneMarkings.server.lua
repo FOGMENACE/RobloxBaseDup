@@ -145,4 +145,55 @@ for index = 1, 7 do
 	)
 end
 
+--------------------------------------------------
+-- 4) LANE MARKINGS BEFORE THE FINISH WALL
+--
+-- The same bowling spots and arrows (pointing at the wall) so the end of the
+-- oil course reads like the pin end of a lane.
+--------------------------------------------------
+
+local finishWall = Workspace:WaitForChild("FinishWall", 30)
+if finishWall then
+	local finishZ = finishWall.Position.Z
+	local endSpotZ = finishZ - 40
+	local endArrowZ = finishZ - 32
+
+	-- a darker approach band across the lane
+	part(
+		"FinishBand",
+		Vector3.new(laneWidth - 1, 0.04, 2.2),
+		CFrame.new(laneX, laneTop + 0.03, finishZ - 4),
+		MARK,
+		Enum.Material.SmoothPlastic,
+		0.55
+	)
+
+	for index = 1, 7 do
+		local spot = part(
+			"FinishSpot" .. index,
+			Vector3.new(0.04, 1.3, 1.3),
+			CFrame.new(laneX + (index - 4) * (laneWidth / 9), laneTop + 0.04, endSpotZ) * CFrame.Angles(0, 0, math.rad(90)),
+			MARK,
+			Enum.Material.SmoothPlastic,
+			0.15
+		)
+		spot.Shape = Enum.PartType.Cylinder
+	end
+
+	-- arrows in the same V, tips toward the finish wall
+	for index = 1, 7 do
+		local offset = index - 4
+		local z = endArrowZ + (4 - math.abs(offset)) * 1.6
+		chevron(
+			"FinishArrow" .. index,
+			Vector3.new(laneX + offset * (laneWidth / 9), laneTop + 0.05, z),
+			3.4,
+			3.6,
+			MARK,
+			0.2,
+			true
+		)
+	end
+end
+
 print("[LaneMarkings] READY |", #decor:GetChildren(), "parts")

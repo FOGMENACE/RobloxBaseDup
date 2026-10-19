@@ -764,76 +764,32 @@ local function freezeBall(
 
 	end
 
-
-	--------------------------------------------------
-	-- SERVER OWNERSHIP
-	--------------------------------------------------
-
+	-- The server drives the ball from here on.
 	pcall(function()
-
 		ball:SetNetworkOwner(nil)
-
 	end)
 
-
-	--------------------------------------------------
-	-- STOP PHYSICS
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	--------------------------------------------------
-	-- DISABLE NORMAL PHYSICS CONTROLLER
-	--------------------------------------------------
-
+	-- NOT a hard freeze any more: the ball keeps the momentum it arrived with
+	-- and WinCourseProgressService eases it to the middle of the WinCourse
+	-- start (beginGlideToStart). It used to be stopped dead and teleported.
 	local linearVelocity =
 		ball:FindFirstChild(
 			"BallLinearVelocity"
 		)
-
 
 	if linearVelocity
 		and linearVelocity:IsA(
 			"LinearVelocity"
 		) then
 
-		linearVelocity.VectorVelocity =
-			Vector3.zero
-
 		linearVelocity.Enabled =
 			false
 
 	end
 
-
-	--------------------------------------------------
-	-- ANCHOR
-	--------------------------------------------------
-
-	ball.Anchored =
-		true
-
-
-	--------------------------------------------------
-	-- CLEAR AGAIN
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
 	return true
 
 end
-
 
 --------------------------------------------------
 -- MOVE BALL TO OFFICIAL WIN START
@@ -855,78 +811,11 @@ local function moveBallToStart(
 
 	end
 
-
-	local winStartPosition =
-		getWinCourseStartPosition()
-
-
-	print(
-		"[WinCourseService] Official Win Course start:",
-		winStartPosition
-	)
-
-
-	--------------------------------------------------
-	-- KEEP ANCHORED
-	--------------------------------------------------
-
-	ball.Anchored =
-		true
-
-
-	--------------------------------------------------
-	-- CLEAR PHYSICS
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	--------------------------------------------------
-	-- MOVE ONCE
-	--------------------------------------------------
-
-	ball.CFrame =
-		CFrame.new(
-			winStartPosition
-		)
-
-
-	--------------------------------------------------
-	-- CLEAR AGAIN
-	--------------------------------------------------
-
-	ball.AssemblyLinearVelocity =
-		Vector3.zero
-
-	ball.AssemblyAngularVelocity =
-		Vector3.zero
-
-
-	--------------------------------------------------
-	-- SERVER OWNERSHIP
-	--------------------------------------------------
-
-	pcall(function()
-
-		ball:SetNetworkOwner(nil)
-
-	end)
-
-
-	print(
-		"[WinCourseService] Ball moved to official Win Course start:",
-		winStartPosition
-	)
-
-
+	-- Movement is handled by WinCourseProgressService.beginGlideToStart, which
+	-- eases the ball to the official start instead of teleporting it there.
 	return true
 
 end
-
 
 --------------------------------------------------
 -- VALIDATE REQUEST

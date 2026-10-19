@@ -54,18 +54,18 @@ local OilDefinitions = {
 	-- Normal positive Oil.
 	--
 	-- Random reward:
-	-- 200 - 500
+	-- 120 - 320 (before the per-course scale)
 	--------------------------------------------------
 
 	Common = {
 
 		Kind = "Normal",
 
-		MinOil = 200,
+		MinOil = 120,
 
-		MaxOil = 500,
+		MaxOil = 320,
 
-		Weight = 48,
+		Weight = 46,
 
 		Display = "AMOUNT",
 
@@ -78,18 +78,18 @@ local OilDefinitions = {
 	-- Normal positive Oil.
 	--
 	-- Random reward:
-	-- 450 - 800
+	-- 380 - 650 (before the per-course scale)
 	--------------------------------------------------
 
 	Uncommon = {
 
 		Kind = "Normal",
 
-		MinOil = 450,
+		MinOil = 380,
 
-		MaxOil = 800,
+		MaxOil = 650,
 
-		Weight = 27,
+		Weight = 25,
 
 		Display = "AMOUNT",
 
@@ -102,23 +102,72 @@ local OilDefinitions = {
 	-- Normal positive Oil.
 	--
 	-- Random reward:
-	-- 700 - 1,200
+	-- 800 - 1,100 (before the per-course scale)
 	--------------------------------------------------
 
 	Rare = {
 
 		Kind = "Normal",
 
-		MinOil = 700,
+		MinOil = 800,
 
-		MaxOil = 1200,
+		MaxOil = 1100,
 
-		Weight = 14,
+		Weight = 12,
 
 		Display = "AMOUNT",
 
 	},
 
+
+	--------------------------------------------------
+	-- EPIC
+	--
+	-- Big oil, rare. Can be positive OR negative.
+	-- Random reward: 1,500 - 2,200 (before the per-course scale)
+	--------------------------------------------------
+
+	Epic = {
+
+		Kind = "Normal",
+
+		MinOil = 1500,
+
+		MaxOil = 2200,
+
+		Weight = 5,
+
+		Display = "AMOUNT",
+
+		LabelColor = Color3.fromRGB(255, 214, 70),
+
+	},
+
+
+	--------------------------------------------------
+	-- LEGENDARY
+	--
+	-- The jackpot: only ever a POSITIVE (green) platform, about 1 in 100 platforms.
+	-- Random reward: 3,000 - 4,500 (before the per-course scale)
+	--------------------------------------------------
+
+	Legendary = {
+
+		Kind = "Normal",
+
+		PositiveOnly = true,
+
+		MinOil = 3000,
+
+		MaxOil = 4500,
+
+		Weight = 2,
+
+		Display = "AMOUNT",
+
+		LabelColor = Color3.fromRGB(255, 120, 215),
+
+	},
 
 	--------------------------------------------------
 	-- X2

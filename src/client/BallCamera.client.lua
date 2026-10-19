@@ -819,6 +819,7 @@ end
 local courseTrack = nil
 local courseTrackBall = nil
 local courseTrackVelocity = Vector3.zero
+local courseSettle = 0 -- 0..1, eases in when the WinCourse ball comes to a stop
 
 local function updateCourseCamera(
 	ball,
@@ -828,17 +829,55 @@ local function updateCourseCamera(
 	local realPosition = ball.Position
 	local velocity = ball.AssemblyLinearVelocity
 
-	if courseTrackBall ~= ball or not courseTrack or (courseTrack - realPosition).Magnitude > 40 then
+	if courseTrackBall ~= ball or not courseTrack or (courseTrack - realPosition).Magnitude > 40 + velocity.Magnitude * 0.45 then
+		-- (the snap distance grows with speed: at WinCourse speeds one replication
+		-- step is already tens of studs, which used to re-snap the camera every frame)
 		courseTrackBall = ball
 		courseTrack = realPosition
 		courseTrackVelocity = velocity
 	end
 
-	courseTrackVelocity = courseTrackVelocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+	-- Speeding up is smoothed, but slowing down / stopping is followed at once:
+	-- a lagging velocity kept dead-reckoning the camera target PAST a ball that
+	-- had already run out of oil, sending the camera over it and the ball out
+	-- of the frame.
+	if velocity.Magnitude < courseTrackVelocity.Magnitude then
+		courseTrackVelocity = velocity
+	else
+		courseTrackVelocity = courseTrackVelocity:Lerp(velocity, 1 - math.exp(-6 * deltaTime))
+	end
 	courseTrack = courseTrack + courseTrackVelocity * deltaTime
 	courseTrack = courseTrack:Lerp(realPosition, 1 - math.exp(-5 * deltaTime))
+	-- never ahead of the real ball along the course (+Z)
+	if courseTrack.Z > realPosition.Z then
+		courseTrack = Vector3.new(courseTrack.X, courseTrack.Y, realPosition.Z)
+	end
 
-	local ballPosition = courseTrack
+	-- The smoothing below makes the camera trail a moving target by about
+	-- velocity / CAMERA_SMOOTHNESS studs (75 studs at 900 studs/s, which is why
+	-- the ball looked tiny and far away). Aim that far ahead so the ball stays
+	-- at the same place in the frame at every speed.
+	local ballPosition = courseTrack + courseTrackVelocity / CAMERA_SMOOTHNESS
+
+	-- The WinCourse runs at hundreds of studs/s, so it uses a tighter, lower
+	-- chase view and a narrower field of view than the oil course (which kept
+	-- the ball tiny and "very far").
+	local isWin = ball:GetAttribute("WinCourseActive") == true
+	-- (aimed almost AT the ball so it sits in the middle of the frame, which
+	-- is also where the dash streaks converge)
+	local viewDistance = isWin and 19 or COURSE_DISTANCE
+	local viewHeight = isWin and 11 or COURSE_HEIGHT
+	local viewAhead = isWin and 2 or COURSE_LOOK_AHEAD
+	local baseFov = isWin and 64 or COURSE_FOV
+
+	-- SETTLE: when the ball slows to a stop (out of oil) the camera eases in a
+	-- little closer and lower and the view narrows, so the end of the run
+	-- feels like a landing and the ball stays big and centred in the frame.
+	local settleTarget = (isWin and velocity.Magnitude < 70) and 1 or 0
+	courseSettle += (settleTarget - courseSettle) * (1 - math.exp(-2.2 * deltaTime))
+	viewDistance *= 1 - 0.3 * courseSettle
+	viewHeight *= 1 - 0.22 * courseSettle
+	baseFov -= 7 * courseSettle
 
 
 	--------------------------------------------------
@@ -853,8 +892,8 @@ local function updateCourseCamera(
 		+
 		Vector3.new(
 			0,
-			COURSE_HEIGHT,
-			-COURSE_DISTANCE
+			viewHeight,
+			-viewDistance
 		)
 
 
@@ -891,7 +930,7 @@ local function updateCourseCamera(
 		Vector3.new(
 			0,
 			COURSE_LOOK_HEIGHT,
-			COURSE_LOOK_AHEAD
+			viewAhead
 		)
 
 
@@ -903,14 +942,14 @@ local function updateCourseCamera(
 	-- (read-only use of the replicated velocity), eased so it never snaps.
 	local speedPush =
 		math.clamp(
-			(ball.AssemblyLinearVelocity.Magnitude - 25) / 120,
+			(ball.AssemblyLinearVelocity.Magnitude - 25) / (isWin and 300 or 120),
 			0,
 			1
 		)
-		* 14
+		* (isWin and 9 or 14)
 
 	local targetFov =
-		COURSE_FOV + speedPush
+		baseFov + speedPush
 
 	camera.FieldOfView =
 		camera.FieldOfView

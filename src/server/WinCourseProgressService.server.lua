@@ -1018,6 +1018,78 @@ end
 
 
 --------------------------------------------------
+-- GLIDE TO START
+--
+-- At the FinishWall the ball used to be stopped and TELEPORTED to the middle
+-- of the WinCourse start. Now it keeps its momentum and eases to the start
+-- like a critically damped spring (it brakes, then settles in the middle),
+-- driven through real physics so the client sees smooth motion, then locks
+-- onto the exact start position for the countdown.
+--------------------------------------------------
+
+local GLIDE_OMEGA = 5 -- higher = snappier (settles in ~1 s)
+local GLIDE_MAX_TIME = 2.2
+local GLIDE_BRAKE = 0.4 -- share of the incoming speed kept (the finish wall takes the rest)
+
+local function beginGlideToStart(run, ball, position)
+
+	if not ball
+		or not ball.Parent then
+		return false
+	end
+
+	local target = Vector3.new(
+		position.X,
+		position.Y + getBallVerticalOffset(ball),
+		position.Z
+	)
+
+	run.Gliding = true
+
+	-- the course controller must not fight the glide
+	local controller = ball:FindFirstChild("BallLinearVelocity")
+	if controller and controller:IsA("LinearVelocity") then
+		controller.Enabled = false
+	end
+
+	ball.Anchored = false
+	pcall(function()
+		ball:SetNetworkOwner(nil)
+	end)
+
+	task.spawn(function()
+		local startTime = os.clock()
+		local velocity = ball.AssemblyLinearVelocity * GLIDE_BRAKE
+
+		while ball.Parent
+			and not run.Finished
+			and os.clock() - startTime < GLIDE_MAX_TIME do
+
+			local dt = RunService.Heartbeat:Wait()
+			local offset = ball.Position - target
+
+			if offset.Magnitude < 0.35 and velocity.Magnitude < 2 then
+				break
+			end
+
+			local accel = -2 * GLIDE_OMEGA * velocity - GLIDE_OMEGA * GLIDE_OMEGA * offset
+			velocity += accel * dt
+			ball.AssemblyLinearVelocity = velocity
+		end
+
+		run.Gliding = false
+
+		if ball.Parent and not run.Finished then
+			-- lock onto the exact official start for the countdown
+			placeBallAtStart(ball, position)
+		end
+	end)
+
+	return true
+
+end
+
+--------------------------------------------------
 -- BALL SPAWN CFRAME
 --------------------------------------------------
 
@@ -1444,7 +1516,8 @@ player:SetAttribute("RunState", "Waiting")
 	-- COMPLETE RETURN
 	--------------------------------------------------
 
-	playGetUpSound(player, ball)
+	-- (the plain built-in "get up" clip is replaced by the client's return chime,
+	-- see WinCelebration playReturnChime)
 
 	winCourseRemote:FireClient(
 		player,
@@ -1472,7 +1545,8 @@ local creditedThisRun = {}
 
 local function awardWinnings(
 	player,
-	amount
+	amount,
+	applyMultipliers
 )
 
 	amount =
@@ -1497,7 +1571,8 @@ local function awardWinnings(
 		).WinsMultiplier(PlayerDataServiceModule.GetRebirths(player))
 	end)
 
-	if okBonus and typeof(winsMultiplier) == "number" and winsMultiplier > 1 then
+	-- (applied only to the run TOTAL, see finalizeWinnings; tiles pass in raw)
+	if applyMultipliers and okBonus and typeof(winsMultiplier) == "number" and winsMultiplier > 1 then
 		amount = math.floor(amount * winsMultiplier)
 	end
 
@@ -1508,7 +1583,7 @@ local function awardWinnings(
 		).WinsMultiplier(player)
 	end)
 
-	if okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
+	if applyMultipliers and okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
 		amount = math.floor(amount * boostMultiplier)
 	end
 
@@ -1710,7 +1785,8 @@ local function updateProgress(run)
 		-- Award this tile immediately.
 		local awarded = awardWinnings(
 			run.Player,
-			tileData.Amount
+			tileData.Amount,
+			false
 		)
 
 		if awarded then
@@ -1777,9 +1853,16 @@ local function finalizeWinnings(player, run)
 
 	run.FinalizedWinAmount = amount
 
-	-- Do not call awardWinnings here.
-	-- Every tile reward was already processed
-	-- by updateProgress.
+	-- Tiles were credited RAW as they were passed. The wins multipliers
+	-- (rebirth x boosts) apply ONCE, to the whole tile total, here: credit
+	-- the difference between total x multipliers and what was already paid.
+	local rebirthMult = player:GetAttribute("WinRunRebirthMult") or 1
+	local boostMult = player:GetAttribute("WinRunBoostMult") or 1
+	local target = math.floor(amount * rebirthMult * boostMult)
+	local bonus = target - (creditedThisRun[player] or 0)
+	if bonus > 0 then
+		awardWinnings(player, bonus, false)
+	end
 
 	debugPrint(
 		"WINNINGS FINALIZED:",
@@ -2589,7 +2672,7 @@ local function updateRun(
 
 	if not run.Rolling then
 
-		if not ball.Anchored then
+		if not run.Gliding and not ball.Anchored then
 			ball.Anchored = true
 		end
 
@@ -2925,7 +3008,8 @@ local function startTracking(
 	--------------------------------------------------
 
 	local positioned =
-		placeBallAtStart(
+		beginGlideToStart(
+			run,
 			ball,
 			startPosition
 		)

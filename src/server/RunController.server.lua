@@ -1184,7 +1184,7 @@ end
 --   * is outside the lane width,
 --   * was not on the LOBBY side of the wall on the previous frame, or
 --     moved more than MAX_STEP studs since then (teleport / exploit).
-local START_GRACE = 2.5
+local START_GRACE = 0.6
 local MAX_START_SPEED = 160
 local MAX_STEP = 14
 local startSamples = setmetatable({}, { __mode = "k" }) -- [ball] = { Seen, LastZ }
@@ -1206,14 +1206,15 @@ local function startAllowed(ball, player)
 	-- 14 studs of it for several consecutive frames before entering
 	-- (approach is remembered for a couple of seconds, so a fast or laggy ball
 	-- that is already inside the wall on its first frame still counts)
-	local approached = sample.Near >= 3 or (sample.ApproachAt and now - sample.ApproachAt <= 2.5)
+	-- A run now starts on ANY continuous touch of the wall from the lobby side:
+	-- slow, angled, near the edge, or just a nudge. The old "must have rolled in
+	-- for several frames" rule made some real rolls not count. The no-teleport
+	-- rule below (MAX_STEP + previous frame on the lobby side) still blocks
+	-- glitches and exploits.
 	if sample.Near >= 3 then
 		sample.ApproachAt = now
 	end
 	sample.Near = 0
-	if not approached then
-		return false
-	end
 
 	if now - sample.Seen < START_GRACE then
 		return false
@@ -1233,7 +1234,7 @@ local function startAllowed(ball, player)
 	local half = startWall.Size / 2
 	local laneHalf = math.max(half.X, half.Z) -- the long horizontal axis
 	local horizontal = math.max(math.abs(localPosition.X), math.abs(localPosition.Z))
-	if horizontal > laneHalf + 1 then
+	if horizontal > laneHalf + ball.Size.X / 2 then
 		return false
 	end
 
@@ -1247,10 +1248,18 @@ end
 
 local function checkStartWall()
 
-	local balls =
-		getBallsInWall(
-			startWall
-		)
+	-- the wall is a flat plane: check a box 0.75 stud thicker on each side so a
+	-- ball that just touches / nearly touches it counts, not only one cutting it
+	local wallSize = startWall.Size
+	local thin = "X"
+	if wallSize.Y < wallSize[thin] then thin = "Y" end
+	if wallSize.Z < wallSize[thin] then thin = "Z" end
+	local grown = Vector3.new(
+		wallSize.X + (thin == "X" and 1.5 or 0),
+		wallSize.Y + (thin == "Y" and 1.5 or 0),
+		wallSize.Z + (thin == "Z" and 1.5 or 0)
+	)
+	local balls = workspace:GetPartBoundsInBox(startWall.CFrame, grown, overlapParams)
 
 	local present = {}
 
