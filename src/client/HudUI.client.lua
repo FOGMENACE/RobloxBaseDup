@@ -807,10 +807,14 @@ local function refreshLevel()
 	lastLevel = level
 end
 
+-- STRIKE LEVEL = levels earned over the player's whole life (GlobalLevel
+-- starts at 1, so a brand-new player shows 0 and the first level-up after the
+-- tutorial makes it 1). It never resets on rebirth. Display only.
 local function refreshGlobal()
-	local value = player:GetAttribute("RebirthLevelRequirement")
+	local value = player:GetAttribute("GlobalLevel")
 	if typeof(value) == "number" then
-		local text = tostring(math.floor(value))
+		local earned = math.max(0, math.floor(value) - 1)
+		local text = earned >= 10000 and string.format("%.1fK", earned / 1000) or tostring(earned)
 		if globalLabel.Text ~= text then
 			globalLabel.Text = text
 			bump(badgeScale, 1.12)
@@ -900,7 +904,7 @@ end
 for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgress", "RebirthMaxReached" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshLevel)
 end
-player:GetAttributeChangedSignal("RebirthLevelRequirement"):Connect(refreshGlobal)
+player:GetAttributeChangedSignal("GlobalLevel"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("CurrentOil"):Connect(refreshOil)
 for _, name in ipairs({ "Rebirths", "RebirthLevelRequirement", "Level" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshRebirth)

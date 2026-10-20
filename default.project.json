@@ -13,6 +13,10 @@
       }
     },
 
+    "ReplicatedFirst": {
+      "$path": "src/first"
+    },
+
     "ReplicatedStorage": {
       "$path": "src/shared"
     }

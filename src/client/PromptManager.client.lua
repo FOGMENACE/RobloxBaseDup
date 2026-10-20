@@ -11,9 +11,11 @@
 --      run. A short, non-blocking "do it now" banner appears with each one.
 --      The server says what is already done (PromptService) and re-checks
 --      group membership itself.
---   2. Anti-AFK: keeps Roblox from kicking idle players (20 minute idle
---      timeout) by sending a harmless virtual click when the idle event
---      fires.
+--   2. AFK: Roblox kicks after 20 minutes without input and scripts cannot
+--      fake input (VirtualUser needs plugin security, so the old virtual
+--      click silently failed). After AFK_REJOIN_AFTER seconds idle the
+--      player is quietly re-teleported into this same server behind the
+--      branded loading screen (ServerTransferService).
 --
 -- Nothing here grants a reward; it is purely an invitation. The Settings
 -- "Pop ups" switch turns the invitations off.
@@ -24,7 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GroupService = game:GetService("GroupService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local TweenService = game:GetService("TweenService")
-local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -44,13 +46,70 @@ local JITTER = 12
 -- ANTI-AFK
 --------------------------------------------------
 
-player.Idled:Connect(function()
-	pcall(function()
-		VirtualUser:CaptureController()
-		VirtualUser:ClickButton2(Vector2.new(0, 0))
-	end)
+-- Quiet AFK rejoin at 18.5 min (Roblox kicks at 20): the branded loading screen
+-- is set as the teleport gui, so the player only sees a short reload.
+local AFK_REJOIN_AFTER = 18.5 * 60
+local TeleportService = game:GetService("TeleportService")
+-- required lazily: never block this script if the module is missing
+local function loadingScreen()
+	local module = game:GetService("ReplicatedFirst"):FindFirstChild("LoadingScreen")
+	return module and require(module)
+end
+local afkRejoin = remotes:WaitForChild("AfkRejoin")
+local lastInput = os.clock()
+
+local function markActive()
+	lastInput = os.clock()
+end
+UserInputService.InputBegan:Connect(markActive)
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+		markActive()
+	end
+end)
+-- Roblox's own idle clock is the source of truth
+player.Idled:Connect(function(idleSeconds)
+	if typeof(idleSeconds) == "number" then
+		lastInput = math.min(lastInput, os.clock() - idleSeconds)
+	end
 end)
 
+local function setTransferScreen(status)
+	local LoadingScreen = loadingScreen()
+	if LoadingScreen then
+		pcall(function()
+			TeleportService:SetTeleportGui(LoadingScreen.Build(status))
+		end)
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(5)
+		if os.clock() - lastInput >= AFK_REJOIN_AFTER then
+			setTransferScreen("Keeping your spot... loading back in")
+			afkRejoin:FireServer()
+			lastInput = os.clock() - AFK_REJOIN_AFTER + 60 -- retry in a minute if it did not happen
+		end
+	end
+end)
+
+-- the server is moving this player (laggy server): show the screen now and carry it over
+remotes:WaitForChild("ServerTransferNotice").OnClientEvent:Connect(function(status)
+	setTransferScreen(status)
+	local LoadingScreen = loadingScreen()
+	if not LoadingScreen then
+		return
+	end
+	local screen = LoadingScreen.Build(status)
+	screen.Parent = playerGui
+	LoadingScreen.Animate(screen)
+	task.delay(25, function() -- teleport failed: give the game back
+		if screen.Parent then
+			LoadingScreen.FadeOut(screen, 0.5)
+		end
+	end)
+end)
 --------------------------------------------------
 -- "DO IT NOW" BANNER (small, non-blocking, never takes input)
 --------------------------------------------------

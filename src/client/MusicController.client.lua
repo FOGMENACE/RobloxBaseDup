@@ -86,8 +86,15 @@ local lastFocusStamp = 0
 -- Idle ducking: after IDLE_SECONDS without any input the music drops to the
 -- same level as when the game window loses focus, and returns on input.
 local IDLE_SECONDS = 40
+-- Long idle: every IDLE_RESTORE_SECONDS without input the music is brought
+-- back to the player's full setting (and resumed if it stopped), then it dims
+-- again after IDLE_SECONDS like normal. Configurable via AudioConfig.
+local IDLE_RESTORE_SECONDS = AudioConfig.IdleRestoreSeconds or 300
 local idleMultiplier = 1
 local lastInput = os.clock()
+local quietSince = lastInput -- dimming is measured from here
+local lastRestore = lastInput
+local lastTransition = 0
 
 local function master()
 	-- Settings > Music OFF (attribute set by SettingsUI; nil = default on)
@@ -118,20 +125,54 @@ local function setIdle(idle)
 	end
 end
 
-UserInputService.InputBegan:Connect(function()
-	lastInput = os.clock()
+local function markActive()
+	local now = os.clock()
+	lastInput, quietSince, lastRestore = now, now, now
 	setIdle(false)
-end)
+end
+UserInputService.InputBegan:Connect(markActive)
 UserInputService.InputChanged:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.MouseMovement then
-		lastInput = os.clock()
-		setIdle(false)
+		markActive()
 	end
 end)
+
+local currentSceneTrack -- set below, returns the track table of the scene now playing
+
+-- Bring the music back to the intended setting after a long idle: the current
+-- scene's track playing at full (setting-respecting) volume, every other
+-- track paused. Runs at most once per IDLE_RESTORE_SECONDS, never per frame.
+local function restoreMusic()
+	idleMultiplier = 1
+	local current = currentSceneTrack and currentSceneTrack()
+	local settled = os.clock() - lastTransition > 2.5 -- never fight a DJ transition
+	for _, track in pairs(tracks) do
+		local sound = track.Sound
+		if track == current then
+			sound.PlaybackSpeed = 1
+			track.Eq.LowGain, track.Eq.MidGain = 0, 0
+			if not sound.IsPlaying then
+				if sound.TimePosition > 0 then
+					sound:Resume()
+				else
+					sound:Play()
+				end
+			end
+		elseif settled and sound.IsPlaying then
+			sound:Pause()
+		end
+	end
+	applyVolumes(1.2)
+end
+
 task.spawn(function()
 	while true do
 		task.wait(2)
-		if os.clock() - lastInput > IDLE_SECONDS then
+		local now = os.clock()
+		if now - lastInput >= IDLE_RESTORE_SECONDS and now - lastRestore >= IDLE_RESTORE_SECONDS then
+			lastRestore, quietSince = now, now
+			restoreMusic()
+		elseif now - quietSince > IDLE_SECONDS then
 			setIdle(true)
 		end
 	end
@@ -176,6 +217,7 @@ local function switchScene(scene)
 
 	local previous = currentScene
 	currentScene = scene
+	lastTransition = os.clock()
 
 	transitionToken += 1
 	local token = transitionToken
@@ -243,6 +285,10 @@ local function sceneFromState()
 	end
 
 	return "Lobby"
+end
+
+currentSceneTrack = function()
+	return currentScene and tracks[currentScene]
 end
 
 local function refreshScene()
