@@ -15,6 +15,7 @@ local LoadingScreen = {}
 LoadingScreen.IMAGES = {
 	"rbxassetid://117374859939690", -- Neon Skyway Oil Barrel Challenge
 	"rbxassetid://76074930356028", -- Neon Bowling Ball Scoreboards
+	"rbxassetid://94774229870375",
 }
 
 local function make(className, props, parent)
