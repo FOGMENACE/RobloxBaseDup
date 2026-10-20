@@ -14,6 +14,14 @@ GamePassConfig.AdminGenerators = {
 	["GenX1000 Admin XP"] = 2036355132,
 }
 
+-- Stronger admin generators in the higher worlds (WorldConfig.Admin has the
+-- multipliers). Paste each Game Pass id when it is created; 0 = not on sale.
+GamePassConfig.WorldAdminGenerators = {
+	[2] = { ["GenX100 Admin XP"] = 0, ["GenX1000 Admin XP"] = 0 }, -- x200 / x1300
+	[3] = { ["GenX100 Admin XP"] = 0, ["GenX1000 Admin XP"] = 0 }, -- x400 / x2600
+	[4] = { ["GenX100 Admin XP"] = 0, ["GenX1000 Admin XP"] = 0 }, -- x800 / x5200
+}
+
 -- Silent passes: Game Pass id -> XP multiplier (applies everywhere).
 -- If a player owns several, the highest one applies.
 GamePassConfig.SecretMultipliers = {

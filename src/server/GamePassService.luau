@@ -43,6 +43,14 @@ local function allPassIds()
 		table.insert(ids, id)
 	end
 
+	for _, perWorld in pairs(GamePassConfig.WorldAdminGenerators or {}) do
+		for _, id in pairs(perWorld) do
+			if id ~= 0 then
+				table.insert(ids, id)
+			end
+		end
+	end
+
 	return ids
 end
 
@@ -67,9 +75,14 @@ function GamePassService.Owns(player, passId)
 end
 
 -- Can this player earn XP on the named admin generator?
-function GamePassService.OwnsAdminGenerator(player, generatorName)
+-- worldId > 1 uses that world's own (stronger) admin pass; 0 = not on sale yet.
+function GamePassService.OwnsAdminGenerator(player, generatorName, worldId)
 	local passId = GamePassConfig.AdminGenerators[generatorName]
-	return passId ~= nil and GamePassService.Owns(player, passId)
+	if worldId and worldId > 1 then
+		local perWorld = GamePassConfig.WorldAdminGenerators and GamePassConfig.WorldAdminGenerators[worldId]
+		passId = perWorld and perWorld[generatorName]
+	end
+	return passId ~= nil and passId ~= 0 and GamePassService.Owns(player, passId)
 end
 
 -- Highest silent XP multiplier the player owns (1 = none).
@@ -121,7 +134,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passI
 	end
 
 	local isKnown = GamePassConfig.SecretMultipliers[passId] ~= nil
-	for _, id in pairs(GamePassConfig.AdminGenerators) do
+	for _, id in ipairs(allPassIds()) do
 		if id == passId then
 			isKnown = true
 		end

@@ -1246,6 +1246,8 @@ local function startAllowed(ball, player)
 	return true
 end
 
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+
 local function checkStartWall()
 
 	-- the wall is a flat plane: check a box 0.75 stud thicker on each side so a
@@ -1260,6 +1262,22 @@ local function checkStartWall()
 		wallSize.Z + (thin == "Z" and 1.5 or 0)
 	)
 	local balls = workspace:GetPartBoundsInBox(startWall.CFrame, grown, overlapParams)
+
+	-- Higher worlds: each lobby copy has its own course behind its own start
+	-- wall; rolling through it starts the run right there.
+	for _, world in ipairs(WorldConfig.Worlds) do
+		if world.Id > 1 then
+			for _, ball in ipairs(workspace:GetPartBoundsInBox(startWall.CFrame + world.Offset, grown, overlapParams)) do
+				local player = getPlayerFromBall(ball)
+				-- rolling forward through the copied wall (the copies are scenery, so
+				-- the lobby-side history used by startAllowed does not apply here)
+				if player and player:GetAttribute("World") == world.Id
+					and player:GetAttribute("RunState") == "Waiting" and ball.AssemblyLinearVelocity.Z > 1 then
+					startRun(player, ball)
+				end
+			end
+		end
+	end
 
 	local present = {}
 
@@ -1320,7 +1338,7 @@ local function checkStartWall()
 							local spawnPart = workspace:FindFirstChild("BallSpawn")
 							if spawnPart then
 								ball.AssemblyLinearVelocity = Vector3.zero
-								ball.CFrame = CFrame.new(spawnPart.Position + Vector3.new(0, ball.Size.Y / 2 + 1, 0))
+								ball.CFrame = CFrame.new(spawnPart.Position + WorldConfig.Offset(owner) + Vector3.new(0, ball.Size.Y / 2 + 1, 0))
 							end
 						end
 					end
@@ -1331,11 +1349,11 @@ local function checkStartWall()
 
 end
 
-local function checkFinishWall()
+local function checkFinishWall(wallPart)
 
 	local balls =
 		getBallsInWall(
-			finishWall
+			wallPart or finishWall
 		)
 
 
@@ -1534,6 +1552,16 @@ RunService.Heartbeat:Connect(
 		checkStartWall()
 
 		checkFinishWall()
+		-- each world's own finish wall (WorldService places them)
+		local worldsFolder = workspace:FindFirstChild("Worlds")
+		if worldsFolder then
+			for _, worldModel in ipairs(worldsFolder:GetChildren()) do
+				local wall = worldModel:FindFirstChild("FinishWall")
+				if wall then
+					checkFinishWall(wall)
+				end
+			end
+		end
 
 	end
 )

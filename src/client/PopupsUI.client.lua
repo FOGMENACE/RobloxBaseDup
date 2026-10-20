@@ -147,9 +147,11 @@ end
 -- 25 s, and goes away when claimed or when the claim window ends.
 local x6Rng = Random.new()
 
+-- stationary in the top-right corner (it used to jump to random spots)
 local function randomSpot()
-	return UDim2.fromScale(x6Rng:NextNumber(0.1, 0.9), x6Rng:NextNumber(0.16, 0.62))
+	return UDim2.new(1, -110, 0, 70)
 end
+local _ = x6Rng
 
 x6Holder.AnchorPoint = Vector2.new(0.5, 0.5)
 x6Holder.Position = randomSpot()
@@ -170,7 +172,8 @@ task.spawn(function()
 
 				local untilTime = player:GetAttribute("X6Until") or 0
 				local left = math.max(0, math.ceil(untilTime - workspace:GetServerTimeNow()))
-				x6Claim.Text = string.format("CLAIM  %d:%02d", left // 60, left % 60)
+				x6Claim.Text = "CLAIM" -- no timer here; the countdown is on the X6 generator
+				local _ = left
 
 				-- gentle breathing
 				x6Scale.Scale = 1 + math.sin(os.clock() * 4) * 0.04

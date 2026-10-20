@@ -37,6 +37,10 @@
 -- SERVICES
 --------------------------------------------------
 
+local WORLD_OFFSETS = {}
+for _, w in ipairs(require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Worlds) do
+	WORLD_OFFSETS[w.Id] = w.Offset.X
+end
 local Players =
 	game:GetService("Players")
 
@@ -754,7 +758,9 @@ local function updateLobbyCamera(
 	-- through a wall when the ball is near one. The lane opening at the
 	-- start wall stays reachable because the ball itself is clamped only by
 	-- its own position, not the camera's.
-	local LOBBY_X_MIN, LOBBY_X_MAX = -104.6, -25.2
+	-- the higher worlds are copies of this room shifted along X
+	local worldX = (Players.LocalPlayer:GetAttribute("World") and WORLD_OFFSETS[Players.LocalPlayer:GetAttribute("World")]) or 0
+	local LOBBY_X_MIN, LOBBY_X_MAX = -104.6 + worldX, -25.2 + worldX
 	local LOBBY_Z_MIN, LOBBY_Z_MAX = -277.4, -197.9
 	local ceilingY = (floorHit and floorHit.Position.Y or (ballPosition.Y - 2)) + 26
 

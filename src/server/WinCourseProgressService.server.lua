@@ -699,7 +699,7 @@ end
 -- COURSE DATA
 --------------------------------------------------
 
-local function createCourseData()
+local function createCourseData(player)
 
 	local winCourse =
 		getGeneratedWinCourse()
@@ -720,6 +720,21 @@ local function createCourseData()
 
 	if not startPosition then
 		return nil
+	end
+
+	-- higher worlds run on a mirrored copy of the win course (WorldService)
+	local worldOffset = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Offset(player)
+	if worldOffset ~= Vector3.zero then
+		startPosition += worldOffset
+		local shifted = {}
+		for index, tileData in ipairs(tiles) do
+			local copy = table.clone(tileData)
+			if typeof(copy.Position) == "Vector3" then
+				copy.Position += worldOffset
+			end
+			shifted[index] = copy
+		end
+		tiles = shifted
 	end
 
 	return {
@@ -1093,14 +1108,18 @@ end
 -- BALL SPAWN CFRAME
 --------------------------------------------------
 
-local function getBallSpawnCFrame()
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
 
+-- returns land on the spawn of the player's current world
+local function getBallSpawnCFrame(player)
+
+	local offset = WorldConfig.Offset(player)
 	if ballSpawn:IsA("BasePart") then
-		return ballSpawn.CFrame
+		return ballSpawn.CFrame + offset
 	end
 
 	if ballSpawn:IsA("Model") then
-		return ballSpawn:GetPivot()
+		return ballSpawn:GetPivot() + offset
 	end
 
 	warn(
@@ -1308,7 +1327,7 @@ local function safeReturnToLobby(player, ball)
 		return
 	end
 
-	local spawnCFrame = getBallSpawnCFrame()
+	local spawnCFrame = getBallSpawnCFrame(player)
 	if spawnCFrame then
 		local offset = getBallVerticalOffset(ball)
 
@@ -1392,7 +1411,7 @@ local function returnBallToLobby(player, run)
 	-- MOVE TO LOBBY SPAWN
 	--------------------------------------------------
 
-	local spawnCFrame = getBallSpawnCFrame()
+	local spawnCFrame = getBallSpawnCFrame(player)
 
 	if not spawnCFrame then
 		warn(
@@ -1585,6 +1604,11 @@ local function awardWinnings(
 
 	if applyMultipliers and okBoost and typeof(boostMultiplier) == "number" and boostMultiplier > 1 then
 		amount = math.floor(amount * boostMultiplier)
+	end
+
+	-- higher worlds pay more wins
+	if applyMultipliers then
+		amount = math.floor(amount * WorldConfig.Of(player).WinRewardMult)
 	end
 
 	-- Remember the multipliers and the credited total for the result screen.
@@ -2256,6 +2280,16 @@ if ensured then
 	local refreshedTiles =
 		collectWinTiles(run.WinCourse)
 
+	local worldOffset = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Offset(player)
+	if worldOffset ~= Vector3.zero then
+		for index, tileData in ipairs(refreshedTiles) do
+			local copy = table.clone(tileData)
+			if typeof(copy.Position) == "Vector3" then
+				copy.Position += worldOffset
+			end
+			refreshedTiles[index] = copy
+		end
+	end
 	if #refreshedTiles > 0 then
 		run.Tiles = refreshedTiles
 		run.TileCount = #refreshedTiles
@@ -2740,7 +2774,7 @@ local function startTracking(
 	--------------------------------------------------
 
 	local courseData =
-		createCourseData()
+		createCourseData(player)
 
 	if not courseData then
 		return
@@ -2894,14 +2928,15 @@ local function startTracking(
 		OilSpeedBoost =
 			oilSpeedBoost,
 
+		-- higher worlds roll faster (same distance, more thrill)
 		StartingSpeed =
-			startingSpeed,
+			startingSpeed * WorldConfig.Of(player).WinSpeedMult,
 
 		CurrentSpeed =
-			startingSpeed,
+			startingSpeed * WorldConfig.Of(player).WinSpeedMult,
 
 		MaxSpeed =
-			ceilingForBudget(travelBudget),
+			math.min(ceilingForBudget(travelBudget) * WorldConfig.Of(player).WinSpeedMult, HARD_MAX_SPEED * 1.2),
 
 
 		--------------------------------------------------

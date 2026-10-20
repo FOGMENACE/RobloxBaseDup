@@ -100,9 +100,9 @@ local function x6Text()
 		or 0
 
 	if mode == "Waiting" then
-		return "LIMITED-TIME GIFT"
+		return "FREE IN " .. formatClock(remaining)
 	elseif mode == "Ready" then
-		return "READY! CLAIM IT"
+		return "FREE NOW! CLAIM"
 	elseif mode == "Active" then
 		return "ACTIVE " .. formatClock(remaining)
 	end
@@ -253,7 +253,9 @@ end)
 -- LABEL
 --------------------------------------------------
 
-local function createGeneratorUI(part)
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+
+local function createGeneratorUI(part, world)
 	if not part:IsA("BasePart") then
 		return
 	end
@@ -263,6 +265,25 @@ local function createGeneratorUI(part)
 	if not info then
 		warn("[XPGeneratorController] No configuration for:", part:GetFullName())
 		return
+	end
+
+	-- copies in the higher worlds show that world's (bigger) numbers; the
+	-- server applies the same WorldConfig rules
+	local worldRequirement = nil
+	if world and world.Id > 1 then
+		local base = tonumber(string.match(info.Bottom, "%d+")) or 1
+		local adjusted = table.clone(info)
+		if world.Admin[part.Name] then
+			adjusted.Bottom = "X" .. world.Admin[part.Name]
+		else
+			adjusted.Bottom = "X" .. (base * world.XpMult)
+			local baseRequirement = DISPLAY_REBIRTH_REQUIREMENT[part.Name]
+			if baseRequirement and part.Name ~= "GenX6" then
+				worldRequirement = world.Rebirths + baseRequirement * world.GenReqScale
+				adjusted.Top = "REBIRTH " .. worldRequirement .. " REQUIRED"
+			end
+		end
+		info = adjusted
 	end
 
 	-- Avoid duplicate interfaces.
@@ -311,6 +332,21 @@ local function createGeneratorUI(part)
 	textOutline.Thickness = 2
 	textOutline.Parent = multiplier
 
+	-- the powerful generators (X10 and the admin ones) get a rich gold gradient
+	if info.Bottom == "X10" or ADMIN_NAMES[part.Name] then
+		background.BackgroundColor3 = Color3.new(1, 1, 1)
+		local rich = Instance.new("UIGradient")
+		rich.Rotation = 90
+		rich.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 244, 196)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 214, 110)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 160, 60)),
+		})
+		rich.Parent = background
+		outline.Thickness = 5
+		outline.Color = Color3.fromRGB(120, 60, 10)
+	end
+
 	local requirement = Instance.new("TextLabel")
 	requirement.Name = "Requirement"
 	requirement.BackgroundTransparency = 1
@@ -332,8 +368,16 @@ local function createGeneratorUI(part)
 	-- GenX6     -> shows the claim timer
 	--------------------------------------------------
 
-	local requiredRebirths = DISPLAY_REBIRTH_REQUIREMENT[part.Name]
+	local requiredRebirths = worldRequirement or DISPLAY_REBIRTH_REQUIREMENT[part.Name]
 	local isX6 = part.Name == "GenX6"
+	if isX6 then
+		-- timer on top (big), the XP amount below it (a bit smaller)
+		requirement.Position = UDim2.fromScale(0.08, 0.04)
+		requirement.Size = UDim2.fromScale(0.84, 0.55)
+		multiplier.Position = UDim2.fromScale(0.2, 0.58)
+		multiplier.Size = UDim2.fromScale(0.6, 0.38)
+		multiplier.Text = "X6 XP"
+	end
 
 	local function refreshState()
 		local rebirths = player:GetAttribute("Rebirths") or 0
@@ -398,6 +442,34 @@ generatorsFolder.DescendantAdded:Connect(function(instance)
 		if instance:IsDescendantOf(generatorsFolder) then
 			createGeneratorUI(instance)
 		end
+	end)
+end)
+
+-- generator copies in the higher worlds
+task.spawn(function()
+	local worlds = Workspace:WaitForChild("Worlds", 60)
+	if not worlds then
+		return
+	end
+	local function scan(folder)
+		local id = folder:GetAttribute("WorldId")
+		local gens = folder:FindFirstChild("XPGenerators")
+		if id and gens and not folder:GetAttribute("GenUIBuilt") then
+			folder:SetAttribute("GenUIBuilt", true)
+			for _, instance in ipairs(gens:GetDescendants()) do
+				task.spawn(createGeneratorUI, instance, WorldConfig.Get(id)) -- one slow icon must not block the rest
+			end
+			-- instance streaming brings far-away copies in later
+			gens.DescendantAdded:Connect(function(instance)
+				task.defer(createGeneratorUI, instance, WorldConfig.Get(id))
+			end)
+		end
+	end
+	for _, folder in ipairs(worlds:GetChildren()) do
+		scan(folder)
+	end
+	worlds.ChildAdded:Connect(function(folder)
+		task.defer(scan, folder)
 	end)
 end)
 

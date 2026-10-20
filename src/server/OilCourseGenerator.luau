@@ -1121,15 +1121,17 @@ end
 -- POSITION ROW
 --------------------------------------------------
 
-local function positionRow(oilRow, rowNumber)
-	local rowZ = START_POSITION.Z + ((rowNumber - 1) * ROW_SPACING)
+-- offset: the player's world (WorldConfig) - every world has its own course
+local function positionRow(oilRow, rowNumber, offset)
+	offset = offset or Vector3.zero
+	local rowZ = START_POSITION.Z + offset.Z + ((rowNumber - 1) * ROW_SPACING)
 
 	local currentPivot = oilRow:GetPivot()
 	local rotation = currentPivot - currentPivot.Position
 
 	local targetCFrame = CFrame.new(
-		START_POSITION.X,
-		START_POSITION.Y,
+		START_POSITION.X + offset.X,
+		START_POSITION.Y + offset.Y,
 		rowZ
 	) * rotation
 
@@ -1255,7 +1257,7 @@ function OilCourseGenerator.Generate(player)
 		-- POSITION
 		--------------------------------------------------
 
-		positionRow(oilRow, rowNumber)
+		positionRow(oilRow, rowNumber, require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Offset(player))
 
 		--------------------------------------------------
 		-- PHYSICS

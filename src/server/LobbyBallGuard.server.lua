@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 
 local playerBalls = workspace:WaitForChild("PlayerBalls")
 local spawnPad = workspace:WaitForChild("BallSpawn")
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
 
 local MAX_LOBBY_SPEED = 110 -- studs/s; the real lobby speed is far lower
 local CHECK = 0.25
@@ -28,9 +29,11 @@ task.spawn(function()
 			if ball and ball:IsA("BasePart") and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
 				local now = os.clock()
 				local previous = last[ball]
-				last[ball] = { Position = ball.Position, Time = now }
+				local world = player:GetAttribute("World") or 1
+				last[ball] = { Position = ball.Position, Time = now, World = world }
 
-				if previous then
+				-- a world move teleports the ball far away on purpose: not a speed hack
+				if previous and previous.World == world and (ball:GetAttribute("WorldMoveAt") or 0) < now - 1 then
 					local dt = math.max(now - previous.Time, 0.05)
 					local flat = Vector3.new(ball.Position.X - previous.Position.X, 0, ball.Position.Z - previous.Position.Z)
 					local speed = flat.Magnitude / dt
@@ -39,7 +42,7 @@ task.spawn(function()
 					if speed > MAX_LOBBY_SPEED or outOfRoom then
 						ball.AssemblyLinearVelocity = Vector3.zero
 						ball.AssemblyAngularVelocity = Vector3.zero
-						ball.CFrame = spawnPad.CFrame + Vector3.new(0, 3, 0)
+						ball.CFrame = spawnPad.CFrame + WorldConfig.Offset(player) + Vector3.new(0, 3, 0)
 						last[ball] = nil
 					end
 				end

@@ -716,22 +716,93 @@ local function refreshGiftButtons()
 		and (x6Until - workspace:GetServerTimeNow())
 		or 0
 
-	if x6Mode == "Ready" then
-		x6Button.Caption.Text = "CLAIM!"
-		x6Button.Badge.Visible = true
-	elseif x6Mode == "Active" then
-		x6Button.Caption.Text = "ON " .. formatTime(x6Remaining)
-		x6Button.Badge.Visible = false
-	elseif x6Mode == "Waiting" then
-		x6Button.Caption.Text = formatTime(x6Remaining)
-		x6Button.Badge.Visible = false
-	elseif x6Mode == "Done" then
-		x6Button.Caption.Text = "TOMORROW"
-		x6Button.Badge.Visible = false
-	else
-		x6Button.Caption.Text = "..."
-		x6Button.Badge.Visible = false
+	-- stationary CLAIM label (the countdown lives on the X6 generator itself)
+	x6Button.Caption.Text = "CLAIM"
+	x6Button.Badge.Visible = x6Mode == "Ready"
+	local _ = x6Remaining
+end
+
+-- Arrow to the X6 generator after claiming: a bouncing arrow above it and a
+-- glowing guide line from the player's ball; both disappear once the player
+-- rolls onto it (or the boost ends).
+local x6Arrow = nil
+local function showX6Arrow()
+	if x6Arrow then
+		return
 	end
+	local gen = workspace:FindFirstChild("GenX6", true)
+	if not gen or not gen:IsA("BasePart") then
+		return
+	end
+	local parts = {}
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.fromOffset(90, 110)
+	billboard.StudsOffsetWorldSpace = Vector3.new(0, gen.Size.Y / 2 + 9, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = gen
+	local arrow = Instance.new("TextLabel")
+	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.BackgroundTransparency = 1
+	arrow.Font = Enum.Font.FredokaOne
+	arrow.Text = "V"
+	arrow.TextScaled = true
+	arrow.TextColor3 = Color3.fromRGB(255, 214, 70)
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 4
+	stroke.Color = Color3.fromRGB(24, 22, 34)
+	stroke.Parent = arrow
+	arrow.Parent = billboard
+	billboard.Parent = playerGui
+	table.insert(parts, billboard)
+
+	local target = Instance.new("Attachment")
+	target.Parent = gen
+	table.insert(parts, target)
+	local beam = Instance.new("Beam")
+	beam.Color = ColorSequence.new(Color3.fromRGB(255, 214, 70))
+	beam.LightEmission = 1
+	beam.Width0, beam.Width1 = 0.6, 0.6
+	beam.FaceCamera = true
+	beam.Attachment1 = target
+	beam.Parent = gen
+	table.insert(parts, beam)
+
+	local RunService = game:GetService("RunService")
+	local conn
+	local function clear()
+		if conn then
+			conn:Disconnect()
+		end
+		for _, p in ipairs(parts) do
+			p:Destroy()
+		end
+		x6Arrow = nil
+	end
+	local startPoint = nil
+	conn = RunService.RenderStepped:Connect(function()
+		local ball = workspace:FindFirstChild("PlayerBalls") and workspace.PlayerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0, gen.Size.Y / 2 + 9 + math.sin(os.clock() * 5) * 1.2, 0)
+		if ball then
+			if not startPoint or startPoint.Parent ~= ball then
+				if startPoint then
+					startPoint:Destroy()
+				end
+				startPoint = Instance.new("Attachment")
+				startPoint.Parent = ball
+				table.insert(parts, startPoint)
+				beam.Attachment0 = startPoint
+			end
+			local flat = Vector3.new(ball.Position.X - gen.Position.X, 0, ball.Position.Z - gen.Position.Z)
+			if flat.Magnitude < math.max(gen.Size.X, gen.Size.Z) / 2 + 3 then
+				clear() -- rolled onto it
+				return
+			end
+		end
+		if player:GetAttribute("X6Mode") ~= "Active" and player:GetAttribute("X6Mode") ~= "Ready" then
+			clear()
+		end
+	end)
+	x6Arrow = clear
 end
 
 local x6ClaimRemote = remotes:WaitForChild("X6Claim")
@@ -740,20 +811,17 @@ local x6ResultRemote = remotes:WaitForChild("X6Result")
 x6Button.Button.Activated:Connect(function()
 	local mode = player:GetAttribute("X6Mode")
 
+	-- does nothing until the gift is ready (the timer is on the generator)
 	if mode == "Ready" then
 		x6ClaimRemote:FireServer()
 	elseif mode == "Active" then
-		showToast("X6 is ON! Roll onto the X6 generator.", true)
-	elseif mode == "Waiting" then
-		local untilTime = player:GetAttribute("X6Until") or 0
-		showToast("X6 boost ready in " .. formatTime(untilTime - workspace:GetServerTimeNow()), true)
-	elseif mode == "Done" then
-		showToast("No more X6 boosts today. Back tomorrow!", false)
+		showX6Arrow()
 	end
 end)
 
 x6ResultRemote.OnClientEvent:Connect(function(success, info)
 	if success then
+		showX6Arrow()
 		showToast("X6 BOOST ON for " .. formatTime(info) .. "! Roll onto the X6 generator!", true)
 	else
 		showToast(tostring(info), false)

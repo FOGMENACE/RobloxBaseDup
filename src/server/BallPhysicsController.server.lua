@@ -266,8 +266,9 @@ local LOBBY_SPEED =
 local COURSE_START_SPEED =
 	26
 
+-- smooth, steady ramp to cruising speed (34 felt like a jolt)
 local COURSE_ACCELERATION =
-	34
+	16
 
 local MIN_COURSE_SPEED =
 	6
@@ -375,7 +376,9 @@ end
 -- BALL / GENERATOR OVERLAP
 --------------------------------------------------
 
-local function isBallInsideGenerator(ball, part)
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+
+local function isBallInsideGenerator(ball, part, offset)
 
 	if not ball or not ball:IsA("BasePart")
 		or not part or not part:IsA("BasePart") then
@@ -383,8 +386,9 @@ local function isBallInsideGenerator(ball, part)
 		return false
 	end
 
+	-- higher worlds stand on copies of these generators: map the ball back
 	local localPosition =
-		part.CFrame:PointToObjectSpace(ball.Position)
+		part.CFrame:PointToObjectSpace(ball.Position - (offset or Vector3.zero))
 
 	local halfGenerator = part.Size * 0.5
 	local halfBall = ball.Size * 0.5
@@ -423,6 +427,7 @@ local function getActiveGeneratorMultiplier(player, ball)
 
 	local bestMultiplier = 1
 	local activeGenerator = nil
+	local world = WorldConfig.Of(player)
 
 	for _, part in ipairs(getXPGeneratorParts()) do
 
@@ -446,10 +451,17 @@ local function getActiveGeneratorMultiplier(player, ball)
 		end
 
 		if ADMIN_GENERATORS[generatorName] then
-			if not GamePassService.OwnsAdminGenerator(player, generatorName) then
+			if not GamePassService.OwnsAdminGenerator(player, generatorName, world.Id) then
 				continue
 			end
-			requiredRebirths = 0
+			requiredRebirths = world.Rebirths
+			multiplier = world.Admin[generatorName] or multiplier
+		elseif multiplier and requiredRebirths then
+			-- harder and richer in higher worlds
+			if generatorName ~= "GenX6" then
+				requiredRebirths = world.Rebirths + requiredRebirths * world.GenReqScale
+			end
+			multiplier = multiplier * world.XpMult
 		end
 
 		if not multiplier or not requiredRebirths then
@@ -464,7 +476,7 @@ local function getActiveGeneratorMultiplier(player, ball)
 			continue
 		end
 
-		if isBallInsideGenerator(ball, part) then
+		if isBallInsideGenerator(ball, part, world.Offset) then
 
 			bestMultiplier = multiplier
 			activeGenerator = generatorName
@@ -1843,16 +1855,16 @@ if runState == "Waiting"
 				-- TARGET SPEEDS
 				--------------------------------------------------
 
+				-- On the oil course the raw ball stats (50..150 studs/s) were far too
+				-- fast to read and dodge the platform rows (42 studs apart). They are
+				-- mapped onto a playable band that still rewards faster balls:
+				-- forward 32 -> 54 studs/s, steering 20 -> 30 studs/s. BallDefinitions
+				-- (and everything else that reads them) are unchanged.
 				local targetForwardSpeed =
-					getForwardSpeed(
-						ball
-					)
-
+					32 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.22
 
 				local targetHorizontalSpeed =
-					getHorizontalSpeed(
-						ball
-					)
+					20 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.1
 
 
 				--------------------------------------------------

@@ -121,6 +121,8 @@ local playerBalls =
 	)
 
 
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+
 local ballSpawn =
 	workspace:WaitForChild(
 		"BallSpawn"
@@ -743,8 +745,10 @@ local function positionCharacterAtSpawn(
 	end
 
 
+	local owner = Players:GetPlayerFromCharacter(character)
 	local characterPosition =
 		ballSpawn.Position
+		+ WorldConfig.Offset(owner)
 		+
 		Vector3.new(
 			0,
@@ -1243,9 +1247,9 @@ local function createPlayerBall(
 
 	ball.CFrame =
 		keepCFrame
-		or getBallSpawnCFrame(
+		or (getBallSpawnCFrame(
 			template
-		)
+		) + WorldConfig.Offset(player))
 
 
 	--------------------------------------------------
