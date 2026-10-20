@@ -27,7 +27,8 @@ WorldConfig.Worlds = {
 		Id = 2, Name = "PRO ALLEY", Rebirths = 15, Offset = Vector3.new(1600, 0, 0),
 		Generators = { GenX1 = 15, GenX2 = 20, GenX4 = 25, GenX6 = 30, GenX8 = 35, GenX10 = 40 },
 		WinSpeedMult = 1.2, WinRewardMult = 2,
-		Admin = { ["GenX100 Admin XP"] = 200, ["GenX1000 Admin XP"] = 1300 },
+		Admin = { ["GenX100 Admin XP"] = 240, ["GenX1000 Admin XP"] = 1900 },
+		AdminPass = { ["GenX100 Admin XP"] = 2036415199, ["GenX1000 Admin XP"] = 2040578649 }, -- R$ 575 / R$ 1,650
 		Theme = {
 			Primary = Color3.fromRGB(150, 175, 205), Accent = Color3.fromRGB(80, 180, 255),
 			Floor = Color3.fromRGB(196, 206, 222), Glow = Color3.fromRGB(120, 210, 255),
@@ -41,7 +42,8 @@ WorldConfig.Worlds = {
 		Id = 3, Name = "MASTER ARENA", Rebirths = 45, Offset = Vector3.new(3200, 0, 0),
 		Generators = { GenX1 = 45, GenX2 = 50, GenX4 = 55, GenX6 = 60, GenX8 = 65, GenX10 = 70 },
 		WinSpeedMult = 1.4, WinRewardMult = 4,
-		Admin = { ["GenX100 Admin XP"] = 400, ["GenX1000 Admin XP"] = 2600 },
+		Admin = { ["GenX100 Admin XP"] = 360, ["GenX1000 Admin XP"] = 2200 },
+		AdminPass = { ["GenX100 Admin XP"] = 2037033103, ["GenX1000 Admin XP"] = 2039960889 }, -- R$ 710 / R$ 1,899
 		Theme = {
 			Primary = Color3.fromRGB(40, 32, 26), Accent = Color3.fromRGB(255, 196, 70),
 			Floor = Color3.fromRGB(60, 46, 30), Glow = Color3.fromRGB(255, 205, 90),
@@ -55,7 +57,8 @@ WorldConfig.Worlds = {
 		Id = 4, Name = "GRANDMASTER PALACE", Rebirths = 75, Offset = Vector3.new(4800, 0, 0),
 		Generators = { GenX1 = 75, GenX2 = 80, GenX4 = 85, GenX6 = 90, GenX8 = 95, GenX10 = 100 },
 		WinSpeedMult = 1.6, WinRewardMult = 8,
-		Admin = { ["GenX100 Admin XP"] = 800, ["GenX1000 Admin XP"] = 5200 },
+		Admin = { ["GenX100 Admin XP"] = 490, ["GenX1000 Admin XP"] = 2800 },
+		AdminPass = { ["GenX100 Admin XP"] = 2036387283, ["GenX1000 Admin XP"] = 2039765108 }, -- R$ 869 / R$ 2,299
 		Theme = {
 			Primary = Color3.fromRGB(70, 40, 120), Accent = Color3.fromRGB(190, 240, 255),
 			Floor = Color3.fromRGB(110, 80, 170), Glow = Color3.fromRGB(200, 150, 255),

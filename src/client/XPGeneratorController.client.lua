@@ -447,6 +447,41 @@ generatorsFolder.DescendantAdded:Connect(function(instance)
 	end)
 end)
 
+-- rolling onto a higher world's admin generator without its pass opens the
+-- Roblox purchase prompt for that world's pass (the server re-checks ownership)
+task.spawn(function()
+	local MarketplaceService = game:GetService("MarketplaceService")
+	local owned, lastPrompt = {}, 0
+	while true do
+		task.wait(0.3)
+		local world = WorldConfig.Of(player)
+		local worldModel = Workspace:FindFirstChild("Worlds") and Workspace.Worlds:FindFirstChild("World" .. world.Id)
+		local gens = worldModel and worldModel:FindFirstChild("XPGenerators")
+		local balls = Workspace:FindFirstChild("PlayerBalls")
+		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+		if world.AdminPass and gens and ball and os.clock() - lastPrompt > 6 then
+			for name, passId in pairs(world.AdminPass) do
+				local part = gens:FindFirstChild(name, true)
+				if part and part:IsA("BasePart") then
+					local here = part.CFrame:PointToObjectSpace(ball.Position)
+					if math.abs(here.X) < part.Size.X / 2 + 1.5 and math.abs(here.Z) < part.Size.Z / 2 + 1.5 then
+						if owned[passId] == nil then
+							local ok, has = pcall(function()
+								return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+							end)
+							owned[passId] = ok and has or nil
+						end
+						if owned[passId] == false then
+							lastPrompt = os.clock()
+							MarketplaceService:PromptGamePassPurchase(player, passId)
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
 -- generator copies in the higher worlds
 task.spawn(function()
 	local worlds = Workspace:WaitForChild("Worlds", 60)
