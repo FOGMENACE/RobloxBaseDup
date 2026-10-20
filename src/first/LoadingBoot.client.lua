@@ -39,5 +39,10 @@ while player:GetAttribute("Level") == nil and waited < 20 do
 	task.wait(0.25)
 	waited += 0.25
 end
+-- and keep it up until the player is placed in their saved world on solid floor
+while player:GetAttribute("WorldReady") ~= true and waited < 45 do
+	task.wait(0.25)
+	waited += 0.25
+end
 task.wait(0.4)
 LoadingScreen.FadeOut(gui, 0.7)

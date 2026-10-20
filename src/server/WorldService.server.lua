@@ -510,10 +510,18 @@ end)
 
 local function onJoin(player)
 	player:SetAttribute("World", 1)
+	player:SetAttribute("WorldReady", false)
+	-- the loading screen stays up until this is true (see LoadingBoot)
+	local function ready()
+		if player.Parent then
+			player:SetAttribute("WorldReady", true)
+		end
+	end
 	local ok, saved = pcall(function()
 		return store:GetAsync(tostring(player.UserId))
 	end)
 	if not ok or typeof(saved) ~= "number" or saved <= 1 then
+		ready()
 		return
 	end
 	-- wait for the saved rebirths, then go back to the saved world if still unlocked
@@ -526,10 +534,17 @@ local function onJoin(player)
 		task.wait(0.5)
 		waited += 0.5
 	end
+	-- never send a ball to a world before its copy exists (it would fall forever)
+	while player.Parent and not Workspace:GetAttribute("WorldsReady") and waited < 60 do
+		task.wait(0.25)
+		waited += 0.25
+	end
 	if player.Parent then
 		lastMove[player] = nil
 		moveTo(player, saved, "Join")
 	end
+	task.wait(0.6) -- let the ball settle on the new floor
+	ready()
 end
 
 Players.PlayerAdded:Connect(function(p)
