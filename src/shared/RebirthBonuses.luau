@@ -54,9 +54,13 @@ function RebirthBonuses.RequiredLevel(rebirths)
 		return REQUIRED_LEVELS[count + 1]
 	end
 
-	-- beyond the table: +45 and growing by 5 each rebirth
+	-- beyond the table: a steady +35 levels per rebirth. The old rule grew the
+	-- step by 5 every rebirth (quadratic), so around 37 rebirths one cycle
+	-- needed ~1,960 levels and kept exploding. Linear steps keep each rebirth a
+	-- similar, reachable climb while the rebirth XP bonus keeps growing too:
+	-- 30 -> 770, 37 -> 1,015, 50 -> 1,470, 75 -> 2,345, 100 -> 3,220.
 	local extra = count - (#REQUIRED_LEVELS - 1)
-	return REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 45 + (extra * (extra - 1) / 2) * 5
+	return REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 35
 end
 
 return RebirthBonuses

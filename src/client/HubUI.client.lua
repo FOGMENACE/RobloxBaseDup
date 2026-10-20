@@ -433,6 +433,15 @@ local function makeHubButton(order, name, icon, caption, color, tilt)
 end
 
 local shopButton = makeHubButton(1, "ShopButton", "🎳", "STORE", PIN_RED, -3)
+-- the store's "!" stays on permanently, also while the store is open
+if shopButton.Badge then
+	shopButton.Badge.Visible = true
+	shopButton.Badge:GetPropertyChangedSignal("Visible"):Connect(function()
+		if not shopButton.Badge.Visible then
+			shopButton.Badge.Visible = true
+		end
+	end)
+end
 local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE, 2)
 
 -- Percent to the next rebirth, floating over the REBIRTH button.
@@ -722,89 +731,46 @@ local function refreshGiftButtons()
 	local _ = x6Remaining
 end
 
--- Arrow to the X6 generator after claiming: a bouncing arrow above it and a
--- glowing guide line from the player's ball; both disappear once the player
--- rolls onto it (or the boost ends).
+-- Arrow trail to the X6 generator of the player's CURRENT world after
+-- claiming; it disappears once they roll onto it (or the boost ends).
+local x6Trail = require(ReplicatedStorage:WaitForChild("GroundArrows")).new("X6Arrows")
 local x6Arrow = nil
 local function showX6Arrow()
 	if x6Arrow then
 		return
 	end
-	local gen = workspace:FindFirstChild("GenX6", true)
+	local worldId = player:GetAttribute("World") or 1
+	local worlds = workspace:FindFirstChild("Worlds")
+	local root = worldId == 1 and workspace:FindFirstChild("XPGenerators")
+		or (worlds and worlds:FindFirstChild("World" .. worldId) and worlds["World" .. worldId]:FindFirstChild("XPGenerators"))
+	local gen = root and root:FindFirstChild("GenX6", true)
 	if not gen or not gen:IsA("BasePart") then
 		return
 	end
-	local parts = {}
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.fromOffset(90, 110)
-	billboard.StudsOffsetWorldSpace = Vector3.new(0, gen.Size.Y / 2 + 9, 0)
-	billboard.AlwaysOnTop = true
-	billboard.Adornee = gen
-	local arrow = Instance.new("TextLabel")
-	arrow.Size = UDim2.fromScale(1, 1)
-	arrow.BackgroundTransparency = 1
-	arrow.Font = Enum.Font.FredokaOne
-	arrow.Text = "V"
-	arrow.TextScaled = true
-	arrow.TextColor3 = Color3.fromRGB(255, 214, 70)
-	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 4
-	stroke.Color = Color3.fromRGB(24, 22, 34)
-	stroke.Parent = arrow
-	arrow.Parent = billboard
-	billboard.Parent = playerGui
-	table.insert(parts, billboard)
-
-	local target = Instance.new("Attachment")
-	target.Parent = gen
-	table.insert(parts, target)
-	local beam = Instance.new("Beam")
-	beam.Color = ColorSequence.new(Color3.fromRGB(255, 214, 70))
-	beam.LightEmission = 1
-	beam.Width0, beam.Width1 = 0.6, 0.6
-	beam.FaceCamera = true
-	beam.Attachment1 = target
-	beam.Parent = gen
-	table.insert(parts, beam)
-
-	local RunService = game:GetService("RunService")
 	local conn
 	local function clear()
-		if conn then
-			conn:Disconnect()
-		end
-		for _, p in ipairs(parts) do
-			p:Destroy()
-		end
+		conn:Disconnect()
+		x6Trail:Hide()
 		x6Arrow = nil
 	end
-	local startPoint = nil
-	conn = RunService.RenderStepped:Connect(function()
-		local ball = workspace:FindFirstChild("PlayerBalls") and workspace.PlayerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
-		billboard.StudsOffsetWorldSpace = Vector3.new(0, gen.Size.Y / 2 + 9 + math.sin(os.clock() * 5) * 1.2, 0)
+	conn = game:GetService("RunService").RenderStepped:Connect(function()
+		local balls = workspace:FindFirstChild("PlayerBalls")
+		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+		x6Trail:Update(ball, gen.Position)
 		if ball then
-			if not startPoint or startPoint.Parent ~= ball then
-				if startPoint then
-					startPoint:Destroy()
-				end
-				startPoint = Instance.new("Attachment")
-				startPoint.Parent = ball
-				table.insert(parts, startPoint)
-				beam.Attachment0 = startPoint
-			end
 			local flat = Vector3.new(ball.Position.X - gen.Position.X, 0, ball.Position.Z - gen.Position.Z)
 			if flat.Magnitude < math.max(gen.Size.X, gen.Size.Z) / 2 + 3 then
 				clear() -- rolled onto it
 				return
 			end
 		end
-		if player:GetAttribute("X6Mode") ~= "Active" and player:GetAttribute("X6Mode") ~= "Ready" then
+		local mode = player:GetAttribute("X6Mode")
+		if (mode ~= "Active" and mode ~= "Ready") or (player:GetAttribute("World") or 1) ~= worldId then
 			clear()
 		end
 	end)
 	x6Arrow = clear
 end
-
 local x6ClaimRemote = remotes:WaitForChild("X6Claim")
 local x6ResultRemote = remotes:WaitForChild("X6Result")
 

@@ -217,81 +217,15 @@ fitBanner()
 -- A chain of GROUND arrows flows out of the ball along the floor toward the
 -- objective (world parts, drawn only on this client). Screen-space arrows
 -- pointed at the sky whenever the target was straight ahead.
-local ARROW_COUNT = 8
-local ARROW_SPACING = 7
-local ARROW_COLOR = Color3.fromRGB(255, 214, 70)
-
-local arrowFolder = workspace:FindFirstChild("TutorialArrows")
-if arrowFolder then
-	arrowFolder:Destroy()
+-- shared, cleaner arrow trail (also used for the Bowling Shop after world moves)
+local GroundArrows = require(game:GetService("ReplicatedStorage"):WaitForChild("GroundArrows"))
+local old = workspace:FindFirstChild("TutorialArrows")
+if old then
+	old:Destroy()
 end
-arrowFolder = Instance.new("Folder")
-arrowFolder.Name = "TutorialArrows"
-arrowFolder.Parent = workspace
-
-local worldArrows = {}
-
-local function makeGroundArrow()
-	local part = Instance.new("Part")
-	part.Size = Vector3.new(8, 0.2, 8)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.CastShadow = false
-	part.Transparency = 1
-	part.Parent = arrowFolder
-
-	local surface = Instance.new("SurfaceGui")
-	surface.Face = Enum.NormalId.Top
-	surface.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-	surface.CanvasSize = Vector2.new(240, 240)
-	surface.LightInfluence = 0
-	surface.Brightness = 2
-	surface.Parent = part
-
-	local group = Instance.new("CanvasGroup")
-	group.Size = UDim2.fromScale(1, 1)
-	group.BackgroundTransparency = 1
-	group.Parent = surface
-
-	-- two arms meeting at the tip (UI rotation pivots on the element centre,
-	-- so each arm is placed by its centre)
-	local phi = math.rad(38)
-	local armLength = 240 * 0.62
-	local thickness = 240 * 0.2
-	local apex = Vector2.new(120, 38)
-	for _, side in ipairs({ -1, 1 }) do
-		local direction = Vector2.new(side * math.cos(phi), math.sin(phi))
-		local centre = apex + direction * (armLength / 2)
-
-		local arm = Instance.new("Frame")
-		arm.AnchorPoint = Vector2.new(0.5, 0.5)
-		arm.Position = UDim2.fromOffset(centre.X, centre.Y)
-		arm.Size = UDim2.fromOffset(armLength, thickness)
-		arm.Rotation = side * math.deg(phi)
-		arm.BackgroundColor3 = ARROW_COLOR
-		arm.BorderSizePixel = 0
-		arm.Parent = group
-		Instance.new("UICorner", arm).CornerRadius = UDim.new(0, 12)
-		local stroke = Instance.new("UIStroke")
-		stroke.Color = INK
-		stroke.Thickness = 5
-		stroke.Parent = arm
-	end
-
-	return { Part = part, Group = group }
-end
-
-for index = 1, ARROW_COUNT do
-	worldArrows[index] = makeGroundArrow()
-end
-
+local trail = GroundArrows.new("TutorialArrows")
 local function hideArrows()
-	for _, arrow in ipairs(worldArrows) do
-		arrow.Part.Position = Vector3.new(0, -5000, 0)
-		arrow.Group.GroupTransparency = 1
-	end
+	trail:Hide()
 end
 local distanceLabel = create("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
@@ -555,37 +489,10 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	-- horizontal direction from the ball to the objective
-	local flat = Vector3.new(targetPosition.X - ball.Position.X, 0, targetPosition.Z - ball.Position.Z)
-	if flat.Magnitude < 3 then
-		hideArrows()
+	local lastPoint = trail:Update(ball, targetPosition)
+	if not lastPoint then
 		distanceLabel.Visible = false
 		return
-	end
-	local direction = flat.Unit
-
-	local groundY = ball.Position.Y - ball.Size.Y / 2 + 0.2
-	local phase = (os.clock() * 0.9) % 1
-	local reach = math.min(flat.Magnitude - 4, ARROW_COUNT * ARROW_SPACING)
-	local lastPoint = ball.Position
-
-	for index, arrow in ipairs(worldArrows) do
-		local distance = 7 + (index - 1 + phase) * ARROW_SPACING
-		if distance > reach + 7 then
-			arrow.Part.Position = Vector3.new(0, -5000, 0)
-			arrow.Group.GroupTransparency = 1
-		else
-			local point = Vector3.new(
-				ball.Position.X + direction.X * distance,
-				groundY,
-				ball.Position.Z + direction.Z * distance
-			)
-			-- the arrow's UI "up" is local -X: point that axis along the way
-			arrow.Part.CFrame = CFrame.fromMatrix(point, -direction, Vector3.yAxis)
-			local fraction = (index - 1 + phase) / ARROW_COUNT
-			arrow.Group.GroupTransparency = 1 - math.sin(math.clamp(fraction, 0, 1) * math.pi) * 0.95
-			lastPoint = point
-		end
 	end
 
 	local screen, onScreen = camera:WorldToViewportPoint(lastPoint + Vector3.new(0, 3, 0))

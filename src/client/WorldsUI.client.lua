@@ -97,6 +97,37 @@ local ROW_COLORS = {
 }
 
 local rows = {}
+
+-- the branded screen covers the move from the moment TELEPORT is pressed and
+-- lifts as soon as the server has placed the ball (or refused the move)
+local transition = nil
+local function endTransition()
+	if transition then
+		local module = ReplicatedFirst:FindFirstChild("LoadingScreen")
+		if module then
+			require(module).FadeOut(transition, 0.3)
+		else
+			transition:Destroy()
+		end
+		transition = nil
+	end
+end
+local function beginTransition(worldId)
+	local module = ReplicatedFirst:FindFirstChild("LoadingScreen")
+	if not module or transition then
+		return
+	end
+	local LS = require(module)
+	transition = LS.Build("Entering " .. WorldConfig.Get(worldId).Name .. "...")
+	transition.Parent = playerGui
+	LS.Animate(transition)
+	local mine = transition
+	task.delay(4, function()
+		if transition == mine then
+			endTransition()
+		end
+	end)
+end
 for _, world in ipairs(WorldConfig.Worlds) do
 	local row = create("Frame", { LayoutOrder = world.Id, Size = UDim2.new(1, -8, 0, 100), BackgroundColor3 = Color3.new(1, 1, 1) }, list)
 	create("UICorner", { CornerRadius = UDim.new(0, 12) }, row)
@@ -124,6 +155,7 @@ for _, world in ipairs(WorldConfig.Worlds) do
 	create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8) }, button)
 	button.Activated:Connect(function()
 		if button.Text == "TELEPORT" then
+			beginTransition(world.Id)
 			worldTeleport:FireServer(world.Id)
 			panel.Visible = false
 		end
@@ -210,6 +242,7 @@ end
 --------------------------------------------------
 
 local arrowClear = nil
+local unlockTrail = require(ReplicatedStorage:WaitForChild("GroundArrows")).new("UnlockArrows")
 local function showArrowTo(targetId)
 	if arrowClear then
 		arrowClear()
@@ -219,45 +252,23 @@ local function showArrowTo(targetId)
 	end
 	local here = currentWorld()
 	local searchIn = here == 1 and worldsFolder or worldsFolder:FindFirstChild("World" .. here)
-	local portal = searchIn and searchIn:FindFirstChild("Portal_To_" .. targetId)
+	local portal = searchIn and searchIn:FindFirstChild("Portal_To_0") -- the WORLDS portal
 	local core = portal and portal:FindFirstChild("Core")
 	if not core then
 		return
 	end
-	local parts = {}
-	local bb = create("BillboardGui", { Size = UDim2.fromOffset(90, 110), AlwaysOnTop = true, Adornee = core }, playerGui)
-	local arrow = create("TextLabel", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = FONT, Text = "V", TextScaled = true,
-		TextColor3 = Color3.fromRGB(255, 214, 70),
-	}, bb)
-	create("UIStroke", { Color = INK, Thickness = 4 }, arrow)
-	table.insert(parts, bb)
-	local a1 = create("Attachment", {}, core)
-	local beam = create("Beam", {
-		Color = ColorSequence.new(Color3.fromRGB(255, 214, 70)), LightEmission = 1, Width0 = 0.7, Width1 = 0.7,
-		FaceCamera = true, Attachment1 = a1, Transparency = NumberSequence.new(0.15),
-	}, core)
-	table.insert(parts, a1)
-	table.insert(parts, beam)
-	local a0 = nil
+	local trail = unlockTrail
 	local started = os.clock()
 	local conn
 	local function clear()
 		conn:Disconnect()
-		for _, p in ipairs(parts) do
-			p:Destroy()
-		end
+		trail:Hide()
 		arrowClear = nil
 	end
 	conn = RunService.RenderStepped:Connect(function()
-		bb.StudsOffsetWorldSpace = Vector3.new(0, 8 + math.sin(os.clock() * 4) * 1.2, 0)
 		local balls = workspace:FindFirstChild("PlayerBalls")
 		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
-		if ball and (not a0 or a0.Parent ~= ball) then
-			a0 = create("Attachment", {}, ball)
-			table.insert(parts, a0)
-			beam.Attachment0 = a0
-		end
+		trail:Update(ball, core.Position)
 		if currentWorld() == targetId or os.clock() - started > 180 or not core.Parent then
 			clear()
 		end
@@ -270,59 +281,58 @@ end
 -- shop opens - the shop's own pad fires Remotes.OpenBowlingShop)
 --------------------------------------------------
 
+local GroundArrows = require(ReplicatedStorage:WaitForChild("GroundArrows"))
+local shopTrail = GroundArrows.new("ShopArrows")
 local shopArrowClear = nil
+
+-- only worth pointing at the shop while there is still a ball to get there
+local function hasUnownedBall()
+	local ok, state = pcall(function()
+		return remotes:WaitForChild("BallShopState"):InvokeServer()
+	end)
+	if not ok or typeof(state) ~= "table" then
+		return true
+	end
+	local list = typeof(state.Balls) == "table" and state.Balls or state
+	for _, ball in pairs(list) do
+		if typeof(ball) == "table" and not ball.Owned and not ball.IsExclusive then
+			return true
+		end
+	end
+	return false
+end
+
 local function showShopArrow()
 	if shopArrowClear then
 		shopArrowClear()
 	end
 	local id = currentWorld()
+	if not WorldConfig.Unlocked(rebirths(), id) or not hasUnownedBall() then
+		return
+	end
 	local root = id == 1 and workspace or (worldsFolder and worldsFolder:FindFirstChild("World" .. id))
 	local shop = root and root:FindFirstChild("BowlingShop")
 	local pad = shop and shop:FindFirstChild("BallShopInteractionPoint")
 	if not pad or not pad:IsA("BasePart") then
 		return
 	end
-	local parts = {}
-	local bb = create("BillboardGui", { Size = UDim2.fromOffset(80, 100), AlwaysOnTop = true, Adornee = pad }, playerGui)
-	local arrow = create("TextLabel", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = FONT, Text = "V", TextScaled = true,
-		TextColor3 = Color3.fromRGB(255, 214, 70),
-	}, bb)
-	create("UIStroke", { Color = INK, Thickness = 4 }, arrow)
-	table.insert(parts, bb)
-	local a1 = create("Attachment", {}, pad)
-	local beam = create("Beam", {
-		Color = ColorSequence.new(Color3.fromRGB(255, 214, 70)), LightEmission = 1, Width0 = 0.7, Width1 = 0.7,
-		FaceCamera = true, Attachment1 = a1, Transparency = NumberSequence.new(0.15),
-	}, pad)
-	table.insert(parts, a1)
-	table.insert(parts, beam)
-	local a0 = nil
 	local started = os.clock()
 	local conn
 	local function clear()
 		conn:Disconnect()
-		for _, p in ipairs(parts) do
-			p:Destroy()
-		end
+		shopTrail:Hide()
 		shopArrowClear = nil
 	end
 	conn = RunService.RenderStepped:Connect(function()
-		bb.StudsOffsetWorldSpace = Vector3.new(0, 7 + math.sin(os.clock() * 4) * 1.2, 0)
 		local balls = workspace:FindFirstChild("PlayerBalls")
 		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
-		if ball and (not a0 or a0.Parent ~= ball) then
-			a0 = create("Attachment", {}, ball)
-			table.insert(parts, a0)
-			beam.Attachment0 = a0
-		end
+		shopTrail:Update(ball, pad.Position)
 		if currentWorld() ~= id or os.clock() - started > 120 or not pad.Parent then
 			clear()
 		end
 	end)
 	shopArrowClear = clear
 end
-
 remotes:WaitForChild("OpenBowlingShop").OnClientEvent:Connect(function()
 	if shopArrowClear then
 		shopArrowClear()
@@ -357,25 +367,24 @@ worldNotice.OnClientEvent:Connect(function(kind, data)
 	if kind == "OpenMenu" then
 		openMenu()
 	elseif kind == "Locked" and typeof(data) == "table" then
+		endTransition()
 		showToast(string.format("%s needs %d rebirths (you have %d).", WorldConfig.Get(data.World).Name, data.Need or 0, data.Have or 0))
 	elseif kind == "Entered" and typeof(data) == "table" and data.Reason ~= "Join" then
 		task.delay(1, showShopArrow)
-		local module = ReplicatedFirst:FindFirstChild("LoadingScreen")
-		if module then
-			local LS = require(module)
-			local screen = LS.Build("Entering " .. WorldConfig.Get(data.World).Name .. "...")
-			screen.Parent = playerGui
-			LS.Animate(screen)
-			task.delay(0.45, function()
-				LS.FadeOut(screen, 0.35)
-			end)
-		end
+		task.delay(0.25, endTransition) -- ball is placed: lift the screen
 	end
 end)
 
-local lastRebirths = rebirths()
+-- nil until the saved data arrives: the first value is a load, not an unlock
+local lastRebirths = player:GetAttribute("Rebirths")
 player:GetAttributeChangedSignal("Rebirths"):Connect(function()
 	local now = rebirths()
+	if lastRebirths == nil then
+		lastRebirths = now
+		refreshVisibility()
+		refreshRows()
+		return
+	end
 	for _, world in ipairs(WorldConfig.Worlds) do
 		if world.Id > 1 and lastRebirths < world.Rebirths and now >= world.Rebirths then
 			showToast(world.Name .. " UNLOCKED! Follow the arrow to its portal.")

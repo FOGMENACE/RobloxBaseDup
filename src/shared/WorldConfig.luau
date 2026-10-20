@@ -33,6 +33,8 @@ WorldConfig.Worlds = {
 			Floor = Color3.fromRGB(196, 206, 222), Glow = Color3.fromRGB(120, 210, 255),
 			Ambient = Color3.fromRGB(150, 165, 190), Tint = Color3.fromRGB(225, 236, 255),
 			Smog = Color3.fromRGB(170, 210, 255), Shine = 0.25,
+			-- evolved ball wrap: polished chrome-ice, frost shimmer
+			Wrap = Color3.fromRGB(196, 222, 248), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(220, 245, 255), Ember = Color3.fromRGB(120, 210, 255),
 		},
 	},
 	{
@@ -45,6 +47,8 @@ WorldConfig.Worlds = {
 			Floor = Color3.fromRGB(60, 46, 30), Glow = Color3.fromRGB(255, 205, 90),
 			Ambient = Color3.fromRGB(150, 120, 80), Tint = Color3.fromRGB(255, 236, 200),
 			Smog = Color3.fromRGB(255, 200, 110), Shine = 0.35,
+			-- evolved ball wrap: rich metallic gold, golden haze and embers
+			Wrap = Color3.fromRGB(238, 168, 36), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(255, 226, 120), Ember = Color3.fromRGB(255, 150, 40),
 		},
 	},
 	{
@@ -57,6 +61,8 @@ WorldConfig.Worlds = {
 			Floor = Color3.fromRGB(110, 80, 170), Glow = Color3.fromRGB(200, 150, 255),
 			Ambient = Color3.fromRGB(150, 120, 200), Tint = Color3.fromRGB(236, 225, 255),
 			Smog = Color3.fromRGB(215, 175, 255), Shine = 0.45,
+			-- evolved ball wrap: amethyst crystal, violet mist and stardust
+			Wrap = Color3.fromRGB(176, 120, 255), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(235, 215, 255), Ember = Color3.fromRGB(205, 140, 255),
 		},
 	},
 }

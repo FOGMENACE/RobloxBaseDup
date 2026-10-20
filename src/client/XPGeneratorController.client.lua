@@ -280,7 +280,8 @@ local function createGeneratorUI(part, world)
 			adjusted.Bottom = "X" .. value
 			if part.Name ~= "GenX6" then
 				worldRequirement = value
-				adjusted.Top = "REBIRTH " .. value .. " REQUIRED"
+				-- the lowest one is open to everyone who reached this world
+				adjusted.Top = part.Name == "GenX1" and "STARTER" or ("REBIRTH " .. value .. " REQUIRED")
 			end
 		end
 		local _ = base

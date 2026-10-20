@@ -1020,16 +1020,6 @@ local function sparkles(ball, color, rate, height)
 	return holder
 end
 
--- 1  STRAIGHTBALL: proper gold-rimmed finger holes
-extend("StraightBall", function(ball)
-	local up = Vector3.new(0, 0.55, -1).Unit
-	for index, offset in ipairs({ Vector3.new(-0.28, 0.12, 0), Vector3.new(0.28, 0.12, 0), Vector3.new(0, -0.32, 0) }) do
-		local dir = (up + offset).Unit
-		P(ball, "HoleRim" .. index, "Cylinder", Vector3.new(0.08, 0.5, 0.5), orientY(dir * (R - 0.01), dir) * CFrame.Angles(0, 0, math.pi / 2), rgb(255, 205, 70), { Mat = Enum.Material.Metal })
-		P(ball, "Hole" .. index, "Cylinder", Vector3.new(0.1, 0.36, 0.36), orientY(dir * (R + 0.005), dir) * CFrame.Angles(0, 0, math.pi / 2), INK)
-	end
-end)
-
 -- 2  AFTERSHOCK: rock debris circling and cracks that throb
 extend("Aftershock", function(ball)
 	for _, child in ipairs(ball:GetChildren()) do

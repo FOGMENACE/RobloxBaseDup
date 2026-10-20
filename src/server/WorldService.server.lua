@@ -264,7 +264,7 @@ local function buildWorld(world)
 		for _, name in ipairs({ "LobbyCourse", "WinCoursePreview" }) do
 			local source = courseRootForPreview:WaitForChild(name, 30)
 			if source then
-				task.wait(2) -- let the preview builders finish
+				task.wait(0.5) -- let the preview builders finish
 				local ok, copy = pcall(function()
 					return source:Clone()
 				end)
@@ -375,7 +375,12 @@ local function buildWorld(world)
 end
 
 task.spawn(function()
-	task.wait(8) -- let the lobby decor scripts finish building first
+	-- build as soon as the scripted lobby decor exists (was a fixed 8 s wait)
+	local started = os.clock()
+	for _, name in ipairs({ "Podium", "LobbyDecor", "LobbyFurniture" }) do
+		Workspace:WaitForChild(name, math.max(0.1, 8 - (os.clock() - started)))
+	end
+	task.wait(0.5)
 	for _, world in ipairs(WorldConfig.Worlds) do
 		if world.Id > 1 then
 			buildWorld(world)
