@@ -268,7 +268,7 @@ local COURSE_START_SPEED =
 
 -- smooth, steady ramp to cruising speed (34 felt like a jolt)
 local COURSE_ACCELERATION =
-	16
+	24
 
 local MIN_COURSE_SPEED =
 	6
@@ -1857,13 +1857,13 @@ if runState == "Waiting"
 				-- On the oil course the raw ball stats (50..150 studs/s) were far too
 				-- fast to read and dodge the platform rows (42 studs apart). They are
 				-- mapped onto a playable band that still rewards faster balls:
-				-- forward 32 -> 54 studs/s, steering 20 -> 30 studs/s. BallDefinitions
+				-- forward 45 -> 90 studs/s, steering 26 -> 46 studs/s. BallDefinitions
 				-- (and everything else that reads them) are unchanged.
 				local targetForwardSpeed =
-					32 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.22
+					45 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.45
 
 				local targetHorizontalSpeed =
-					20 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.1
+					26 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.2
 
 
 				--------------------------------------------------
