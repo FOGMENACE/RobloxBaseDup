@@ -275,14 +275,15 @@ local function createGeneratorUI(part, world)
 		local adjusted = table.clone(info)
 		if world.Admin[part.Name] then
 			adjusted.Bottom = "X" .. world.Admin[part.Name]
-		else
-			adjusted.Bottom = "X" .. (base * world.XpMult)
-			local baseRequirement = DISPLAY_REBIRTH_REQUIREMENT[part.Name]
-			if baseRequirement and part.Name ~= "GenX6" then
-				worldRequirement = world.Rebirths + baseRequirement * world.GenReqScale
-				adjusted.Top = "REBIRTH " .. worldRequirement .. " REQUIRED"
+		elseif world.Generators and world.Generators[part.Name] then
+			local value = world.Generators[part.Name]
+			adjusted.Bottom = "X" .. value
+			if part.Name ~= "GenX6" then
+				worldRequirement = value
+				adjusted.Top = "REBIRTH " .. value .. " REQUIRED"
 			end
 		end
+		local _ = base
 		info = adjusted
 	end
 
@@ -376,7 +377,7 @@ local function createGeneratorUI(part, world)
 		requirement.Size = UDim2.fromScale(0.84, 0.55)
 		multiplier.Position = UDim2.fromScale(0.2, 0.58)
 		multiplier.Size = UDim2.fromScale(0.6, 0.38)
-		multiplier.Text = "X6 XP"
+		multiplier.Text = info.Bottom .. " XP"
 	end
 
 	local function refreshState()

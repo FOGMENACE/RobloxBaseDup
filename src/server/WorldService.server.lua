@@ -158,7 +158,8 @@ local function theme(copy, t)
 			d.Enabled = false
 		elseif d:IsA("PointLight") or d:IsA("SpotLight") or d:IsA("SurfaceLight") then
 			d.Color = t.Glow
-		elseif d:IsA("Script") or d:IsA("LocalScript") then
+		elseif (d:IsA("Script") or d:IsA("LocalScript")) and d.Name ~= "BowlingShopInteraction" then
+			-- the shop's own touch script is kept: it works on whichever shop it sits in
 			d:Destroy()
 		end
 	end
@@ -413,6 +414,11 @@ end
 local function moveTo(player, id, reason)
 	local world = WorldConfig.Worlds[id]
 	if not world then
+		return false
+	end
+	-- the copies are built a few seconds after the server starts; never move a
+	-- ball to a world whose floor does not exist yet
+	if id > 1 and not Workspace:GetAttribute("WorldsReady") then
 		return false
 	end
 	local rebirths = player:GetAttribute("Rebirths") or 0

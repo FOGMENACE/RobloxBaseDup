@@ -266,6 +266,70 @@ local function showArrowTo(targetId)
 end
 
 --------------------------------------------------
+-- ARROW TO THE BOWLING SHOP (after every world teleport; cleared when the
+-- shop opens - the shop's own pad fires Remotes.OpenBowlingShop)
+--------------------------------------------------
+
+local shopArrowClear = nil
+local function showShopArrow()
+	if shopArrowClear then
+		shopArrowClear()
+	end
+	local id = currentWorld()
+	local root = id == 1 and workspace or (worldsFolder and worldsFolder:FindFirstChild("World" .. id))
+	local shop = root and root:FindFirstChild("BowlingShop")
+	local pad = shop and shop:FindFirstChild("BallShopInteractionPoint")
+	if not pad or not pad:IsA("BasePart") then
+		return
+	end
+	local parts = {}
+	local bb = create("BillboardGui", { Size = UDim2.fromOffset(80, 100), AlwaysOnTop = true, Adornee = pad }, playerGui)
+	local arrow = create("TextLabel", {
+		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = FONT, Text = "V", TextScaled = true,
+		TextColor3 = Color3.fromRGB(255, 214, 70),
+	}, bb)
+	create("UIStroke", { Color = INK, Thickness = 4 }, arrow)
+	table.insert(parts, bb)
+	local a1 = create("Attachment", {}, pad)
+	local beam = create("Beam", {
+		Color = ColorSequence.new(Color3.fromRGB(255, 214, 70)), LightEmission = 1, Width0 = 0.7, Width1 = 0.7,
+		FaceCamera = true, Attachment1 = a1, Transparency = NumberSequence.new(0.15),
+	}, pad)
+	table.insert(parts, a1)
+	table.insert(parts, beam)
+	local a0 = nil
+	local started = os.clock()
+	local conn
+	local function clear()
+		conn:Disconnect()
+		for _, p in ipairs(parts) do
+			p:Destroy()
+		end
+		shopArrowClear = nil
+	end
+	conn = RunService.RenderStepped:Connect(function()
+		bb.StudsOffsetWorldSpace = Vector3.new(0, 7 + math.sin(os.clock() * 4) * 1.2, 0)
+		local balls = workspace:FindFirstChild("PlayerBalls")
+		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+		if ball and (not a0 or a0.Parent ~= ball) then
+			a0 = create("Attachment", {}, ball)
+			table.insert(parts, a0)
+			beam.Attachment0 = a0
+		end
+		if currentWorld() ~= id or os.clock() - started > 120 or not pad.Parent then
+			clear()
+		end
+	end)
+	shopArrowClear = clear
+end
+
+remotes:WaitForChild("OpenBowlingShop").OnClientEvent:Connect(function()
+	if shopArrowClear then
+		shopArrowClear()
+	end
+end)
+
+--------------------------------------------------
 -- NOTICES + TRANSITION
 --------------------------------------------------
 
@@ -295,6 +359,7 @@ worldNotice.OnClientEvent:Connect(function(kind, data)
 	elseif kind == "Locked" and typeof(data) == "table" then
 		showToast(string.format("%s needs %d rebirths (you have %d).", WorldConfig.Get(data.World).Name, data.Need or 0, data.Have or 0))
 	elseif kind == "Entered" and typeof(data) == "table" and data.Reason ~= "Join" then
+		task.delay(1, showShopArrow)
 		local module = ReplicatedFirst:FindFirstChild("LoadingScreen")
 		if module then
 			local LS = require(module)

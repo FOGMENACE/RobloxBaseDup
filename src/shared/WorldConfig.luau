@@ -7,8 +7,10 @@
 -- a player rolling through their world's start wall is moved onto the course
 -- and comes back to their own world's spawn.
 --
--- XpMult      : multiplies the normal XP generators (X1..X10) in that world
--- GenReqScale : generator rebirth requirement = Rebirths + base * GenReqScale
+-- Generators  : the normal XP generators of that world (same six spots as the
+--               original lobby), continuing world 1's ladder in steps of 5.
+--               Each one needs as many rebirths as its multiplier (like world 1:
+--               X8 needs 8). The world itself opens at its first generator.
 -- WinSpeedMult/WinRewardMult : win course speed and wins in that world
 -- Admin       : the two admin generators in that world (multiplier, pass key)
 --------------------------------------------------
@@ -18,12 +20,13 @@ local WorldConfig = {}
 WorldConfig.Worlds = {
 	{
 		Id = 1, Name = "ROOKIE LANES", Rebirths = 0, Offset = Vector3.zero,
-		XpMult = 1, GenReqScale = 1, WinSpeedMult = 1, WinRewardMult = 1,
+		WinSpeedMult = 1, WinRewardMult = 1,
 		Admin = { ["GenX100 Admin XP"] = 100, ["GenX1000 Admin XP"] = 1000 },
 	},
 	{
-		Id = 2, Name = "PRO ALLEY", Rebirths = 25, Offset = Vector3.new(1600, 0, 0),
-		XpMult = 3, GenReqScale = 3, WinSpeedMult = 1.2, WinRewardMult = 2,
+		Id = 2, Name = "PRO ALLEY", Rebirths = 15, Offset = Vector3.new(1600, 0, 0),
+		Generators = { GenX1 = 15, GenX2 = 20, GenX4 = 25, GenX6 = 30, GenX8 = 35, GenX10 = 40 },
+		WinSpeedMult = 1.2, WinRewardMult = 2,
 		Admin = { ["GenX100 Admin XP"] = 200, ["GenX1000 Admin XP"] = 1300 },
 		Theme = {
 			Primary = Color3.fromRGB(150, 175, 205), Accent = Color3.fromRGB(80, 180, 255),
@@ -33,8 +36,9 @@ WorldConfig.Worlds = {
 		},
 	},
 	{
-		Id = 3, Name = "MASTER ARENA", Rebirths = 75, Offset = Vector3.new(3200, 0, 0),
-		XpMult = 8, GenReqScale = 7, WinSpeedMult = 1.4, WinRewardMult = 4,
+		Id = 3, Name = "MASTER ARENA", Rebirths = 45, Offset = Vector3.new(3200, 0, 0),
+		Generators = { GenX1 = 45, GenX2 = 50, GenX4 = 55, GenX6 = 60, GenX8 = 65, GenX10 = 70 },
+		WinSpeedMult = 1.4, WinRewardMult = 4,
 		Admin = { ["GenX100 Admin XP"] = 400, ["GenX1000 Admin XP"] = 2600 },
 		Theme = {
 			Primary = Color3.fromRGB(40, 32, 26), Accent = Color3.fromRGB(255, 196, 70),
@@ -44,8 +48,9 @@ WorldConfig.Worlds = {
 		},
 	},
 	{
-		Id = 4, Name = "GRANDMASTER PALACE", Rebirths = 150, Offset = Vector3.new(4800, 0, 0),
-		XpMult = 20, GenReqScale = 14, WinSpeedMult = 1.6, WinRewardMult = 8,
+		Id = 4, Name = "GRANDMASTER PALACE", Rebirths = 75, Offset = Vector3.new(4800, 0, 0),
+		Generators = { GenX1 = 75, GenX2 = 80, GenX4 = 85, GenX6 = 90, GenX8 = 95, GenX10 = 100 },
+		WinSpeedMult = 1.6, WinRewardMult = 8,
 		Admin = { ["GenX100 Admin XP"] = 800, ["GenX1000 Admin XP"] = 5200 },
 		Theme = {
 			Primary = Color3.fromRGB(70, 40, 120), Accent = Color3.fromRGB(190, 240, 255),

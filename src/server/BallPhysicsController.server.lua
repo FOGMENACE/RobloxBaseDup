@@ -456,12 +456,11 @@ local function getActiveGeneratorMultiplier(player, ball)
 			end
 			requiredRebirths = world.Rebirths
 			multiplier = world.Admin[generatorName] or multiplier
-		elseif multiplier and requiredRebirths then
-			-- harder and richer in higher worlds
-			if generatorName ~= "GenX6" then
-				requiredRebirths = world.Rebirths + requiredRebirths * world.GenReqScale
-			end
-			multiplier = multiplier * world.XpMult
+		elseif multiplier and requiredRebirths and world.Generators and world.Generators[generatorName] then
+			-- higher worlds: the ladder continues in steps of 5; each generator needs
+			-- as many rebirths as its multiplier (the X6 spot stays the limited gift)
+			multiplier = world.Generators[generatorName]
+			requiredRebirths = generatorName == "GenX6" and world.Rebirths or multiplier
 		end
 
 		if not multiplier or not requiredRebirths then
