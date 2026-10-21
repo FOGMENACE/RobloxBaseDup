@@ -208,8 +208,8 @@ local HARD_MAX_SPEED = 900
 -- Retuned harder: 100k oil used to land too deep (~1.1*100000^0.84 = 17k studs
 -- before factors). Lower exponent + coefficient make big banks burn faster.
 -- Second pass (still too easy): 0.77 / 0.9 and a smaller rebirth stretch.
-local TRAVEL_EXPONENT = 0.77
-local TRAVEL_COEFFICIENT = 0.9
+local TRAVEL_EXPONENT = 0.74
+local TRAVEL_COEFFICIENT = 0.82
 
 local function oilToTravel(oil, ball, player)
 	if oil <= 0 then
@@ -2192,6 +2192,18 @@ if previousPosition then
 	if frameDistance >= 0 then
 		run.DistanceTravelled += frameDistance
 		run.LastGoodPosition = currentPosition
+	end
+
+	-- SPORADIC BURN: now and then the oil surges away faster (a leak burst of
+	-- 1.5-4 percent of the whole bank), so the meter drops in jolts and the
+	-- finish is never quite predictable. Only spent oil: the ball itself still
+	-- rolls at its normal speed.
+	local clock = os.clock()
+	if not run.NextLeakAt then
+		run.NextLeakAt = clock + 2 + math.random() * 2
+	elseif clock >= run.NextLeakAt and run.Rolling then
+		run.NextLeakAt = clock + 1.6 + math.random() * 3.2
+		run.DistanceTravelled += (run.TravelBudget or 0) * (0.015 + math.random() * 0.025)
 	end
 
 end

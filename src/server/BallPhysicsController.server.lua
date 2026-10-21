@@ -264,11 +264,13 @@ local LOBBY_SPEED =
 -- Enter the course at (about) the lobby speed instead of dropping to 10 and
 -- crawling back up over ~3.5 s, which made the start wall feel delayed.
 local COURSE_START_SPEED =
-	26
+	42
 
 -- smooth, steady ramp to cruising speed (34 felt like a jolt)
+local ballLateral = setmetatable({}, { __mode = "k" }) -- smoothed sideways speed per ball
+
 local COURSE_ACCELERATION =
-	24
+	30
 
 local MIN_COURSE_SPEED =
 	6
@@ -1857,13 +1859,13 @@ if runState == "Waiting"
 				-- On the oil course the raw ball stats (50..150 studs/s) were far too
 				-- fast to read and dodge the platform rows (42 studs apart). They are
 				-- mapped onto a playable band that still rewards faster balls:
-				-- forward 45 -> 90 studs/s, steering 26 -> 46 studs/s. BallDefinitions
+				-- forward 58 -> 110 studs/s, steering 52 -> 78 studs/s. BallDefinitions
 				-- (and everything else that reads them) are unchanged.
 				local targetForwardSpeed =
-					45 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.45
+					58 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.52
 
 				local targetHorizontalSpeed =
-					26 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.2
+					52 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.26
 
 
 				--------------------------------------------------
@@ -1925,31 +1927,16 @@ if runState == "Waiting"
 					)
 
 
-				local currentHorizontalSpeed =
-					math.min(
-						currentSpeed
-						*
-						horizontalRatio,
-
-						targetHorizontalSpeed
-					)
-
-
-				--------------------------------------------------
-				-- SERVER VELOCITY
-				--------------------------------------------------
+				-- Steering is decoupled from the forward ramp (it used to scale with
+				-- the current forward speed, so the first second felt sluggish) and
+				-- eased toward the pressed direction in a few frames: crisp, no jerk.
+				local desiredLateral = -input.X * targetHorizontalSpeed
+				local lateral = ballLateral[ball] or 0
+				lateral += (desiredLateral - lateral) * (1 - math.exp(-22 * deltaTime))
+				ballLateral[ball] = lateral
 
 				controller.VectorVelocity =
-	Vector3.new(
-		-input.X
-			*
-			currentHorizontalSpeed,
-
-		0,
-
-		currentSpeed
-	)
-
+					Vector3.new(lateral, 0, currentSpeed)
 				-- The lane is flat, so the ball never needs to move UP. Rolling a
 				-- mesh ball at speed made it micro-hop ("dribble"); cancelling any
 				-- upward velocity keeps it on the floor. Falling is untouched.

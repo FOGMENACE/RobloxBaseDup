@@ -938,7 +938,8 @@ local function setupPlatform(platform, isPositive)
 	local oilAmount = rollOilAmount(definition)
 
 	if kind == "Normal" and not isPositive then
-		oilAmount = -oilAmount
+		-- reds bite harder as the player progresses, so a wrong pick really hurts
+		oilAmount = -math.floor(oilAmount * (1 + 0.55 * difficulty) + 0.5)
 	end
 
 	--------------------------------------------------
@@ -1224,7 +1225,8 @@ function OilCourseGenerator.Generate(player)
 	playerCourse:SetAttribute("NegativeChance", NEGATIVE_CHANCE)
 
 	oilScale = computeOilScale(player)
-	difficulty = math.clamp((tonumber(player:GetAttribute("Rebirths")) or 0) / 40, 0, 1)
+	-- starts at 0.25 for a brand-new player and reaches 1 at rebirth 25 (was 0 -> 1 at 40)
+	difficulty = math.clamp(0.25 + ((tonumber(player:GetAttribute("Rebirths")) or 0) / 25) * 0.75, 0, 1)
 	rollSpecialCaps()
 	playerCourse:SetAttribute("OilScale", oilScale)
 	playerCourse:SetAttribute("PositivePlatforms", 0)
