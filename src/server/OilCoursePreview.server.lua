@@ -744,6 +744,13 @@ for rowNumber = 1, NUMBER_OF_ROWS do
 	-- PARENT
 	--------------------------------------------------
 
+	-- The place uses instance streaming: far rows were never sent to players, so
+	-- the preview showed a bare lane until they got close. Persistent models are
+	-- always streamed in.
+	if oilRow:IsA("Model") then
+		oilRow.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	end
+
 	oilRow.Parent =
 		lobbyCourse
 

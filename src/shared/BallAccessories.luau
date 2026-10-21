@@ -181,18 +181,24 @@ local function make(ball, spec)
 	local kind = spec.Kind or "Block"
 
 	local part
-	local cone = (kind == "Pyramid") and waitForCone() or nil
+	-- code-built meshes never replicate: a cone made on the SERVER shows up as a
+	-- red/green checker for every player, so only client-side builds (shop
+	-- previews, racks) use it; server-built accessories use the block prong
+	local cone = (kind == "Pyramid" and IS_CLIENT) and waitForCone() or nil
 	if spec.Template then
 		part = spec.Template:Clone()
 	elseif cone then
+		-- a plain Clone of a code-built MeshPart loses its mesh data (renders as a
+		-- checker); ApplyMesh copies the real geometry onto the clone
 		part = cone:Clone()
+		pcall(function()
+			part:ApplyMesh(cone)
+		end)
 	elseif kind == "Pyramid" then
-		-- fallback: a stretched sphere still reads as a spike (a Ball-shaped part
-		-- is always round, so a Sphere SpecialMesh stretches to the part size)
+		-- fallback (EditableMesh off): a slim block prong. SpecialMesh shapes now
+		-- render as a red/green placeholder checker, so no SpecialMesh is used.
 		part = Instance.new("Part")
-		local mesh = Instance.new("SpecialMesh")
-		mesh.MeshType = Enum.MeshType.Sphere
-		mesh.Parent = part
+		part.Shape = Enum.PartType.Block
 	elseif kind == "Wedge" then
 		part = Instance.new("WedgePart")
 	else
@@ -703,7 +709,7 @@ end
 ----------------------------------------------------------------
 -- 19  SINGLEKNOT: a dragon flying around the ball
 ----------------------------------------------------------------
-designs.SingleKnot = function(ball)
+local function partsDragon(ball)
 	local red = rgb(205, 40, 52)
 	local darkRed = rgb(140, 25, 42)
 	local gold = rgb(255, 205, 70)
@@ -932,6 +938,93 @@ designs.OilBarrel = function(ball)
 	})
 end
 
+----------------------------------------------------------------
+-- 19  SINGLEKNOT: "The Red Depth" dragon (Blender, assets/models/RedDepth_*.fbx)
+-- plus a rope slip knot around the ball (assets/models/SlipKnot_Rope.fbx),
+-- circling the ball. Uses the parts dragon above until the four meshes are
+-- uploaded and their ids pasted here. Each piece keeps the model's shared
+-- origin (the ball centre) via its bounding-box centre offset below.
+----------------------------------------------------------------
+local DRAGON = {
+	-- "The Red Depth": black armoured leviathan coiling around the ball
+	{ Key = "Body", Mesh = 99074531238023, Center = Vector3.new(0.572, 0.666, -0.243), Size = Vector3.new(9.831, 3.291, 9.855), Color = rgb(22, 18, 22), Mat = Enum.Material.SmoothPlastic, Refl = 0.12 },
+	{ Key = "Spikes", Mesh = 106823113074233, Center = Vector3.new(0.671, 1.307, -0.449), Size = Vector3.new(10.702, 4.369, 10.606), Color = rgb(120, 6, 14), Mat = Enum.Material.SmoothPlastic, Refl = 0.1 },
+	{ Key = "Glow", Mesh = 108274450389945, Center = Vector3.new(0.473, 0.493, -0.158), Size = Vector3.new(9.287, 2.977, 9.489), Color = rgb(255, 30, 30), Mat = Enum.Material.Neon },
+}
+-- the slip knot: a twisted rope tied around the ball; it stays upright while
+-- the ball rolls inside it
+local KNOT = { Mesh = 110792426705988, Center = Vector3.new(0.004, 0.176, 0), Size = Vector3.new(4.573, 4.709, 4.362), Color = rgb(150, 110, 62) }local dragonTemplates = {}
+local dragonReady = false
+task.spawn(function()
+	for _, piece in ipairs(DRAGON) do
+		if piece.Mesh == 0 then
+			return -- not uploaded yet: keep the parts dragon
+		end
+	end
+	for _, piece in ipairs(DRAGON) do
+		local ok, part = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromAssetId(piece.Mesh))
+		end)
+		if not ok or not part then
+			warn("[BallAccessories] dragon mesh failed to load:", piece.Key, part)
+			return
+		end
+		dragonTemplates[piece.Key] = part
+	end
+	if KNOT.Mesh ~= 0 then
+		local ok, part = pcall(function()
+			return AssetService:CreateMeshPartAsync(Content.fromAssetId(KNOT.Mesh))
+		end)
+		if ok and part then
+			dragonTemplates.Knot = part
+		end
+	end
+	dragonReady = true
+end)
+
+designs.SingleKnot = function(ball)
+	local waited = 0
+	while not dragonReady and waited < 3 and DRAGON[1].Mesh ~= 0 do
+		task.wait(0.1)
+		waited += 0.1
+	end
+	if not dragonReady then
+		return partsDragon(ball)
+	end
+	-- FBX export flips Z relative to the numbers measured in Blender, and the
+	-- coil is drawn 25% smaller so it hugs the ball instead of filling the lane
+	-- display balls (wall racks, shelves) sit against walls: a full-size coil
+	-- poked through the walls and floated outside the lobby, so they get a small one
+	local live = ball:GetAttribute("OwnerUserId") ~= nil or (ball.Parent ~= nil and ball.Parent.Name == "PlayerBalls")
+	local DRAGON_SCALE = live and 0.75 or 0.45
+	-- on a wall rack the coil is pushed toward the room so it stays in view
+	local shift = Vector3.zero
+	if not live then
+		local okW, WC = pcall(function()
+			return require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig", 2))
+		end)
+		local centerX = -65 + ((okW and WC) and WC.AtPosition(ball.Position).Offset.X or 0)
+		shift = Vector3.new((centerX > ball.Position.X) and 1.6 or -1.6, 0.6, 0)
+	end
+	for _, piece in ipairs(DRAGON) do
+		local c = piece.Center
+		P(ball, "Dragon" .. piece.Key, "Block", piece.Size * DRAGON_SCALE, CFrame.new(Vector3.new(c.X, c.Y, -c.Z) * DRAGON_SCALE + shift / scaleOf(ball)), piece.Color, {
+			Template = dragonTemplates[piece.Key], Mat = piece.Mat, Refl = piece.Refl, Transp = piece.Transp,
+			Mode = "Upright", Spin = 1.1, Bob = 0.35, BobSpeed = 1.6,
+		})
+	end
+	if dragonTemplates.Knot then
+		P(ball, "SlipKnot", "Block", KNOT.Size, CFrame.new(KNOT.Center), KNOT.Color, {
+			Template = dragonTemplates.Knot, Mat = Enum.Material.Fabric, Mode = "Upright",
+		})
+	end
+	local fire = P(ball, "DragonBreath", "Ball", Vector3.new(0.3, 0.3, 0.3), CFrame.new(Vector3.new(4.4, 1.6, -1.5) * 0.75), rgb(255, 140, 40), { Mode = "Upright", Transp = 1, Spin = 1.1, Bob = 0.35, BobSpeed = 1.6 })
+	emitter(fire, {
+		Texture = FIRE, Rate = 22, Lifetime = NumberRange.new(0.3, 0.6), Speed = NumberRange.new(3, 6),
+		SpreadAngle = Vector2.new(15, 15), Color = ColorSequence.new(rgb(255, 200, 80), rgb(255, 60, 20)),
+		Size = NumberSequence.new(0.6, 0), LightEmission = 0.9,
+	})
+end
 ----------------------------------------------------------------
 -- 2  AFTERSHOCK: glowing fault-line cracks and a pulsing shock ring
 ----------------------------------------------------------------

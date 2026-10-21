@@ -136,8 +136,25 @@ local function fixAdornees(root)
 	end
 end
 
+local WorldSkinStyle = require(ReplicatedStorage:WaitForChild("WorldSkinStyle"))
+local BALL_MESH = "rbxassetid://108970038238376"
+
 local function theme(copy, t)
 	fixAdornees(copy)
+	-- display balls (shop shelves, racks) are coated in the world's evolved skin
+	local displayBalls = {}
+	for _, d in ipairs(copy:GetDescendants()) do
+		if d:IsA("MeshPart") and d.MeshId == BALL_MESH then
+			table.insert(displayBalls, d)
+		end
+	end
+	task.defer(function()
+		for _, ball in ipairs(displayBalls) do
+			if ball.Parent then
+				WorldSkinStyle.Apply(ball, t, true)
+			end
+		end
+	end)
 	for _, d in ipairs(copy:GetDescendants()) do
 		if d:IsA("BasePart") then
 			local s = d.Size
@@ -379,6 +396,14 @@ task.spawn(function()
 	local started = os.clock()
 	for _, name in ipairs({ "Podium", "LobbyDecor", "LobbyFurniture" }) do
 		Workspace:WaitForChild(name, math.max(0.1, 8 - (os.clock() - started)))
+	end
+	-- the wall racks build their balls one by one (accessories can take a few
+	-- seconds): copying earlier left the copied shelves mostly empty
+	local decor = Workspace:FindFirstChild("LobbyDecor")
+	local waited = 0
+	while decor and not decor:GetAttribute("Built") and waited < 30 do
+		task.wait(0.25)
+		waited += 0.25
 	end
 	task.wait(0.5)
 	for _, world in ipairs(WorldConfig.Worlds) do

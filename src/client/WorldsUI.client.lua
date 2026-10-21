@@ -307,7 +307,7 @@ local function showShopArrow()
 		shopArrowClear()
 	end
 	local id = currentWorld()
-	if not WorldConfig.Unlocked(rebirths(), id) or not hasUnownedBall() then
+	if not WorldConfig.Unlocked(rebirths(), id) or (not player:GetAttribute("PendingSkin") and not hasUnownedBall()) then
 		return
 	end
 	local root = id == 1 and workspace or (worldsFolder and worldsFolder:FindFirstChild("World" .. id))

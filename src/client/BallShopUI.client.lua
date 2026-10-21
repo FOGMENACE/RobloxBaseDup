@@ -35,6 +35,12 @@ local ballShopState = remotes:WaitForChild("BallShopState")
 local openShop = remotes:WaitForChild("OpenBowlingShop")
 
 local ShopConfig = require(ReplicatedStorage:WaitForChild("ShopConfig"))
+local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
+local WorldSkinStyle = require(ReplicatedStorage:WaitForChild("WorldSkinStyle"))
+local skinShop = remotes:WaitForChild("SkinShop")
+local worldTeleport = remotes:WaitForChild("WorldTeleport")
+local expanded = {} -- [ballId] = true while its SKINS list is open
+local refresh, setOpen, buildSkins -- defined below
 
 --------------------------------------------------
 -- STYLE (same family as HubUI)
@@ -295,6 +301,11 @@ local function addPreview(holder, ballId, zIndex)
 
 	-- Premium balls show their unique accessories (cat, spikes, dragon...).
 	BallAccessories.Apply(model, ballId)
+	-- in a themed world every ball on display wears that world's coating
+	local world = WorldConfig.Of(player)
+	if world.Theme then
+		WorldSkinStyle.Apply(model, world.Theme, false)
+	end
 	if ballId == "OilBarrel" then
 		model:SetAttribute("PreviewSpeed", 12) -- the barrel spins on its own axis
 	end
@@ -374,11 +385,156 @@ local function request(action, ballId)
 	ballShop:FireServer(action, ballId)
 end
 
+--------------------------------------------------
+-- EVOLVED SKINS (collapsible list under every ball)
+--------------------------------------------------
+
+local function skinButton(parent, text, color, enabled)
+	local b = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(150, 34),
+		BackgroundColor3 = color,
+		Font = FONT,
+		Text = text,
+		TextColor3 = CREAM,
+		TextSize = 14,
+		TextWrapped = true,
+		AutoButtonColor = enabled,
+	}, parent)
+	round(b, 8)
+	outline(b, 2)
+	if not enabled then
+		b.BackgroundTransparency = 0.25
+	end
+	return b
+end
+
+buildSkins = function(card, ball, wins, rebirths)
+	local open = expanded[ball.BallId] == true
+	local toggle = create("TextButton", {
+		Position = UDim2.fromOffset(8, 126),
+		Size = UDim2.new(1, -16, 0, 20),
+		BackgroundColor3 = Color3.fromRGB(46, 38, 96),
+		Font = FONT,
+		Text = (open and "▾  " or "▸  ") .. "EVOLVED SKINS  (" .. (#WorldConfig.Worlds - 1) .. ")",
+		TextColor3 = Color3.fromRGB(255, 226, 120),
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, card)
+	round(toggle, 6)
+	create("UIPadding", { PaddingLeft = UDim.new(0, 10) }, toggle)
+	toggle.Activated:Connect(function()
+		expanded[ball.BallId] = not expanded[ball.BallId] or nil
+		refresh()
+	end)
+	if not open then
+		return
+	end
+
+	local here = player:GetAttribute("World") or 1
+	local ownsOriginal = ball.Owned == true
+	local box = create("Frame", {
+		Name = ball.BallId .. "_Skins",
+		LayoutOrder = (ball.DisplayOrder or 0) * 10 + 1,
+		Size = UDim2.new(1, -24, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.fromRGB(34, 28, 74),
+	}, list)
+	round(box, 10)
+	create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, box)
+	create("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, box)
+
+	-- the rule, stated clearly (not a small hidden note)
+	if not ownsOriginal then
+		local warn = create("TextLabel", {
+			LayoutOrder = 0,
+			Size = UDim2.new(1, 0, 0, 40),
+			BackgroundColor3 = Color3.fromRGB(215, 45, 55),
+			Font = FONT,
+			Text = "⚠  OWN THE ROOKIE LANES " .. string.upper(ball.DisplayName or ball.BallId) .. " FIRST TO UNLOCK ITS SKINS WITH WINS",
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 15,
+			TextWrapped = true,
+		}, box)
+		round(warn, 8)
+		outline(warn, 2)
+	end
+
+	for _, world in ipairs(WorldConfig.Worlds) do
+		if world.Theme then
+			local key = WorldConfig.SkinKey(ball.BallId, world.Id)
+			local row = create("Frame", {
+				LayoutOrder = world.Id,
+				Size = UDim2.new(1, 0, 0, 50),
+				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			}, box)
+			round(row, 8)
+			create("UIGradient", { Rotation = 0, Color = ColorSequence.new(world.Theme.Wrap, world.Theme.Primary) }, row)
+			create("Frame", {
+				Position = UDim2.fromOffset(10, 10),
+				Size = UDim2.fromOffset(30, 30),
+				BackgroundColor3 = world.Theme.Wrap,
+			}, row)
+			round(row:FindFirstChildOfClass("Frame"), 15)
+			local cost = WorldConfig.SkinWinsCost(ball.BallId, world.Id, ball.WinsCost) or 0
+			local name = create("TextLabel", {
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(48, 4),
+				Size = UDim2.new(1, -210, 0, 24),
+				Font = FONT,
+				Text = world.Name .. " SKIN",
+				TextColor3 = Color3.new(1, 1, 1),
+				TextSize = 16,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+			}, row)
+			create("UIStroke", { Color = INK, Thickness = 2 }, name)
+			local sub = create("TextLabel", {
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(48, 26),
+				Size = UDim2.new(1, -210, 0, 20),
+				Font = FONT,
+				Text = (ball.BallId == "OilBarrel" and "+5 SPEED  •  " or "") .. formatNumber(cost) .. " WINS",
+				TextColor3 = Color3.fromRGB(255, 240, 170),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+			}, row)
+			create("UIStroke", { Color = INK, Thickness = 1.5 }, sub)
+
+			if WorldConfig.OwnsSkin(player, ball.BallId, world.Id) then
+				skinButton(row, "OWNED", GREEN, false)
+			elseif not WorldConfig.Unlocked(rebirths, world.Id) then
+				skinButton(row, "🔒 UNLOCK IN WORLD: " .. world.Name, Color3.fromRGB(90, 86, 104), false)
+			elseif here ~= world.Id then
+				local go = skinButton(row, "TELEPORT", ROBUX, true)
+				go.Activated:Connect(function()
+					player:SetAttribute("PendingSkin", key) -- the shop opens on this skin there
+					worldTeleport:FireServer(world.Id)
+					setOpen(false)
+				end)
+			elseif not ownsOriginal then
+				skinButton(row, "OWN ORIGINAL FIRST", PIN_RED, false)
+			elseif wins >= cost then
+				local buy = skinButton(row, "BUY  " .. formatNumber(cost), LANE, true)
+				buy.Activated:Connect(function()
+					skinShop:FireServer("Buy", ball.BallId, world.Id)
+				end)
+			else
+				local short = skinButton(row, "NEED " .. formatNumber(cost - wins), GREY, true)
+				short.Activated:Connect(function()
+					setStatus("You need " .. formatNumber(cost - wins) .. " more Wins.")
+				end)
+			end
+		end
+	end
+end
+
 local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice)
 	local card = create("Frame", {
 		Name = ball.BallId,
-		LayoutOrder = ball.DisplayOrder or 0,
-		Size = UDim2.new(1, -4, 0, 128),
+		LayoutOrder = (ball.DisplayOrder or 0) * 10,
+		Size = UDim2.new(1, -4, 0, 152),
 		BackgroundColor3 = ball.Equipped and Color3.fromRGB(214, 244, 214) or Color3.fromRGB(255, 255, 255),
 	}, list)
 	round(card, 12)
@@ -470,6 +626,8 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 		TextXAlignment = Enum.TextXAlignment.Left,
 	}, card)
 
+	buildSkins(card, ball, wins, rebirths)
+
 	-- Action column (Wins on top, Robux directly underneath)
 	local actions = create("Frame", {
 		BackgroundTransparency = 1,
@@ -559,7 +717,7 @@ end
 
 local refreshing = false
 
-local function refresh()
+refresh = function()
 	if refreshing then
 		return
 	end
@@ -618,7 +776,7 @@ end
 -- OPEN / CLOSE
 --------------------------------------------------
 
-local function setOpen(open)
+setOpen = function(open)
 	if open == gui.Enabled then
 		return
 	end
@@ -628,7 +786,25 @@ local function setOpen(open)
 	if open then
 		panelScale.Scale = panelScale.Scale * 0.9
 		updateScale()
+		-- arrived from a skin's TELEPORT: open that ball's skins and scroll to it
+		local pending = player:GetAttribute("PendingSkin")
+		local pendingBall, pendingWorld = nil, nil
+		if typeof(pending) == "string" then
+			pendingBall, pendingWorld = string.match(pending, "^(.-)@(%d+)$")
+		end
+		if pendingBall and tonumber(pendingWorld) == (player:GetAttribute("World") or 1) then
+			expanded[pendingBall] = true
+			player:SetAttribute("PendingSkin", nil)
+		end
 		refresh()
+		if pendingBall then
+			task.defer(function()
+				local target = list:FindFirstChild(pendingBall)
+				if target then
+					list.CanvasPosition = Vector2.new(0, math.max(0, target.AbsolutePosition.Y - list.AbsolutePosition.Y + list.CanvasPosition.Y - 8))
+				end
+			end)
+		end
 	end
 end
 
@@ -660,6 +836,24 @@ ballShop.OnClientEvent:Connect(function(kind, result)
 
 	if gui.Enabled then
 		refresh()
+	end
+end)
+
+-- skin purchase answers
+local SKIN_REASONS = {
+	Bought = "Skin unlocked! It shows while you roll in that world.",
+	NeedOriginal = "Own the Rookie Lanes ball first.",
+	NotEnoughWins = "Not enough Wins.",
+	NotInWorld = "Go to that world to buy its skin.",
+	WorldLocked = "That world is still locked.",
+	AlreadyOwned = "You already own this skin.",
+}
+skinShop.OnClientEvent:Connect(function(kind, result)
+	if kind == "Result" and typeof(result) == "table" then
+		setStatus(SKIN_REASONS[result.Reason] or "Could not buy that skin.")
+		if gui.Enabled then
+			refresh()
+		end
 	end
 end)
 

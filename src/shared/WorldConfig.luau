@@ -36,6 +36,9 @@ WorldConfig.Worlds = {
 			Smog = Color3.fromRGB(170, 210, 255), Shine = 0.25,
 			-- evolved ball wrap: polished chrome-ice, frost shimmer
 			Wrap = Color3.fromRGB(196, 222, 248), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(220, 245, 255), Ember = Color3.fromRGB(120, 210, 255),
+			-- uploaded chrome-swirl textures (assets/textures/ChromeSwirl_*.png, OilBarrel_*.png);
+			-- empty = colour coating only
+			BallTexture = "rbxassetid://87793427402567", BarrelTexture = "rbxassetid://102724661145748",
 		},
 	},
 	{
@@ -51,6 +54,9 @@ WorldConfig.Worlds = {
 			Smog = Color3.fromRGB(255, 200, 110), Shine = 0.35,
 			-- evolved ball wrap: rich metallic gold, golden haze and embers
 			Wrap = Color3.fromRGB(238, 168, 36), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(255, 226, 120), Ember = Color3.fromRGB(255, 150, 40),
+			-- uploaded chrome-swirl textures (assets/textures/ChromeSwirl_*.png, OilBarrel_*.png);
+			-- empty = colour coating only
+			BallTexture = "rbxassetid://117670086013145", BarrelTexture = "rbxassetid://74503074408172",
 		},
 	},
 	{
@@ -66,9 +72,39 @@ WorldConfig.Worlds = {
 			Smog = Color3.fromRGB(215, 175, 255), Shine = 0.45,
 			-- evolved ball wrap: amethyst crystal, violet mist and stardust
 			Wrap = Color3.fromRGB(176, 120, 255), WrapMaterial = Enum.Material.Metal, Dust = Color3.fromRGB(235, 215, 255), Ember = Color3.fromRGB(205, 140, 255),
+			-- uploaded chrome-swirl textures (assets/textures/ChromeSwirl_*.png, OilBarrel_*.png);
+			-- empty = colour coating only
+			BallTexture = "rbxassetid://85938597832696", BarrelTexture = "rbxassetid://87592079168421",
 		},
 	},
 }
+
+-- EVOLVED SKINS: a world's skin of a ball (owning the Rookie Lanes original is
+-- required to buy it with Wins). Wins price = max(ball WinsCost, MinWins) * mult.
+WorldConfig.Skins = {
+	[2] = { WinsMult = 4, MinWins = 25000 },
+	[3] = { WinsMult = 12, MinWins = 250000 },
+	[4] = { WinsMult = 30, MinWins = 2500000 },
+}
+WorldConfig.BarrelSkinWins = { [2] = 5000000, [3] = 40000000, [4] = 250000000 }
+
+function WorldConfig.SkinKey(ballId, worldId)
+	return ballId .. "@" .. worldId
+end
+
+function WorldConfig.SkinWinsCost(ballId, worldId, baseWinsCost)
+	if ballId == "OilBarrel" then
+		return WorldConfig.BarrelSkinWins[worldId]
+	end
+	local s = WorldConfig.Skins[worldId]
+	return s and math.floor(math.max(baseWinsCost or 0, s.MinWins) * s.WinsMult) or nil
+end
+
+-- the owner's skins (server-set attribute "Skins": "Ball@2,Ball@3")
+function WorldConfig.OwnsSkin(player, ballId, worldId)
+	local list = player and player:GetAttribute("Skins")
+	return typeof(list) == "string" and string.find("," .. list .. ",", "," .. ballId .. "@" .. worldId .. ",", 1, true) ~= nil
+end
 
 function WorldConfig.Get(id)
 	return WorldConfig.Worlds[id] or WorldConfig.Worlds[1]

@@ -1277,6 +1277,15 @@ local function createPlayerBall(
 		)
 	end
 
+	-- Building the accessories can yield (mesh loading), so two overlapping
+	-- spawns (join + equip change) could each add a ball: remove any ball that
+	-- appeared meanwhile so the player only ever has one.
+	if not player.Parent then
+		ball:Destroy()
+		return nil
+	end
+	destroyPlayerBall(player)
+
 	ball.Parent =
 		playerBalls
 

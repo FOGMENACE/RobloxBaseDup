@@ -707,6 +707,16 @@ local function getForwardSpeed(
 		)
 		and definition.ForwardSpeed > 0 then
 
+		-- the evolved Oil Barrel skin of the world you are in is the fastest ball
+		-- there (+5); ownership is the server-set Skins attribute (SkinService)
+		if ball:GetAttribute("BallId") == "OilBarrel" then
+			local owner = Players:GetPlayerByUserId(ball:GetAttribute("OwnerUserId") or 0)
+			local worldId = owner and owner:GetAttribute("World") or 1
+			if worldId > 1 and WorldConfig.OwnsSkin(owner, "OilBarrel", worldId) then
+				return definition.ForwardSpeed + 5
+			end
+		end
+
 		return definition.ForwardSpeed
 
 	end

@@ -390,29 +390,11 @@ end
 -- REMOVE LOBBY COURSE
 --------------------------------------------------
 
+-- The lobby preview is shared by every player in the server, so one player's run
+-- must NOT delete it (that left everyone else with a bare lane until a rebuild).
+-- Each client hides it locally while ITS player is running (CourseVisibility).
 local function removeLobbyCourse()
-
-	local lobbyCourse =
-		course:FindFirstChild(
-			"LobbyCourse"
-		)
-
-
-	if not lobbyCourse then
-
-		return
-
-	end
-
-
-	print(
-		"[RunController]",
-		"Removing LobbyCourse:",
-		lobbyCourse:GetFullName()
-	)
-
-
-	lobbyCourse:Destroy()
+	return
 
 end
 
@@ -1528,17 +1510,6 @@ task.spawn(function()
 			end
 		end
 
-		-- the lobby preview must not stay once anyone is running
-		local lobby = course:FindFirstChild("LobbyCourse")
-		if lobby then
-			for _, player in ipairs(Players:GetPlayers()) do
-				local state = player:GetAttribute("RunState")
-				if state == "Running" or state == "Starting" or state == "Finishing" then
-					lobby:Destroy()
-					break
-				end
-			end
-		end
 	end
 end)
 

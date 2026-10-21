@@ -529,4 +529,6 @@ grade.Saturation = 0.18
 grade.Contrast = 0.06
 grade.TintColor = Color3.fromRGB(255, 244, 232)
 
+-- WorldService copies the lobby only once everything (racks included) is built
+decor:SetAttribute("Built", true)
 print("[LobbyDecor] READY | parts:", #decor:GetDescendants(), "| ball models on racks:", #ballIds)

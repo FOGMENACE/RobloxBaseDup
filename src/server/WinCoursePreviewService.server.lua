@@ -657,6 +657,11 @@ local function configureTile(
 	-- NAME
 	--------------------------------------------------
 
+	-- always streamed in (see OilCoursePreview): otherwise the far tiles never show
+	if tile:IsA("Model") then
+		tile.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	end
+
 	tile.Name =
 		"WinTile_"
 		..
