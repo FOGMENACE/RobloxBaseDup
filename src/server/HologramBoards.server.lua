@@ -14,10 +14,10 @@ local CollectionService = game:GetService("CollectionService")
 local FLOOR_Y = 63.5
 -- against the east wall, right of the ball shop (front end of the wall, where one
 -- wall screen used to hang), facing into the room; clear of the shop corner
-local BASE = Vector3.new(-30, FLOOR_Y, -208.5) -- far enough out that the angled screen clears the side and front walls
+local BASE = Vector3.new(-30, FLOOR_Y, -207.5) -- clear of the side wall, the front wall and the end of the ball rack
 -- angled a little toward the back of the room (the spawn and the generators), like the shop
-local FACE_TOWARD = BASE + Vector3.new(-10, 0, -4)
-local SCREEN_WIDTH, SCREEN_HEIGHT = 22, 9 -- wide enough for full usernames
+local FACE_TOWARD = BASE + Vector3.new(-10, 0, -3)
+local SCREEN_WIDTH, SCREEN_HEIGHT = 20, 9 -- wide enough for full usernames, short of the ball rack
 local SCREEN_BOTTOM = 5.2 -- studs above the floor: eye level from a rolling ball
 
 local CYAN = Color3.fromRGB(90, 220, 255)

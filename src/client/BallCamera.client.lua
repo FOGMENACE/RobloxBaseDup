@@ -64,7 +64,21 @@ local function uiBlocksZoom()
 	end
 
 	local gui = Players.LocalPlayer.PlayerGui:FindFirstChild("BallShopUI")
-	return gui ~= nil and gui:IsA("ScreenGui") and gui.Enabled
+	if gui ~= nil and gui:IsA("ScreenGui") and gui.Enabled then
+		return true
+	end
+
+	-- the mouse is over the hologram leaderboard: the wheel scrolls its lists
+	local camera = workspace.CurrentCamera
+	if camera then
+		local mouse = UserInputService:GetMouseLocation()
+		local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 200)
+		if hit and hit.Instance.Name == "HoloScreen" then
+			return true
+		end
+	end
+	return false
 end
 
 

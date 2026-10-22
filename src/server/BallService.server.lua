@@ -1157,6 +1157,21 @@ local function setEquippedBall(
 end
 
 
+-- Server-only hook (ServerStorage, never reachable by clients): other server
+-- scripts (WorldBallMemory) equip through the same validated path.
+do
+	local equipFunction = ballServiceFolder:FindFirstChild("EquipBall")
+	if not equipFunction then
+		equipFunction = Instance.new("BindableFunction")
+		equipFunction.Name = "EquipBall"
+		equipFunction.Parent = ballServiceFolder
+	end
+	equipFunction.OnInvoke = function(player, ballId)
+		return setEquippedBall(player, ballId)
+	end
+end
+
+
 --------------------------------------------------
 -- WINS DISPLAY
 --------------------------------------------------
