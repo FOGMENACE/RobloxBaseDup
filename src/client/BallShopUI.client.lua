@@ -191,14 +191,32 @@ local list = create("ScrollingFrame", {
 	Name = "List",
 	BackgroundColor3 = CREAM,
 	BackgroundTransparency = 0.15,
-	Position = UDim2.fromOffset(12, 58),
-	Size = UDim2.new(1, -24, 0, 388),
+	Position = UDim2.fromOffset(12, 68),
+	Size = UDim2.new(1, -24, 0, 378),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 6,
 	BorderSizePixel = 0,
 }, panel)
 round(list, 12)
+
+-- "scroll down for more" pill: shown while there is more list below the visible part
+local moreHint = create("TextLabel", {
+	Name = "ScrollHint",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 0, 440),
+	Size = UDim2.fromOffset(210, 24),
+	BackgroundColor3 = Color3.fromRGB(46, 38, 96),
+	BackgroundTransparency = 0.1,
+	Font = FONT,
+	Text = "▼  SCROLL DOWN FOR MORE  ▼",
+	TextColor3 = Color3.fromRGB(255, 226, 120),
+	TextSize = 13,
+	Visible = false,
+	ZIndex = 30,
+}, panel)
+round(moreHint, 12)
+outline(moreHint, 2)
 create("UIListLayout", {
 	Padding = UDim.new(0, 8),
 	SortOrder = Enum.SortOrder.LayoutOrder,
@@ -249,6 +267,10 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		return
 	end
 
+	local remaining = list.AbsoluteCanvasSize.Y - (list.CanvasPosition.Y + list.AbsoluteWindowSize.Y)
+	moreHint.Visible = remaining > 24
+	moreHint.Position = UDim2.new(0.5, 0, 0, 440 - math.floor(math.abs(math.sin(os.clock() * 3)) * 4)) -- gentle bob
+
 	for index = #spinners, 1, -1 do
 		local model = spinners[index]
 		if model.Parent then
@@ -269,7 +291,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 end)
 
-local function addPreview(holder, ballId, zIndex)
+local function addPreview(holder, ballId, zIndex, themeOverride)
 	local template = ballModels and ballModels:FindFirstChild(ballId)
 	if not template and BallAccessories.HasDesign(ballId) then
 		-- designs without a BallModels mesh (Oil Barrel) get a plain sphere
@@ -302,9 +324,9 @@ local function addPreview(holder, ballId, zIndex)
 	-- Premium balls show their unique accessories (cat, spikes, dragon...).
 	BallAccessories.Apply(model, ballId)
 	-- in a themed world every ball on display wears that world's coating
-	local world = WorldConfig.Of(player)
-	if world.Theme then
-		WorldSkinStyle.Apply(model, world.Theme, false)
+	local theme = themeOverride or WorldConfig.Of(player).Theme
+	if theme then
+		WorldSkinStyle.Apply(model, theme, false)
 	end
 	if ballId == "OilBarrel" then
 		model:SetAttribute("PreviewSpeed", 12) -- the barrel spins on its own axis
@@ -520,18 +542,31 @@ end
 buildSkins = function(card, ball, wins, rebirths)
 	local open = expanded[ball.BallId] == true
 	local toggle = create("TextButton", {
-		Position = UDim2.fromOffset(8, 126),
-		Size = UDim2.new(1, -16, 0, 20),
-		BackgroundColor3 = Color3.fromRGB(46, 38, 96),
+		Position = UDim2.fromOffset(8, 120),
+		Size = UDim2.new(1, -16, 0, 28),
+		BackgroundColor3 = open and Color3.fromRGB(52, 36, 112) or Color3.fromRGB(86, 58, 176),
 		Font = FONT,
-		Text = (open and "▾  " or "▸  ") .. "EVOLVED SKINS  (" .. (#WorldConfig.Worlds - 1) .. ")",
-		TextColor3 = Color3.fromRGB(255, 226, 120),
-		TextSize = 14,
+		Text = "✦  EVOLVED SKINS",
+		TextColor3 = Color3.fromRGB(255, 232, 130),
+		TextSize = 15,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		AutoButtonColor = true,
 	}, card)
-	round(toggle, 6)
-	create("UIPadding", { PaddingLeft = UDim.new(0, 10) }, toggle)
-	toggle.Activated:Connect(function()
+	round(toggle, 9)
+	create("UIStroke", { Color = Color3.fromRGB(255, 205, 70), Thickness = 1.5, Transparency = open and 0.5 or 0.1 }, toggle)
+	create("UIPadding", { PaddingLeft = UDim.new(0, 12) }, toggle)
+	-- right side: what a tap does, with an arrow that flips when it is open
+	create("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(170, 20),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = open and "TAP TO COLLAPSE  ▲" or "TAP TO EXPAND  ▼",
+		TextColor3 = Color3.fromRGB(235, 228, 255),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, toggle)	toggle.Activated:Connect(function()
 		expanded[ball.BallId] = not expanded[ball.BallId] or nil
 		refresh()
 	end)
@@ -573,24 +608,27 @@ buildSkins = function(card, ball, wins, rebirths)
 			local key = WorldConfig.SkinKey(ball.BallId, world.Id)
 			local row = create("Frame", {
 				LayoutOrder = world.Id,
-				Size = UDim2.new(1, 0, 0, 50),
+				Size = UDim2.new(1, 0, 0, 68),
 				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
 			}, box)
-			round(row, 8)
+			round(row, 10)
 			create("UIGradient", { Rotation = 0, Color = ColorSequence.new(world.Theme.Wrap, world.Theme.Primary) }, row)
-			create("Frame", {
-				Position = UDim2.fromOffset(10, 10),
-				Size = UDim2.fromOffset(30, 30),
-				BackgroundColor3 = world.Theme.Wrap,
+			-- the actual ball, wearing this world's evolved coat
+			local previewHolder = create("Frame", {
+				Position = UDim2.fromOffset(6, 6),
+				Size = UDim2.fromOffset(56, 56),
+				BackgroundColor3 = Color3.fromRGB(24, 20, 56),
+				BackgroundTransparency = 0.25,
 			}, row)
-			round(row:FindFirstChildOfClass("Frame"), 15)
+			round(previewHolder, 28)
+			addPreview(previewHolder, ball.BallId, 2, world.Theme)
 			local cost = WorldConfig.SkinWinsCost(ball.BallId, world.Id, ball.WinsCost) or 0
 			local name = create("TextLabel", {
 				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(48, 4),
-				Size = UDim2.new(1, -210, 0, 24),
+				Position = UDim2.fromOffset(70, 8),
+				Size = UDim2.new(1, -232, 0, 24),
 				Font = FONT,
-				Text = world.Name .. " SKIN",
+				Text = world.Name,
 				TextColor3 = Color3.new(1, 1, 1),
 				TextSize = 16,
 				TextXAlignment = Enum.TextXAlignment.Left,
@@ -599,8 +637,8 @@ buildSkins = function(card, ball, wins, rebirths)
 			create("UIStroke", { Color = INK, Thickness = 2 }, name)
 			local sub = create("TextLabel", {
 				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(48, 26),
-				Size = UDim2.new(1, -210, 0, 20),
+				Position = UDim2.fromOffset(70, 34),
+				Size = UDim2.new(1, -232, 0, 20),
 				Font = FONT,
 				Text = (ball.BallId == "OilBarrel" and "+5 SPEED  •  " or "") .. formatNumber(cost) .. " WINS",
 				TextColor3 = Color3.fromRGB(255, 240, 170),
@@ -877,17 +915,32 @@ end
 
 local refreshing = false
 
+local refreshQueued = false
+local refreshBody
+
 refresh = function()
+	-- The lock is held until the cards are fully built (building a card can yield
+	-- while meshes load); two overlapping refreshes used to add every card twice.
 	if refreshing then
+		refreshQueued = true
 		return
 	end
 	refreshing = true
+	local ok, err = pcall(refreshBody)
+	refreshing = false
+	if not ok then
+		warn("[BallShopUI] refresh failed:", err)
+	end
+	if refreshQueued then
+		refreshQueued = false
+		task.defer(refresh)
+	end
+end
 
+refreshBody = function()
 	local ok, state = pcall(function()
 		return ballShopState:InvokeServer()
 	end)
-
-	refreshing = false
 
 	if not ok or typeof(state) ~= "table" then
 		setStatus("Shop is unavailable right now.")

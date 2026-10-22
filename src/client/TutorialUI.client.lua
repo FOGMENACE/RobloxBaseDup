@@ -188,24 +188,129 @@ end
 
 -- Instruction text: no box. Big cream text with a thick dark outline and a
 -- soft gold glow so it reads over any part of the game.
-local banner = create("TextLabel", {
+-- An ANNOUNCEMENT, not floating text: a solid dark panel with a gold border, a
+-- "TUTORIAL - STEP n/8" tab on its top edge, an icon, one short line of text and
+-- progress dots. It sits below the Roblox top bar and slides in on every new step.
+local PANEL_Y = game:GetService("UserInputService").TouchEnabled and 0.13 or 0.16
+local panel = create("Frame", {
+	Name = "TutorialAnnouncement",
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 96),
-	Size = UDim2.fromOffset(760, 74),
+	Position = UDim2.new(0.5, 0, PANEL_Y, 0),
+	Size = UDim2.fromOffset(640, 96),
+	BackgroundColor3 = Color3.fromRGB(22, 14, 56),
+	BackgroundTransparency = 0.04,
+	Visible = false,
+	ZIndex = 9,
+}, gui)
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, panel)
+local panelStroke = create("UIStroke", { Color = Color3.fromRGB(255, 205, 70), Thickness = 2.5 }, panel)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(40, 26, 92), Color3.fromRGB(18, 12, 46)),
+	Rotation = 90,
+}, panel)
+local tab = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0, 0),
+	Size = UDim2.fromOffset(220, 26),
+	BackgroundColor3 = Color3.fromRGB(255, 205, 70),
+	Font = FONT,
+	Text = "TUTORIAL",
+	TextColor3 = Color3.fromRGB(40, 24, 70),
+	TextSize = 16,
+	ZIndex = 11,
+}, panel)
+create("UICorner", { CornerRadius = UDim.new(0, 15) }, tab)
+create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 2 }, tab)
+local iconBox = create("Frame", {
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 14, 0.5, 4),
+	Size = UDim2.fromOffset(58, 58),
+	BackgroundColor3 = Color3.fromRGB(255, 205, 70),
+	ZIndex = 10,
+}, panel)
+create("UICorner", { CornerRadius = UDim.new(0, 14) }, iconBox)
+create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 2 }, iconBox)
+local iconLabel = create("TextLabel", {
+	Size = UDim2.fromScale(1, 1),
 	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "",
-	TextColor3 = Color3.fromRGB(255, 240, 150),
-	TextSize = 32,
+	TextSize = 34,
+	TextColor3 = Color3.fromRGB(40, 24, 70),
+	ZIndex = 11,
+}, iconBox)
+local banner = create("TextLabel", {
+	Position = UDim2.fromOffset(86, 16),
+	Size = UDim2.new(1, -100, 0, 52),
+	BackgroundTransparency = 1,
+	Font = FONT,
+	Text = "",
+	TextColor3 = Color3.fromRGB(250, 240, 215),
+	TextSize = 22,
 	TextWrapped = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
 	Visible = false,
 	ZIndex = 10,
-}, gui)
-create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 5 }, banner)
-local bannerScale = create("UIScale", { Scale = 1 }, banner)
+}, panel)
+create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 1, Transparency = 0.35 }, banner) -- light outline: readable, not heavy
+local TOTAL_STEPS = 8
+local dots = {}
+local dotRow = create("Frame", {
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 86, 1, -8),
+	Size = UDim2.new(1, -100, 0, 10),
+	BackgroundTransparency = 1,
+	ZIndex = 10,
+}, panel)
+create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), VerticalAlignment = Enum.VerticalAlignment.Center }, dotRow)
+for index = 1, TOTAL_STEPS do
+	local dot = create("Frame", {
+		Size = UDim2.fromOffset(34, 6),
+		BackgroundColor3 = Color3.fromRGB(80, 66, 130),
+		ZIndex = 10,
+	}, dotRow)
+	create("UICorner", { CornerRadius = UDim.new(0, 3) }, dot)
+	dots[index] = dot
+end
+banner:GetPropertyChangedSignal("Visible"):Connect(function()
+	panel.Visible = banner.Visible
+end)
+local bannerScale = create("UIScale", { Scale = 1 }, panel)
+
+-- the 12 internal steps shown as 8 player-facing ones
+local STEP_INFO = {
+	[1] = { 1, "🏁" }, [2] = { 1, "🛢️" }, [3] = { 2, "⚡" }, [4] = { 3, "♻️" }, [5] = { 4, "🎳" },
+	[6] = { 4, "🛢️" }, [7] = { 5, "🛒" }, [8] = { 6, "✅" }, [9] = { 7, "🎳" }, [10] = { 7, "🛢️" }, [11] = { 8, "🎁" },
+}
+local function setStepDecor(step)
+	local info = STEP_INFO[step]
+	if not info then
+		return
+	end
+	tab.Text = "TUTORIAL  •  STEP " .. info[1] .. " OF " .. TOTAL_STEPS
+	iconLabel.Text = info[2]
+	for index, dot in ipairs(dots) do
+		dot.BackgroundColor3 = (index <= info[1]) and Color3.fromRGB(255, 205, 70) or Color3.fromRGB(80, 66, 130)
+	end
+end
+
+-- gentle pulse on the border so the announcement draws the eye
+task.spawn(function()
+	while true do
+		task.wait(0.05)
+		if panel.Visible then
+			panelStroke.Thickness = 2.5 + math.sin(os.clock() * 3) * 0.6
+		end
+	end
+end)
 local function fitBanner()
 	local viewport = gui.AbsoluteSize
-	bannerScale.Scale = math.clamp(math.min(viewport.X / 740, viewport.Y / 520), 0.55, 1.1)
+	local fit = math.clamp(math.min(viewport.X / 700, viewport.Y / 480), 0.5, 1.1)
+	-- phones / tablets: noticeably smaller and tucked up, so it never fills the view
+	if game:GetService("UserInputService").TouchEnabled then
+		fit = math.min(fit, 0.62)
+	end
+	bannerScale.Scale = fit
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitBanner)
 fitBanner()
@@ -244,6 +349,8 @@ create("UIStroke", { Color = INK, Thickness = 3 }, distanceLabel)
 -- WORLD TARGETS
 --------------------------------------------------
 
+local aftershockCost = nil -- the tutorial ball's Wins price (fetched when step 7 starts)
+
 local function worldTarget(step)
 	if step == 1 or step == 5 or step == 9 then
 		return workspace:FindFirstChild("StartWall")
@@ -261,6 +368,14 @@ local function worldTarget(step)
 		return generators and generators:FindFirstChild("GenX1")
 
 	elseif step == 7 or step == 8 then
+		-- not enough wins for the tutorial ball yet: point at the START wall so they
+		-- roll more courses first (the win course pays the wins)
+		if step == 7 and aftershockCost and (player:GetAttribute("Wins") or 0) < aftershockCost then
+			if player:GetAttribute("RunState") == "Running" then
+				return workspace:FindFirstChild("FinishWall")
+			end
+			return workspace:FindFirstChild("StartWall")
+		end
 		local shop = workspace:FindFirstChild("BowlingShop")
 		return shop and shop:FindFirstChild("BallShopInteractionPoint")
 	end
@@ -338,7 +453,6 @@ end
 -- TEXT
 --------------------------------------------------
 
-local aftershockCost = nil
 
 local function fetchAftershockCost()
 	if aftershockCost then
@@ -373,51 +487,50 @@ local function textFor(step)
 	local running = player:GetAttribute("RunState") == "Running"
 
 	if step == 1 then
-		return "Roll onto the START wall to begin your first course!"
+		return "Roll into the START wall to begin!"
 	elseif step == 2 or step == 6 or step == 10 then
 		if running then
-			return "Collect oil, avoid the gutters, then roll into the FINISH wall!"
+			return "Grab oil, dodge the red panels, reach the FINISH!"
 		end
-		return "Nice! Your WinCourse is next. Roll through the tiles to collect Wins!"
+		return "Roll through the tiles to collect WINS!"
 	elseif step == 3 then
 		if player:GetAttribute("ActiveXPGenerator") == "GenX1" then
-			return "You're earning XP! Stay on the X1 generator until your level bar is FULL."
+			return "Keep rolling here until your level bar is FULL!"
 		end
-		return "XP comes from the GENERATORS! Follow the arrows to the X1 generator."
+		return "Roll onto the X1 generator to earn XP!"
 	elseif step == 4 then
 		if PanelManager.IsOpen("Rebirth") then
-			return "Press REBIRTH NOW - it's FREE!"
+			return "Press the big REBIRTH button!"
 		end
-		return "Level up complete! Press the REBIRTH button - it's FREE!"
+		return "Level full! Tap REBIRTH - it's FREE!"
 	elseif step == 5 then
-		return "Rebirthed! Your OIL is now x2. Roll the course again!"
+		return "Rebirthed! Oil is now x2. Roll again!"
 	elseif step == 7 then
 		if shopOpen() then
-			return "Tap the BUY button on AFTERSHOCK!"
+			return "Press BUY on AFTERSHOCK!"
 		end
 		local cost = aftershockCost
 		local wins = player:GetAttribute("Wins") or 0
 		if cost and wins < cost then
-			return "Win " .. cost .. " Wins, then roll onto the SHOP pad to buy AFTERSHOCK!"
+			return "Wins " .. wins .. " / " .. cost .. " - roll another course for more!"
 		end
 		return "Roll onto the SHOP pad and buy AFTERSHOCK!"
 	elseif step == 8 then
 		if shopOpen() then
-			return "Now press EQUIP on AFTERSHOCK!"
+			return "Press EQUIP on AFTERSHOCK!"
 		end
-		return "Open the shop (roll onto the SHOP pad) and EQUIP AFTERSHOCK!"
+		return "Open the shop and EQUIP AFTERSHOCK!"
 	elseif step == 9 then
 		return "Roll again with your new ball!"
 	elseif step == 11 then
 		if PanelManager.IsOpen("Calendar") then
-			return "Claim DAY 1 of your daily calendar!"
+			return "Claim DAY 1 of your daily gift!"
 		end
-		return "TUTORIAL COMPLETE! Your DAILY gift is ready: tap the calendar and claim Day 1."
+		return "Tutorial complete! Tap the calendar for your daily gift!"
 	end
 
 	return ""
 end
-
 --------------------------------------------------
 -- UPDATE
 --------------------------------------------------
@@ -435,7 +548,12 @@ local function updateBanner(step)
 	if step == DONE and wasInTutorial then
 		-- finished this session: a short, proud send-off, then the banner goes away
 		wasInTutorial = false
-		banner.Text = "YOU'RE A PRO! Roll, collect oil, win, rebirth and collect every ball!"
+		banner.Text = "YOU'RE A PRO! Roll, win, rebirth, collect every ball!"
+		tab.Text = "TUTORIAL COMPLETE"
+		iconLabel.Text = "🏆"
+		for _, dot in ipairs(dots) do
+			dot.BackgroundColor3 = Color3.fromRGB(255, 205, 70)
+		end
 		banner.Visible = true
 		fitBanner()
 		task.delay(6, function()
@@ -457,7 +575,10 @@ local function updateBanner(step)
 	end
 
 	banner.Text = textFor(step)
+	setStepDecor(step)
 	banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	panel.Position = UDim2.new(0.5, 0, PANEL_Y - 0.05, 0)
+	TweenService:Create(panel, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, 0, PANEL_Y, 0) }):Play()
 	fitBanner()
 	local finalScale = bannerScale.Scale
 	bannerScale.Scale = finalScale * 0.85
