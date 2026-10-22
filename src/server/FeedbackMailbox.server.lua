@@ -20,7 +20,7 @@ local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 
 local FLOOR_Y = 63.5
-local POSITION = Vector3.new(-31.5, FLOOR_Y, -212.5) -- east wall, front end: clear floor between the ball rack and the front screen
+local POSITION = Vector3.new(-30.5, FLOOR_Y, -261) -- east wall, back end: open floor past the ball rack, before the generators
 local MIN_LENGTH, MAX_LENGTH = 5, 400
 local COOLDOWN = 45 -- seconds between messages per player
 local MAX_PER_SESSION = 6

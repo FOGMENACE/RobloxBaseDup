@@ -19,7 +19,7 @@ local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
 
 local SKIP = {
 	Terrain = true, Camera = true, PlayerBalls = true, Course = true, FinishWall = true,
-	WinCourse = true, Worlds = true,
+	WinCourse = true, Worlds = true, SkyDecor = true,
 }
 local PORTAL_RADIUS = 5
 

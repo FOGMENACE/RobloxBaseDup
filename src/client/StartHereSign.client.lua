@@ -39,15 +39,44 @@ local function create(className, props, parent)
 	return inst
 end
 
-local sign = create("BillboardGui", {
+-- The sign is painted flat in the lane opening, in the plane of the start wall
+-- (it used to be a camera-facing billboard that floated through the walls and
+-- props). A local, invisible, non-colliding panel carries it and follows the
+-- player's world (each themed lobby has its own opening, offset along X).
+local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+local localPlayer = game:GetService("Players").LocalPlayer
+local panel = create("Part", {
+	Name = "StartHerePanel",
+	Size = Vector3.new(22.6, 7.4, 0.05),
+	Transparency = 1,
+	Anchored = true,
+	CanCollide = false,
+	CanTouch = false,
+	CanQuery = false,
+	CastShadow = false,
+}, workspace)
+
+local function placePanel()
+	local offset = WorldConfig.Offset(localPlayer)
+	local bottom = startWall.Position.Y - startWall.Size.Y / 2
+	local center = Vector3.new(startWall.Position.X, bottom + 10, startWall.Position.Z - 0.4) + offset
+	-- Front face looks back into the lobby (-Z)
+	panel.CFrame = CFrame.lookAt(center, center + Vector3.new(0, 0, -1))
+end
+placePanel()
+localPlayer:GetAttributeChangedSignal("World"):Connect(placePanel)
+
+local sign = create("SurfaceGui", {
 	Name = "StartHereSign",
-	Adornee = startWall,
-	Size = UDim2.fromOffset(520, 170),
-	StudsOffsetWorldSpace = Vector3.new(0, -7, 0),
-	AlwaysOnTop = false,
+	Adornee = panel,
+	Face = Enum.NormalId.Front,
+	SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+	PixelsPerStud = 23, -- 520 px = about 22.6 studs: fills the 23-stud opening
 	LightInfluence = 0,
+	Brightness = 1.3,
 	MaxDistance = 220,
-}, startWall)
+	ResetOnSpawn = false,
+}, localPlayer:WaitForChild("PlayerGui"))
 
 -- No box: just glowing text with arrows that slide in from both sides,
 -- fade in and out slowly and glitch every now and then.

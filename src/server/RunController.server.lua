@@ -1171,6 +1171,26 @@ local MAX_START_SPEED = 160
 local MAX_STEP = 14
 local startSamples = setmetatable({}, { __mode = "k" }) -- [ball] = { Seen, LastZ }
 
+-- The invisible StartWall is wider (about 35 studs) than the real opening in the
+-- front wall (about 23 studs, between the two wall parts). A ball pressed against
+-- the solid wall beside the opening used to touch the StartWall box and start a
+-- run it could never roll into. Only the opening counts, measured from the
+-- course's own side boundaries when they exist.
+local OPENING_HALF = 11.5
+do
+	local course = workspace:FindFirstChild("Course")
+	local left = course and course:FindFirstChild("LeftBoundary")
+	local right = course and course:FindFirstChild("RightBoundary")
+	if left and right then
+		OPENING_HALF = math.min(OPENING_HALF, math.abs(left.Position.X - right.Position.X) / 2)
+	end
+end
+
+local function inLaneOpening(ball, offset)
+	local dx = ball.Position.X - (startWall.Position.X + offset.X)
+	return math.abs(dx) <= OPENING_HALF - ball.Size.X * 0.25
+end
+
 local function startAllowed(ball, player)
 	local now = os.clock()
 	local sample = startSamples[ball]
@@ -1211,15 +1231,12 @@ local function startAllowed(ball, player)
 		return false
 	end
 
-	-- inside the lane and not flying
-	local localPosition = startWall.CFrame:PointToObjectSpace(ball.Position)
-	local half = startWall.Size / 2
-	local laneHalf = math.max(half.X, half.Z) -- the long horizontal axis
-	local horizontal = math.max(math.abs(localPosition.X), math.abs(localPosition.Z))
-	if horizontal > laneHalf + ball.Size.X / 2 then
+	-- inside the lane OPENING and not flying
+	if not inLaneOpening(ball, Vector3.zero) then
 		return false
 	end
 
+	local half = startWall.Size / 2
 	local bottom = startWall.Position.Y - half.Y
 	if ball.Position.Y - bottom > 14 or ball.Position.Y < bottom - 2 then
 		return false
@@ -1254,7 +1271,8 @@ local function checkStartWall()
 				-- rolling forward through the copied wall (the copies are scenery, so
 				-- the lobby-side history used by startAllowed does not apply here)
 				if player and player:GetAttribute("World") == world.Id
-					and player:GetAttribute("RunState") == "Waiting" and ball.AssemblyLinearVelocity.Z > 1 then
+					and player:GetAttribute("RunState") == "Waiting" and ball.AssemblyLinearVelocity.Z > 1
+					and inLaneOpening(ball, world.Offset) then
 					startRun(player, ball)
 				end
 			end
@@ -1510,6 +1528,46 @@ task.spawn(function()
 			end
 		end
 
+	end
+end)
+
+--------------------------------------------------
+-- STUCK-RUN WATCHDOG
+--
+-- A run that started while the ball is still in the lobby (for any reason) can
+-- never reach the course. If the ball stays clearly on the lobby side of the
+-- start wall for 4 s during Starting/Running, the run is cancelled with the
+-- same clean reset as a respawn (nothing extra is paid) and the ball goes back
+-- to its world's spawn.
+--------------------------------------------------
+
+task.spawn(function()
+	local stuckSince = {}
+	while true do
+		task.wait(0.5)
+		local balls = workspace:FindFirstChild("PlayerBalls")
+		for _, player in ipairs(Players:GetPlayers()) do
+			local state = player:GetAttribute("RunState")
+			local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+			local inLobby = ball ~= nil and (state == "Starting" or state == "Running")
+				and ball:GetAttribute("WinCourseActive") ~= true
+				and ball.Position.Z < startWall.Position.Z - 4
+			if inLobby then
+				stuckSince[player] = stuckSince[player] or os.clock()
+				if os.clock() - stuckSince[player] > 4 then
+					stuckSince[player] = nil
+					warn("[RunController] run started but the ball never left the lobby, resetting:", player.Name)
+					recoverFromRespawn(player)
+					local spawnPart = workspace:FindFirstChild("BallSpawn")
+					if spawnPart and ball.Parent then
+						ball.AssemblyLinearVelocity = Vector3.zero
+						ball.CFrame = CFrame.new(spawnPart.Position + WorldConfig.Offset(player) + Vector3.new(0, ball.Size.Y / 2 + 1, 0))
+					end
+				end
+			else
+				stuckSince[player] = nil
+			end
+		end
 	end
 end)
 

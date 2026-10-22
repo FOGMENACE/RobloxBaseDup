@@ -179,7 +179,8 @@ local RACK_LENGTH = 33.4
 -- west), -1 for the west wall. `models` are the ball ids this rack shows: the
 -- two racks show different halves of the ball list, split over two shelves.
 local function buildRack(rackX, side, zStart, zLength, models)
-	local perShelf = math.max(math.ceil(#models / 2), 1)
+	-- shelves are always full: as many slots as fit, cycling through the models
+	local perShelf = math.max(math.ceil(#models / 2), math.floor(zLength / 3.4), 1)
 
 	for shelf = 1, 2 do
 		local shelfY = FLOOR_Y + 3.2 + (shelf - 1) * 5.2
@@ -200,8 +201,8 @@ local function buildRack(rackX, side, zStart, zLength, models)
 		)
 
 		local first = (shelf - 1) * perShelf
-		for slot = 1, math.min(perShelf, #models - first) do
-			local ballId = models[first + slot]
+		for slot = 1, perShelf do
+			local ballId = models[(first + slot - 1) % math.max(#models, 1) + 1]
 			local template = ballId and ballModels:FindFirstChild(ballId)
 
 			if template then
@@ -249,7 +250,12 @@ for index, id in ipairs(ballIds) do
 	table.insert(index <= halfCount and firstHalf or secondHalf, id)
 end
 
-buildRack(X_MAX - 2.2, 1, RACK_Z_START, RACK_LENGTH, secondHalf)
+-- the long east rack shows the second half first, then continues with the rest
+local eastModels = table.clone(secondHalf)
+for _, id in ipairs(firstHalf) do
+	table.insert(eastModels, id)
+end
+buildRack(X_MAX - 2.2, 1, RACK_Z_START, RACK_LENGTH, eastModels)
 buildRack(X_MIN + 2.2, -1, RACK_Z_START + RACK_LENGTH / 2, RACK_LENGTH / 2, firstHalf)
 --------------------------------------------------
 -- PIN CLUSTERS
@@ -333,7 +339,35 @@ end
 
 -- Away from the generator row (back wall) and the shop (west-front)
 pinTriangle(Vector3.new(X_MIN + 5, FLOOR_Y + 0.1, -226), 1)
-pinTriangle(Vector3.new(X_MAX - 5, FLOOR_Y + 0.1, Z_MAX - 7), -1)
+-- A "strike" on the right of the ball shop: pins knocked over around the ball
+-- that did it (replaces the second standing triangle).
+local function strikeScatter(origin)
+	local cluster = create("Folder", { Name = "StrikePins" }, decor)
+	local poses = { -- x, z, yaw (degrees), knocked over
+		{ 0, 0, 0, false }, { 2.3, -1.2, 0, false },
+		{ -1.9, 1.1, 25, true }, { 1.3, 1.9, 80, true }, { 3.5, 0.9, 140, true },
+		{ -0.7, -2.4, 200, true }, { -3.1, -0.6, 300, true },
+	}
+	for _, pose in ipairs(poses) do
+		local position = origin + Vector3.new(pose[1], 0, pose[2])
+		if pose[4] and pinTemplate and pinTemplate:IsA("MeshPart") then
+			local pin = pinTemplate:Clone()
+			pin.Name = "Pin"
+			pin.Anchored, pin.CanCollide, pin.CanTouch, pin.CanQuery, pin.CastShadow = true, false, false, false, false
+			pin.Size = pinTemplate.Size * PIN_SCALE
+			local rotation = pinTemplate.CFrame - pinTemplate.CFrame.Position
+			pin.CFrame = CFrame.new(position.X, FLOOR_Y + pin.Size.X / 2, position.Z)
+				* CFrame.Angles(0, math.rad(pose[3]), 0) * CFrame.Angles(0, 0, math.pi / 2) * rotation
+			pin.Parent = cluster
+		else
+			buildPin(position, cluster)
+		end
+	end
+	local ball = part("StrikeBall", Vector3.new(2.8, 2.8, 2.8), CFrame.new(origin + Vector3.new(-3.4, 1.4, 2.4)),
+		Color3.fromRGB(46, 50, 120), Enum.Material.Glass, { Shape = Enum.PartType.Ball })
+	ball.Parent = cluster
+end
+strikeScatter(Vector3.new(-42, FLOOR_Y + 0.1, -200.6))
 
 --------------------------------------------------
 -- WALL SCREENS: two flat screens on each side wall, one at each end of the
@@ -354,6 +388,9 @@ do
 	for _, wall in ipairs({ { X_MIN, 1 }, { X_MAX, -1 } }) do
 		for _, z in ipairs({ -260, -203 }) do
 			count += 1
+			if wall[1] == X_MAX and z == -203 then
+				continue -- the hologram leaderboard hangs here (HologramBoards)
+			end
 			local x = wall[1] + wall[2] * 0.75 -- just off the wall, facing the room
 			local face = CFrame.new(x, screenY, z) * CFrame.Angles(0, wall[2] == 1 and -math.pi / 2 or math.pi / 2, 0)
 
@@ -463,25 +500,15 @@ local signFacing = (Vector3.new(-1, 0, 0) * 0.15 + signToMiddle * 0.85).Unit
 local signYaw = math.atan2(-signFacing.X, -signFacing.Z)
 local signRight = Vector3.new(signFacing.Z, 0, -signFacing.X) -- perpendicular, in the floor plane
 
-sign(
-	"BallShopSign",
-	"BALL SHOP",
-	"ROLL IN. ROLL UP. ROLL RICH!",
-	Vector3.new(20, 6.5, 0.5),
-	CFrame.new(shopSignX, FLOOR_Y + 14, shopSignZ) * CFrame.Angles(0, signYaw, 0),
-	Color3.fromRGB(86, 168, 240)
-)
+-- The BALL SHOP sign that stood here was replaced by the hologram leaderboard
+-- (HologramBoards uses this same spot and facing).
+local _ = { signYaw, signRight }
 
-for _, side in ipairs({ -1, 1 }) do
-	local postPosition = Vector3.new(shopSignX, FLOOR_Y + 6.2, shopSignZ) + signRight * (8 * side) - signFacing * 0.1
-	part(
-		"BallShopSignPost",
-		Vector3.new(0.8, 12.4, 0.8),
-		CFrame.new(postPosition),
-		LANE,
-		Enum.Material.WoodPlanks
-	)
-end
+-- Banners above the wall racks, so the walls over the shelves are not bare
+sign("RackBannerEast", "COLLECT EVERY BALL!", "EVERY NEW BALL ROLLS FASTER", Vector3.new(24, 5, 0.5),
+	CFrame.new(X_MAX - 0.7, FLOOR_Y + 17.5, RACK_Z_START + RACK_LENGTH / 2) * CFrame.Angles(0, math.pi / 2, 0), PIN_RED)
+sign("RackBannerWest", "EVOLVE YOUR BALL!", "UNLOCK WORLD SKINS", Vector3.new(15, 4.4, 0.5),
+	CFrame.new(X_MIN + 0.7, FLOOR_Y + 17.5, RACK_Z_START + RACK_LENGTH * 0.75) * CFrame.Angles(0, -math.pi / 2, 0), Color3.fromRGB(86, 168, 240))
 
 -- Floating call-to-action above the shop sign, readable from across the room.
 do
