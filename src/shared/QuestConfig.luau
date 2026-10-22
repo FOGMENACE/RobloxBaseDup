@@ -16,7 +16,7 @@ QuestConfig.QUESTS_PER_DAY = 3
 
 QuestConfig.Pool = {
 	{ Id = "Runs", Title = "Finish %d runs", Targets = { 2, 3, 4 }, Reward = 150 },
-	{ Id = "Levels", Title = "Gain %d levels", Targets = { 9, 15, 24 }, Reward = 200 }, -- levels are 3x finer now
+	{ Id = "Levels", Title = "Gain %d levels", Targets = { 15, 25, 40 }, Reward = 200 }, -- levels are 5x finer now
 	{ Id = "WinCourse", Title = "Win %d wins on the WinCourse", Targets = { 150, 400, 900 }, Reward = 250 },
 	{ Id = "Platforms", Title = "Roll through %d oil platforms", Targets = { 6, 12, 20 }, Reward = 150 },
 }
@@ -27,7 +27,7 @@ QuestConfig.Pool = {
 QuestConfig.Weekly = {
 	{ Id = "Runs", Title = "Finish %d runs", Target = 10, Reward = 400 },
 	{ Id = "Platforms", Title = "Roll through %d oil platforms", Target = 40, Reward = 500 },
-	{ Id = "Levels", Title = "Gain %d levels", Target = 30, Reward = 700 },
+	{ Id = "Levels", Title = "Gain %d levels", Target = 50, Reward = 700 },
 	{ Id = "Runs", Title = "Finish %d runs", Target = 30, Reward = 1200 },
 	{ Id = "WinCourse", Title = "Win %d wins on the WinCourse", Target = 3000, Reward = 1500 },
 	{ Id = "Platforms", Title = "Roll through %d oil platforms", Target = 150, Reward = 2500 },

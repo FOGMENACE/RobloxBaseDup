@@ -78,193 +78,107 @@ local function ballUnlocksFor(rebirths)
 	return list
 end
 
-local showing = nil
+-- A smooth BANNER instead of a blocking card (auto rebirth would make a card
+-- annoying): it slides down under the top bar, says "REBIRTH n", the new bonus
+-- and the first unlock, then slides away. Nothing to tap, nothing blocked.
+-- Repeated rebirths just update the same banner and restart its timer.
+local banner = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, -120),
+	Size = UDim2.fromOffset(460, 78),
+	BackgroundColor3 = Color3.fromRGB(46, 26, 104),
+	Visible = false,
+}, gui)
+create("UICorner", { CornerRadius = UDim.new(0, 18) }, banner)
+create("UIStroke", { Color = GOLD, Thickness = 3 }, banner)
+create("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(140, 84, 240), Color3.fromRGB(46, 26, 104)), Rotation = 90 }, banner)
+local bannerScale = create("UIScale", {}, banner)
+local function fitBanner()
+	bannerScale.Scale = math.clamp(gui.AbsoluteSize.X / 600, 0.6, 1)
+end
+fitBanner()
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitBanner)
 
-local function celebrate(rebirths)
-	if showing then
-		showing:Destroy()
-	end
+local title = create("TextLabel", {
+	Position = UDim2.fromOffset(14, 6),
+	Size = UDim2.new(1, -28, 0, 36),
+	BackgroundTransparency = 1,
+	Font = FONT,
+	Text = "",
+	TextColor3 = GOLD,
+	TextSize = 30,
+}, banner)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, title)
+local detail = create("TextLabel", {
+	Position = UDim2.fromOffset(14, 44),
+	Size = UDim2.new(1, -28, 0, 26),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamMedium,
+	Text = "",
+	TextColor3 = CREAM,
+	TextSize = 15,
+	TextTruncate = Enum.TextTruncate.AtEnd,
+}, banner)
 
-	local dim = create("TextButton", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(10, 6, 30),
-		BackgroundTransparency = 1,
-		Text = "",
-		AutoButtonColor = false,
-	}, gui)
-	showing = dim
-	TweenService:Create(dim, TweenInfo.new(0.3), { BackgroundTransparency = 0.45 }):Play()
+local SHOWN = UDim2.new(0.5, 0, 0, 64)
+local HIDDEN = UDim2.new(0.5, 0, 0, -120)
+local hideToken = 0
 
-	local card = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.45),
-		Size = UDim2.fromOffset(520, 330),
-		BackgroundColor3 = Color3.fromRGB(46, 26, 104),
-	}, dim)
-	create("UICorner", { CornerRadius = UDim.new(0, 24) }, card)
-	create("UIStroke", { Color = GOLD, Thickness = 4 }, card)
-	create("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(150, 90, 255), Color3.fromRGB(40, 22, 96)), Rotation = 90 }, card)
-	local scale = create("UIScale", { Scale = 0.3 }, card)
-	local fitScale = math.clamp(math.min(gui.AbsoluteSize.X / 580, gui.AbsoluteSize.Y / 420), 0.5, 1.15)
-	TweenService:Create(scale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = fitScale }):Play()
-
-	create("TextLabel", {
-		Position = UDim2.fromOffset(0, 18),
-		Size = UDim2.new(1, 0, 0, 30),
-		BackgroundTransparency = 1,
-		Font = FONT,
-		Text = "♻ YOU REBIRTHED!",
-		TextColor3 = CREAM,
-		TextSize = 24,
-	}, card)
-	local big = create("TextLabel", {
-		Position = UDim2.fromOffset(0, 48),
-		Size = UDim2.new(1, 0, 0, 70),
-		BackgroundTransparency = 1,
-		Font = FONT,
-		Text = "REBIRTH " .. rebirths,
-		TextColor3 = GOLD,
-		TextSize = 62,
-	}, card)
-	create("UIStroke", { Color = INK, Thickness = 4 }, big)
-
-	-- the new bonuses, in the same units as the HUD
-	local bonus = string.format("OIL x%s   •   WINS x%s   •   XP +%dx",
-		tostring(RebirthBonuses.OilMultiplier(rebirths)),
-		tostring(RebirthBonuses.WinsMultiplier(rebirths)),
-		math.floor(RebirthBonuses.XPMultiplier(rebirths) - 1))
-	create("TextLabel", {
-		Position = UDim2.fromOffset(16, 122),
-		Size = UDim2.new(1, -32, 0, 26),
-		BackgroundTransparency = 1,
-		Font = FONT,
-		Text = bonus,
-		TextColor3 = Color3.fromRGB(150, 255, 170),
-		TextSize = 20,
-	}, card)
-
-	local unlockBox = create("Frame", {
-		Position = UDim2.fromOffset(24, 156),
-		Size = UDim2.new(1, -48, 0, 112),
-		BackgroundColor3 = Color3.fromRGB(24, 14, 60),
-		BackgroundTransparency = 0.2,
-	}, card)
-	create("UICorner", { CornerRadius = UDim.new(0, 14) }, unlockBox)
-	create("UIListLayout", { Padding = UDim.new(0, 2), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center }, unlockBox)
-	local unlockLines = { create("TextLabel", {
-		Size = UDim2.new(1, -16, 0, 24),
-		BackgroundTransparency = 1,
-		Font = FONT,
-		Text = "UNLOCKED:",
-		TextColor3 = GOLD,
-		TextSize = 18,
-	}, unlockBox) }
-	local shown = 0
-	local function addLine(text)
-		if shown >= 3 then
-			return
-		end
-		shown += 1
-		table.insert(unlockLines, create("TextLabel", {
-			Size = UDim2.new(1, -16, 0, 24),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium,
-			Text = text,
-			TextColor3 = CREAM,
-			TextSize = 16,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-		}, unlockBox))
-	end
-	-- generators and worlds are known right away; the ball list follows
-	for _, text in ipairs(unlocksFor(rebirths)) do
-		addLine(text)
-	end
-	local filler = nil
-	if shown == 0 then
-		filler = create("TextLabel", {
-			Size = UDim2.new(1, -16, 0, 24),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamMedium,
-			Text = "Bigger oil and wins on every run. Keep going!",
-			TextColor3 = CREAM,
-			TextSize = 16,
-		}, unlockBox)
-	end
-	task.spawn(function()
-		local balls = ballUnlocksFor(rebirths)
-		if #balls > 0 and filler then
-			filler:Destroy()
-		end
-		for _, text in ipairs(balls) do
-			if unlockBox.Parent then
-				addLine(text)
-			end
-		end
-	end)
-
-	create("TextLabel", {
-		Position = UDim2.new(0, 0, 1, -54),
-		Size = UDim2.new(1, 0, 0, 22),
-		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium,
-		Text = "Your rebirth level is always in the bottom-left badge ↙",
-		TextColor3 = Color3.fromRGB(220, 214, 255),
-		TextSize = 15,
-	}, card)
-	create("TextLabel", {
-		Position = UDim2.new(0, 0, 1, -30),
-		Size = UDim2.new(1, 0, 0, 20),
-		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium,
-		Text = "tap anywhere to continue",
-		TextColor3 = Color3.fromRGB(170, 160, 210),
-		TextSize = 13,
-	}, card)
-
-	local sound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.6 }, SoundService)
-	sound:Play()
-	sound.Ended:Once(function()
-		sound:Destroy()
-	end)
-
-	-- flash the bottom-left rebirth badge so the eye knows where to look
+local function pulseBadge()
 	local hud = playerGui:FindFirstChild("HudUI")
 	local badge = hud and hud:FindFirstChild("RebirthPanel", true)
 	local badgeScale = badge and badge:FindFirstChildOfClass("UIScale")
-
-	local closed = false
-	local function close()
-		if closed then
-			return
-		end
-		closed = true
-		TweenService:Create(dim, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
-		TweenService:Create(scale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 }):Play()
-		if badgeScale then
+	if badgeScale then
+		task.spawn(function()
 			local base = badgeScale.Scale
-			for _ = 1, 3 do
-				TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base * 1.15 }):Play()
-				task.wait(0.2)
-				TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base }):Play()
-				task.wait(0.2)
-			end
-		end
-		task.delay(0.3, function()
-			dim:Destroy()
-			if showing == dim then
-				showing = nil
-			end
+			TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base * 1.15 }):Play()
+			task.wait(0.22)
+			TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base }):Play()
 		end)
 	end
-	dim.Activated:Connect(function()
-		task.spawn(close)
-	end)
-	-- auto rebirth repeats quickly: shorter on screen when it is on
-	task.delay(player:GetAttribute("AutoRebirth") == true and 5 or 9, function()
-		task.spawn(close)
-	end)
 end
 
+local function celebrate(rebirths)
+	local auto = player:GetAttribute("AutoRebirth") == true
+	title.Text = "♻ REBIRTH " .. rebirths .. "!"
+	local bonus = string.format("Oil x%s • Wins x%s", tostring(RebirthBonuses.OilMultiplier(rebirths)), tostring(RebirthBonuses.WinsMultiplier(rebirths)))
+	local unlocks = unlocksFor(rebirths)
+	detail.Text = (#unlocks > 0) and (unlocks[1] .. "  •  " .. bonus) or bonus
+	-- a newly unlocked ball shows up a moment later (asks the server)
+	task.spawn(function()
+		if #unlocks == 0 then
+			local balls = ballUnlocksFor(rebirths)
+			if balls[1] and title.Text == "♻ REBIRTH " .. rebirths .. "!" then
+				detail.Text = balls[1] .. "  •  " .. bonus
+			end
+		end
+	end)
+
+	banner.Visible = true
+	TweenService:Create(banner, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = SHOWN }):Play()
+	pulseBadge()
+	if not auto then
+		local sound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.45 }, SoundService)
+		sound:Play()
+		sound.Ended:Once(function()
+			sound:Destroy()
+		end)
+	end
+
+	hideToken += 1
+	local token = hideToken
+	task.delay(auto and 2.5 or 4, function()
+		if token == hideToken then
+			local out = TweenService:Create(banner, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Position = HIDDEN })
+			out:Play()
+			out.Completed:Once(function()
+				if token == hideToken then
+					banner.Visible = false
+				end
+			end)
+		end
+	end)
+end
 local last = player:GetAttribute("Rebirths")
 player:GetAttributeChangedSignal("Rebirths"):Connect(function()
 	local now = player:GetAttribute("Rebirths")

@@ -59,10 +59,9 @@ local REQUIRED_LEVELS = {
 	468, 486, 497, 507, 526, 579, 590, 602, 621, 641,
 	689,
 }
--- LEVELS ARE 3x FINER: each old level is now 3 levels (same total XP to the
--- same rebirth, so a rebirth is exactly as hard, but you hear the level-up
--- sound three times as often). PlayerDataService uses the same scale.
-RebirthBonuses.LEVEL_SCALE = 3
+-- LEVELS ARE 5x FINER: each old level is now 5 levels, so the level-up sound
+-- comes often, while the XP to the next rebirth stays a real (but fair) climb. PlayerDataService uses the same scale.
+RebirthBonuses.LEVEL_SCALE = 5
 
 local function scaleLevel(oldLevel)
 	return 1 + RebirthBonuses.LEVEL_SCALE * (oldLevel - 1)

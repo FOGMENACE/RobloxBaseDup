@@ -36,12 +36,12 @@ local MAX_BALL_NAME_LENGTH = 64
 -- (reach level 45 needed ~10^8 times what a player earns). This polynomial curve
 -- is fitted to the XP income (rebirth XP x(1+10r), generators, ball speed) so a
 -- rebirth takes roughly 1 min early, 2-5 min mid game and 5-8 min deep in.
-local XP_CURVE_A = 95
+local XP_CURVE_A = 76 -- 20% less XP per rebirth than before: a steady challenge, not a grind
 local XP_CURVE_Q = 2.46
 -- levels are 3x finer than the curve below was fitted for (RebirthBonuses.LEVEL_SCALE):
 -- level L uses the old curve at (L - 1) / 3 + 1, so total XP to each rebirth is unchanged
-local LEVEL_SCALE = 3
-local BASE_REBIRTH_LEVEL = 4 -- first (tutorial) requirement; see RebirthBonuses.RequiredLevel
+local LEVEL_SCALE = 5
+local BASE_REBIRTH_LEVEL = 6 -- first (tutorial) requirement; see RebirthBonuses.RequiredLevel
 local REBIRTH_LEVEL_INCREMENT = 15
 
 local DEFAULT_BALL_ID = "StraightBall"
