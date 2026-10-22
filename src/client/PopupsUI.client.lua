@@ -14,6 +14,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local GuiService = game:GetService("GuiService")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 
 local player = Players.LocalPlayer
@@ -63,6 +64,17 @@ local gui = create("ScreenGui", {
 	ResetOnSpawn = false,
 	DisplayOrder = 30,
 }, playerGui)
+
+local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
+
+-- the player's world when it is a re-themed one with its own X6 generator number
+local function themedWorld()
+	local world = WorldConfig.Of(player)
+	if world.Id >= 2 and world.Generators and world.Generators.GenX6 then
+		return world
+	end
+	return nil
+end
 
 --------------------------------------------------
 -- FREE x6 CARD
@@ -158,7 +170,7 @@ x6Holder.Position = randomSpot()
 
 task.spawn(function()
 	while true do
-		if player:GetAttribute("X6Mode") == "Ready" and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
+		if player:GetAttribute("X6Mode") == "Ready" and not themedWorld() and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
 			x6Holder.Position = randomSpot()
 			x6Holder.Visible = true
 			x6Scale.Scale = 0
@@ -166,7 +178,7 @@ task.spawn(function()
 			ding()
 
 			local sinceMove = 0
-			while player:GetAttribute("X6Mode") == "Ready" and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" do
+			while player:GetAttribute("X6Mode") == "Ready" and not themedWorld() and player:GetAttribute("SettingPopups") ~= false and (player:GetAttribute("RunState") or "Waiting") == "Waiting" do
 				task.wait(0.25)
 				sinceMove += 0.25
 
@@ -195,10 +207,212 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
+-- WORLD GENERATOR GIFT (worlds 2-4)
+--
+-- A floating gift (no card): oil drop on a slowly turning sunburst with
+-- FREE! above and CLAIM below. It sits low on the right, under the boost
+-- cards and clear of the top-right leaderboard. Same server timer as the
+-- world 1 popup:
+--   Ready   -> press to claim      Active -> time left
+--   Waiting -> pressing says when it will be free
+--------------------------------------------------
+
+local RAINBOW = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 170, 255)),
+	ColorSequenceKeypoint.new(0.35, Color3.fromRGB(150, 110, 255)),
+	ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 120, 200)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 230, 90)),
+})
+local FREE_GRADIENT = ColorSequence.new(Color3.fromRGB(235, 255, 90), Color3.fromRGB(60, 200, 70))
+local PINK_GRADIENT = ColorSequence.new(Color3.fromRGB(255, 120, 230), Color3.fromRGB(150, 90, 255))
+
+local genHolder = create("Frame", {
+	Name = "WorldGenCard",
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -228, 0, 168),
+	Size = UDim2.fromOffset(170, 196),
+	BackgroundTransparency = 1,
+	Visible = false,
+}, gui)
+local genScale = create("UIScale", {}, genHolder)
+
+-- sunburst behind everything (turns slowly)
+local rays = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(230, 230),
+	BackgroundTransparency = 1,
+}, genHolder)
+for index = 0, 9 do
+	local ray = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(18, 230),
+		Rotation = index * 18,
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+	}, rays)
+	create("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 0.45),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+	}, ray)
+end
+local genGlow = create("ImageLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(190, 190),
+	BackgroundTransparency = 1,
+	Image = "rbxasset://textures/ui/Controls/DesignSystem/DropShadow.png",
+	ImageColor3 = Color3.new(1, 1, 1),
+	ImageTransparency = 0.35,
+	ScaleType = Enum.ScaleType.Slice,
+	SliceCenter = Rect.new(0, 0, 1, 1),
+}, genHolder)
+
+local genOil = create("ImageLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(86, 94),
+	Rotation = -12,
+	ImageTransparency = 0.12,
+	BackgroundTransparency = 1,
+	Image = require(ReplicatedStorage:WaitForChild("UiAssets")).OilImages.Black,
+	ScaleType = Enum.ScaleType.Fit,
+}, genHolder)
+
+local function giftLabel(position, height, size, gradient, rotation)
+	local l = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = position,
+		Size = UDim2.new(1, 0, 0, height),
+		Font = FONT,
+		Text = "",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = size,
+		TextTransparency = 0.12,
+		Rotation = rotation or 0,
+	}, genHolder)
+	create("UIStroke", { Color = INK, Thickness = 3.5, Transparency = 0.2 }, l)
+	create("UIGradient", { Color = gradient, Rotation = 90 }, l)
+	return l
+end
+local genTop = giftLabel(UDim2.fromOffset(0, 0), 44, 34, FREE_GRADIENT, -4)
+local genName = giftLabel(UDim2.fromOffset(0, 126), 32, 28, PINK_GRADIENT, 0)
+local genSub = giftLabel(UDim2.fromOffset(0, 158), 34, 30, RAINBOW, 0)
+
+local genButton = create("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+}, genHolder)
+
+local genTip = create("TextLabel", {
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(0, -8, 0.5, 0),
+	Size = UDim2.fromOffset(300, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundColor3 = INK,
+	BackgroundTransparency = 0.1,
+	Font = FONT,
+	Text = "",
+	TextColor3 = CREAM,
+	TextSize = 16,
+	TextWrapped = true,
+	Visible = false,
+}, genHolder)
+create("UICorner", { CornerRadius = UDim.new(0, 10) }, genTip)
+create("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, genTip)
+
+local tipToken = 0
+local function showTip(text)
+	tipToken += 1
+	local token = tipToken
+	genTip.Text = text
+	genTip.Visible = true
+	task.delay(3.5, function()
+		if token == tipToken then
+			genTip.Visible = false
+		end
+	end)
+end
+
+local function remainingSeconds()
+	local untilTime = player:GetAttribute("X6Until")
+	return typeof(untilTime) == "number" and math.max(0, untilTime - workspace:GetServerTimeNow()) or 0
+end
+
+genButton.Activated:Connect(function()
+	local world = themedWorld()
+	if not world then
+		return
+	end
+	local mode = player:GetAttribute("X6Mode")
+	if mode == "Ready" then
+		remotes:WaitForChild("X6Claim"):FireServer()
+	elseif mode == "Active" then
+		showTip("Boost on! Roll onto the X" .. world.Generators.GenX6 .. " generator.")
+	else
+		local minutes = math.max(1, math.ceil(remainingSeconds() / 60))
+		showTip("Will be FREE IN " .. minutes .. (minutes == 1 and " minute." or " minutes."))
+	end
+end)
+
+task.spawn(function()
+	local lastMode = nil
+	while true do
+		local world = themedWorld()
+		local show = world ~= nil and (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+		genHolder.Visible = show
+		if show then
+			local mode = player:GetAttribute("X6Mode")
+			genName.Text = "X" .. world.Generators.GenX6 .. " XP"
+			if mode == "Ready" then
+				genTop.Text = "FREE!"
+				genSub.Text = "CLAIM!"
+				genGlow.ImageTransparency = 0.25
+				if lastMode ~= "Ready" then
+					ding()
+				end
+			elseif mode == "Active" then
+				local left = math.ceil(remainingSeconds())
+				genTop.Text = "BOOST ON"
+				genSub.Text = string.format("%d:%02d", left // 60, left % 60)
+				genGlow.ImageTransparency = 0.5
+			else
+				genTop.Text = "FREE!"
+				genSub.Text = "CLAIM!"
+				genGlow.ImageTransparency = 0.7
+			end
+			lastMode = mode
+		end
+		task.wait(0.25)
+	end
+end)
+
+-- sunburst turns, the drop bobs, the whole gift breathes while it can be claimed
+RunService.RenderStepped:Connect(function()
+	if not genHolder.Visible then
+		return
+	end
+	local now = os.clock()
+	rays.Rotation = (now * 14) % 360
+	genOil.Position = UDim2.new(0.5, 0, 0.5, math.sin(now * 2.6) * 4)
+	genOil.Rotation = -12 + math.sin(now * 1.7) * 4
+	if player:GetAttribute("X6Mode") == "Ready" then
+		genScale.Scale = 0.9 + math.sin(now * 4) * 0.045
+	else
+		genScale.Scale = 0.9
+	end
+end)
+--------------------------------------------------
 -- WAIT! DON'T LEAVE!
 --------------------------------------------------
 
-local RunService = game:GetService("RunService")
 
 -- Dim the whole screen so the popup cannot be missed (and nothing behind it
 -- can be clicked by accident while it is open).
@@ -433,8 +647,6 @@ end)
 -- EVERYONE in the server now has, then fades out. Visual / audio only; the
 -- rewards themselves are granted by the server (ProductService).
 --------------------------------------------------
-
-local RunService = game:GetService("RunService")
 
 local captainOverlay = create("Frame", {
 	Size = UDim2.fromScale(1, 1),
