@@ -746,9 +746,12 @@ local function chooseOilType(isPositive)
 				local hardness = kind == "Normal" and TIER_HARDNESS[oilType]
 				if hardness then
 					if isPositive then
-						weight *= (1 - hardness * difficulty)
-					else
-						weight *= (1 + hardness * difficulty * 1.5)
+						-- good Rare / Epic / Legendary get a bit rarer as rebirths rise
+						weight *= (1 - hardness * difficulty * 0.5)
+					elseif oilType ~= "Rare" then
+						-- big RED panels (-2k and worse) are the rarest of all and no longer
+						-- get more common with rebirths
+						weight *= 0.75
 					end
 				end
 
@@ -871,8 +874,10 @@ local function buildPolarityPlan(platformCount)
 	-- 2 = green / red
 	-- 3 = red / red
 
-	local doubleGreenRows = math.floor(rowCount * (0.20 - 0.08 * difficulty))
-	local doubleRedRows = math.floor(rowCount * (0.10 + 0.08 * difficulty))
+	-- Balanced so an average course nets positive oil: high-rebirth players used to
+	-- get ~45% green with larger red tiers and ended on 0 oil far too often.
+	local doubleGreenRows = math.floor(rowCount * (0.20 - 0.04 * difficulty))
+	local doubleRedRows = math.floor(rowCount * (0.10 + 0.04 * difficulty))
 
 	local mixedRows = rowCount - doubleGreenRows - doubleRedRows
 
@@ -943,10 +948,14 @@ local function setupPlatform(platform, isPositive)
 	--------------------------------------------------
 
 	local oilAmount = rollOilAmount(definition)
+	if oilAmount > 0 and not isPositive then
+		oilAmount = math.max(20, math.floor(oilAmount * 0.8 + 0.5)) -- red panels bite, but a little less than green pays
+	end
 
 	if kind == "Normal" and not isPositive then
-		-- reds bite harder as the player progresses, so a wrong pick really hurts
-		oilAmount = -math.floor(oilAmount * (1 + 0.55 * difficulty) + 0.5)
+		-- reds used to scale up to x1.55 with rebirths on top of everything else, which
+		-- pushed most runs to 0 oil; they now just subtract their (already trimmed) amount
+		oilAmount = -oilAmount
 	end
 
 	--------------------------------------------------
