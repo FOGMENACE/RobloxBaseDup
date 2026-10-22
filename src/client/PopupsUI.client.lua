@@ -232,18 +232,28 @@ local PINK_GRADIENT = ColorSequence.new(Color3.fromRGB(255, 120, 230), Color3.fr
 local genHolder = create("Frame", {
 	Name = "WorldGenCard",
 	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -228, 0, 168),
+	Position = UDim2.new(1, -228, 0, 180),
 	Size = UDim2.fromOffset(170, 196),
 	BackgroundTransparency = 1,
 	Visible = false,
 }, gui)
 local genScale = create("UIScale", {}, genHolder)
--- phones / tablets: a small badge up by the x2 buttons instead of a big card mid-screen
-local TOUCH_SIZE = UserInputService.TouchEnabled and 0.55 or 1
-if UserInputService.TouchEnabled then
-	genHolder.AnchorPoint = Vector2.new(1, 0)
-	genHolder.Position = UDim2.new(1, -150, 0, 120)
+-- Size follows the screen: a big, eye-catching gift on computers (it used to
+-- shrink with the phone change), a compact badge up by the x2 buttons on
+-- phones / tablets so it never covers the middle of the screen.
+local TOUCH_SIZE = 1
+local function fitGift()
+	local height = gui.AbsoluteSize.Y
+	if UserInputService.TouchEnabled then
+		TOUCH_SIZE = math.clamp(height / 700, 0.45, 0.7)
+		genHolder.AnchorPoint = Vector2.new(1, 0)
+		genHolder.Position = UDim2.new(1, -150, 0, 120)
+	else
+		TOUCH_SIZE = math.clamp(height / 600, 1.05, 1.45)
+	end
 end
+fitGift()
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitGift)
 
 -- sunburst behind everything (turns slowly)
 local rays = create("Frame", {

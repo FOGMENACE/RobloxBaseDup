@@ -33,7 +33,19 @@ local PINS = {
 	{ Vector3.new(-150, 150, 300), Vector3.new(0.4, 0.2, 0.9) },
 	{ Vector3.new(-40, 230, 520), Vector3.new(-0.6, 1.1, -0.4) },
 	{ Vector3.new(200, 130, 260), Vector3.new(0.9, -0.5, 0.3) },
+	-- a "strike" scattering far off to the right
+	{ Vector3.new(330, 230, 560), Vector3.new(1.2, 0.3, 0.6) },
+	{ Vector3.new(380, 190, 610), Vector3.new(-0.3, 0.9, 1.4) },
+	{ Vector3.new(300, 280, 640), Vector3.new(0.7, -1.0, -0.5) },
 }
+local CollectionService = game:GetService("CollectionService")
+-- the client (SkyAnimator) turns tagged parts slowly so the sky feels alive
+local function animate(part, spin, bob)
+	part:SetAttribute("SkyBase", part.CFrame)
+	part:SetAttribute("SkySpin", spin)
+	part:SetAttribute("SkyBob", bob or 0)
+	CollectionService:AddTag(part, "SkyDecorSpin")
+end
 local DROP = Vector3.new(-230, 190, 470)
 
 local function settle(p, parent)
@@ -67,6 +79,7 @@ local function build(world)
 		moon.Size = straight.Size * (150 / math.max(straight.Size.X, 0.1))
 		moon.CFrame = CFrame.lookAt(MOON + offset, Vector3.new(-65, 70, -220) + offset)
 		settle(moon, folder)
+		animate(moon, Vector3.new(0, 0.05, 0), 0)
 		if world.Theme then
 			pcall(WorldSkinStyle.Apply, moon, world.Theme, false)
 		end
@@ -81,6 +94,8 @@ local function build(world)
 			copy.Size = pinTemplate.Size * 34
 			copy.CFrame = CFrame.new(pin[1] + offset) * CFrame.Angles(pin[2].X, pin[2].Y, pin[2].Z)
 			settle(copy, folder)
+			-- each pin tumbles slowly on its own, different speeds
+			animate(copy, Vector3.new(0.08 + index * 0.02, 0.05, 0.12 - index * 0.01), 6 + index)
 		end
 	end
 
@@ -98,6 +113,12 @@ local function build(world)
 		glow.Brightness = 3
 		glow.Parent = folder:FindFirstChild("OilDrop")
 	end
+	for _, name in ipairs({ "OilDrop", "OilDropTip", "OilShine" }) do
+		local part = folder:FindFirstChild(name)
+		if part then
+			animate(part, Vector3.zero, 10) -- the drop bobs gently
+		end
+	end
 
 	folder.Parent = root
 end
@@ -107,3 +128,13 @@ for _, world in ipairs(WorldConfig.Worlds) do
 end
 
 root.Parent = Workspace
+
+-- soft drifting clouds (Roblox's animated Clouds): warm cream with a pink
+-- tint, matching the lobby's sunset lighting; light cover so the sky
+-- objects stay visible
+local clouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
+clouds.Cover = 0.5
+clouds.Density = 0.55
+clouds.Color = Color3.fromRGB(255, 226, 232)
+clouds.Enabled = true
+clouds.Parent = Workspace.Terrain

@@ -38,7 +38,10 @@ local MAX_BALL_NAME_LENGTH = 64
 -- rebirth takes roughly 1 min early, 2-5 min mid game and 5-8 min deep in.
 local XP_CURVE_A = 95
 local XP_CURVE_Q = 2.46
-local BASE_REBIRTH_LEVEL = 2 -- first (tutorial) requirement; see RebirthBonuses.RequiredLevel
+-- levels are 3x finer than the curve below was fitted for (RebirthBonuses.LEVEL_SCALE):
+-- level L uses the old curve at (L - 1) / 3 + 1, so total XP to each rebirth is unchanged
+local LEVEL_SCALE = 3
+local BASE_REBIRTH_LEVEL = 4 -- first (tutorial) requirement; see RebirthBonuses.RequiredLevel
 local REBIRTH_LEVEL_INCREMENT = 15
 
 local DEFAULT_BALL_ID = "StraightBall"
@@ -130,7 +133,7 @@ local function getTotalXPForLevel(level)
         return 0
     end
 
-    return XP_CURVE_A * (level ^ XP_CURVE_Q - 1)
+    return XP_CURVE_A * (((level - 1) / LEVEL_SCALE + 1) ^ XP_CURVE_Q - 1)
 end
 
 local function getXPRequiredForLevel(level)
@@ -155,7 +158,7 @@ local function calculateLevelFromXP(xp, maxLevel)
         MAX_LEVEL
     )
 
-    local level = math.floor((xp / XP_CURVE_A + 1) ^ (1 / XP_CURVE_Q))
+    local level = math.floor(1 + LEVEL_SCALE * ((xp / XP_CURVE_A + 1) ^ (1 / XP_CURVE_Q) - 1))
 
     level = math.clamp(level, 1, maxLevel)
 

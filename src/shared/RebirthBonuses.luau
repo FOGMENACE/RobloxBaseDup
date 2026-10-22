@@ -59,10 +59,19 @@ local REQUIRED_LEVELS = {
 	468, 486, 497, 507, 526, 579, 590, 602, 621, 641,
 	689,
 }
+-- LEVELS ARE 3x FINER: each old level is now 3 levels (same total XP to the
+-- same rebirth, so a rebirth is exactly as hard, but you hear the level-up
+-- sound three times as often). PlayerDataService uses the same scale.
+RebirthBonuses.LEVEL_SCALE = 3
+
+local function scaleLevel(oldLevel)
+	return 1 + RebirthBonuses.LEVEL_SCALE * (oldLevel - 1)
+end
+
 function RebirthBonuses.RequiredLevel(rebirths)
 	local count = clean(rebirths)
 	if count + 1 <= #REQUIRED_LEVELS then
-		return REQUIRED_LEVELS[count + 1]
+		return scaleLevel(REQUIRED_LEVELS[count + 1])
 	end
 
 	-- beyond the table: a steady +22 levels per rebirth. The old rule grew the
@@ -71,7 +80,7 @@ function RebirthBonuses.RequiredLevel(rebirths)
 	-- similar, reachable climb while the rebirth XP bonus keeps growing too:
 	-- 50 -> 909, 75 -> 1,459, 100 -> 2,009.
 	local extra = count - (#REQUIRED_LEVELS - 1)
-	return REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 22
+	return scaleLevel(REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 22)
 end
 
 return RebirthBonuses

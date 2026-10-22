@@ -146,6 +146,7 @@ commands.help = function()
 		"give <name> wins|oil <amount> | grant <name> ball <id> | grant <name> skin <ballId> <world>",
 		"feedback [YYYY-MM-DD | days ago] | flags [YYYY-MM-DD | days ago] | history <name|userid> | blockers [name]",
 		"reset <userid> [dry]  then  confirm <code>  (progression reset, backed up)",
+		"restart [seconds] [reason] | restartall [seconds] [reason]  (confirm <code> first)  |  cancelrestart",
 		"cancel",
 	}, "\n")
 end
@@ -504,6 +505,135 @@ Players.PlayerAdded:Connect(function(player)
 	end
 end)
 
+--------------------------------------------------
+-- RESTART (after publishing a new version)
+--
+--   restart [seconds] [reason]      this server only
+--   restartall [seconds] [reason]   every server of the game (MessagingService)
+--   cancelrestart                   stops a countdown that has not finished
+--
+-- Both ask for "confirm <code>" first. Players see a countdown banner
+-- (Remotes.RestartNotice, client RestartNotice), their data is saved, then
+-- they are kicked with a "rejoin" message. While a server is restarting,
+-- anyone joining it is bounced so it empties fast and closes.
+--------------------------------------------------
+
+local RESTART_TOPIC = "AdminRestart_v1"
+local restartRemote = remotes:FindFirstChild("RestartNotice")
+if not restartRemote then
+	restartRemote = Instance.new("RemoteEvent")
+	restartRemote.Name = "RestartNotice"
+	restartRemote.Parent = remotes
+end
+
+local restartState = { Active = false, Deadline = 0, Token = 0, Reason = "" }
+
+local function startRestart(seconds, reason)
+	if restartState.Active then
+		return false
+	end
+	restartState.Active = true
+	restartState.Deadline = os.clock() + seconds
+	restartState.Reason = reason
+	restartState.Token += 1
+	local token = restartState.Token
+	restartRemote:FireAllClients(seconds, reason)
+	print("[AdminService] RESTART in", seconds, "s:", reason)
+
+	task.spawn(function()
+		while os.clock() < restartState.Deadline and restartState.Token == token and restartState.Active do
+			task.wait(0.5)
+		end
+		if restartState.Token ~= token or not restartState.Active then
+			return -- cancelled
+		end
+		for _, p in ipairs(Players:GetPlayers()) do
+			pcall(PlayerDataService.SavePlayer, p)
+		end
+		for _, p in ipairs(Players:GetPlayers()) do
+			p:Kick("The game updated! Please rejoin. " .. reason)
+		end
+		-- stays "Active": anyone who still joins this old server is bounced below
+	end)
+	return true
+end
+
+local function cancelRestart()
+	if not restartState.Active or os.clock() >= restartState.Deadline then
+		return false
+	end
+	restartState.Active = false
+	restartState.Token += 1
+	restartRemote:FireAllClients(0, "") -- hides the banner
+	return true
+end
+
+Players.PlayerAdded:Connect(function(player)
+	if restartState.Active then
+		if os.clock() >= restartState.Deadline then
+			task.defer(function()
+				player:Kick("The game is updating. Please rejoin in a moment.")
+			end)
+		else
+			restartRemote:FireClient(player, math.ceil(restartState.Deadline - os.clock()), restartState.Reason)
+		end
+	end
+end)
+
+task.spawn(function()
+	local ok, err = pcall(function()
+		MessagingService:SubscribeAsync(RESTART_TOPIC, function(message)
+			local decoded = nil
+			pcall(function()
+				decoded = HttpService:JSONDecode(message.Data)
+			end)
+			if typeof(decoded) ~= "table" or decoded.JobId == game.JobId then
+				return
+			end
+			if decoded.Cancel == true then
+				cancelRestart()
+			elseif typeof(decoded.Seconds) == "number" then
+				startRestart(math.clamp(decoded.Seconds, 10, 600), tostring(decoded.Reason or ""):sub(1, 80))
+			end
+		end)
+	end)
+	if not ok then
+		warn("[AdminService] restart messaging unavailable (fine in Studio):", err)
+	end
+end)
+
+local function parseRestart(args)
+	local seconds, first = 60, 1
+	local n = tonumber(args[1] or "")
+	if n then
+		seconds, first = math.clamp(math.floor(n), 10, 600), 2
+	end
+	local reason = table.concat(args, " ", first):sub(1, 80)
+	return seconds, reason
+end
+
+commands.restart = function(admin, args)
+	local seconds, reason = parseRestart(args)
+	local code = tostring(math.random(1000, 9999))
+	pending[admin] = { Code = code, Kind = "restart", Scope = "this", Seconds = seconds, Reason = reason, Time = os.clock() }
+	return true, string.format("RESTART THIS SERVER in %ds (%d player(s), you included, get kicked with a rejoin message; data is saved first).\nType:  confirm %s   (within %ds) or  cancel", seconds, #Players:GetPlayers(), code, AdminConfig.ConfirmSeconds)
+end
+
+commands.restartall = function(admin, args)
+	local seconds, reason = parseRestart(args)
+	local code = tostring(math.random(1000, 9999))
+	pending[admin] = { Code = code, Kind = "restart", Scope = "all", Seconds = seconds, Reason = reason, Time = os.clock() }
+	return true, string.format("RESTART EVERY SERVER in %ds: all players everywhere get a countdown, are saved and are kicked with a rejoin message (use after you publish).\nType:  confirm %s   (within %ds) or  cancel", seconds, code, AdminConfig.ConfirmSeconds)
+end
+
+commands.cancelrestart = function()
+	local stopped = cancelRestart()
+	pcall(function()
+		MessagingService:PublishAsync(RESTART_TOPIC, HttpService:JSONEncode({ Cancel = true, JobId = game.JobId }))
+	end)
+	return true, stopped and "restart countdown cancelled (here and on other servers)" or "no countdown running here (other servers were told to cancel)"
+end
+
 commands.cancel = function(admin)
 	pending[admin] = nil
 	return true, "pending action cancelled"
@@ -554,6 +684,23 @@ commands.confirm = function(admin, args)
 		return false, "wrong code"
 	end
 	pending[admin] = nil
+
+	if action.Kind == "restart" then
+		if action.Scope == "all" then
+			local sent = pcall(function()
+				MessagingService:PublishAsync(RESTART_TOPIC, HttpService:JSONEncode({ Seconds = action.Seconds, Reason = action.Reason, JobId = game.JobId }))
+			end)
+			if not sent then
+				warn("[AdminService] could not tell other servers (MessagingService unavailable?)")
+			end
+			startRestart(action.Seconds, action.Reason)
+			log(admin, "restartall", action.Seconds, sent and "OK" or "LOCAL ONLY")
+			return true, sent and ("restarting EVERY server in " .. action.Seconds .. "s") or "restarting THIS server only: could not reach other servers (MessagingService failed)"
+		end
+		startRestart(action.Seconds, action.Reason)
+		log(admin, "restart", action.Seconds, "OK")
+		return true, "restarting this server in " .. action.Seconds .. "s (cancelrestart to stop)"
+	end
 
 	local id = action.UserId
 	local online = Players:GetPlayerByUserId(id)
@@ -633,6 +780,7 @@ commandRemote.OnServerInvoke = function(player, text)
 	local lowered = name:lower()
 	local takesNumber = lowered ~= "players" and lowered ~= "help" and lowered ~= "whoami" and lowered ~= "find" and lowered ~= "unban"
 		and lowered ~= "banlist" and lowered ~= "confirm" and lowered ~= "cancel" and lowered ~= "feedback" and lowered ~= "flags"
+		and lowered ~= "restart" and lowered ~= "restartall" and lowered ~= "cancelrestart"
 	local picked = tokens[1] and tonumber(tokens[1])
 	if takesNumber and picked and picked >= 1 and picked <= 99 and picked % 1 == 0 and numbered[player] then
 		local userId = numbered[player][picked]

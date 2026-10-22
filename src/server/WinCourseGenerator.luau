@@ -78,7 +78,7 @@ local course =
 
 local START_POSITION =
 	Vector3.new(
-		-64.726, 63.444, 353.244
+		-64.726, 63.444, 366.0 -- starts just past the oil course (its floor ends at z 364.3, the finish wall at 365.8); it used to start at 353 and overlapped both
 	)
 
 
