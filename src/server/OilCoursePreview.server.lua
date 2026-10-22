@@ -739,6 +739,18 @@ for rowNumber = 1, NUMBER_OF_ROWS do
 
 	end
 
+	-- The rest of the row (the black stand under the panels) is scenery too:
+	-- it stayed solid and stopped real balls rolling through the preview's
+	-- spot during a run (the preview is only hidden on the runner's screen).
+	for _, object in ipairs(oilRow:GetDescendants()) do
+		if object:IsA("BasePart") then
+			object.Anchored = true
+			object.CanCollide = false
+			object.CanTouch = false
+			object.CanQuery = false
+		end
+	end
+
 
 	--------------------------------------------------
 	-- PARENT

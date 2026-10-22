@@ -272,6 +272,10 @@ local ballLateral = setmetatable({}, { __mode = "k" }) -- smoothed sideways spee
 local COURSE_ACCELERATION =
 	30
 
+-- the steady pace every ball reaches first on the oil course (see the ramp below)
+local COURSE_CRUISE_SPEED =
+	52
+
 local MIN_COURSE_SPEED =
 	6
 
@@ -1871,8 +1875,14 @@ if runState == "Waiting"
 				-- mapped onto a playable band that still rewards faster balls:
 				-- forward 58 -> 110 studs/s, steering 52 -> 78 studs/s. BallDefinitions
 				-- (and everything else that reads them) are unchanged.
+				-- Every ball starts at the same steady pace (COURSE_CRUISE_SPEED) and
+				-- then speeds up SLOWLY during the roll; faster balls ramp quicker
+				-- and to a higher cap, so the difference shows over the run instead
+				-- of the fast balls blasting through the rows from the first second.
+				local tier = math.clamp((getForwardSpeed(ball) - 50) / 100, 0, 1)
 				local targetForwardSpeed =
-					58 + math.clamp(getForwardSpeed(ball) - 50, 0, 100) * 0.52
+					COURSE_CRUISE_SPEED + tier * 30 -- 52 .. 82 studs/s
+				local rollAcceleration = 1.2 + tier * 3.3 -- studs/s per second after reaching cruise
 
 				local targetHorizontalSpeed =
 					52 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.26
@@ -1901,15 +1911,17 @@ if runState == "Waiting"
 				-- ACCELERATION
 				--------------------------------------------------
 
+				-- quick, smooth ramp up to cruise; slow, ball-dependent ramp after
+				local rate = currentSpeed < COURSE_CRUISE_SPEED and COURSE_ACCELERATION or rollAcceleration
 				currentSpeed =
 					math.min(
 						currentSpeed
 						+
-						COURSE_ACCELERATION
+						rate
 						*
 						deltaTime,
 
-						targetForwardSpeed
+						math.max(targetForwardSpeed, math.min(currentSpeed, COURSE_CRUISE_SPEED))
 					)
 
 

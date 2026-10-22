@@ -391,6 +391,7 @@ local function buildWorld(world)
 						elseif d:IsA("BasePart") then
 							d.CFrame += world.Offset
 							d.Color = d.Color:Lerp(world.Theme.Tint, 0.25)
+							d.CanCollide, d.CanTouch, d.CanQuery = false, false, false -- scenery only
 						end
 					end
 					fixAdornees(copy)

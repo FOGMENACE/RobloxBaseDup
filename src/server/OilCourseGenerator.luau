@@ -828,7 +828,14 @@ local function rollOilAmount(definition)
 	local minimum = math.floor(definition.MinOil)
 	local maximum = math.floor(definition.MaxOil)
 
-	return math.max(20, math.floor(rng:NextInteger(minimum, maximum) * oilScale + 0.5))
+	local amount = math.max(20, math.floor(rng:NextInteger(minimum, maximum) * oilScale + 0.5))
+	-- 2,000+ panels (green or red) stay special: only the Epic / Legendary tiers
+	-- can reach them, so high rebirths and lucky rounds do not turn ordinary
+	-- panels into 2k+ ones
+	if amount >= 2000 and minimum < 1500 then
+		amount = 1900 + rng:NextInteger(0, 90)
+	end
+	return amount
 end
 
 

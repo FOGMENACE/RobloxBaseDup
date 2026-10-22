@@ -135,7 +135,7 @@ local OilDefinitions = {
 
 		MaxOil = 2200,
 
-		Weight = 5,
+		Weight = 3, -- rarer: 2k+ panels should feel special
 
 		Display = "AMOUNT",
 
@@ -161,7 +161,7 @@ local OilDefinitions = {
 
 		MaxOil = 4500,
 
-		Weight = 2,
+		Weight = 1.2, -- rarest
 
 		Display = "AMOUNT",
 
