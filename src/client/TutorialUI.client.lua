@@ -522,9 +522,9 @@ local function textFor(step)
 		return "Roll again with your new ball!"
 	elseif step == 11 then
 		if PanelManager.IsOpen("Calendar") then
-			return "Claim DAY 1 of your daily gift!"
+			return "EARN DAILY! Claim Day 1, then close the calendar."
 		end
-		return "Tutorial complete! Tap the calendar for your daily gift!"
+		return "EARN DAILY! Tap the calendar and claim your Day 1 gift!"
 	end
 
 	return ""
@@ -672,8 +672,8 @@ end
 local function showOutro()
 	showCard({
 		Tab = "TUTORIAL COMPLETE",
-		Heading = "GOOD JOB BOWLER! KEEP GOING!",
-		Body = "You know the loop: roll, earn oil, win, rebirth. Now go bigger!",
+		Heading = "YOU KNOW HOW TO BOWL!",
+		Body = "Roll, rebirth and collect every ball. Become the best bowler on the leaderboards!",
 		Goals = { { "🎳", "Collect every ball" }, { "🌍", "Unlock new worlds" }, { "🏆", "Climb the leaderboards" }, { "🎁", "Claim your daily gifts" } },
 		Button = "KEEP GOING!",
 	}, function() end)
@@ -700,9 +700,16 @@ local function updateBanner(step)
 		-- finished this session: the completion card (same style as the welcome card)
 		wasInTutorial = false
 		banner.Visible = false
-		if not introActive then
-			showOutro()
-		end
+		-- the completion card comes after the player closes the calendar
+		task.spawn(function()
+			while PanelManager.IsOpen("Calendar") do
+				task.wait(0.25)
+			end
+			task.wait(0.4)
+			if not introActive then
+				showOutro()
+			end
+		end)
 		return
 	end
 	if step == nil or step >= DONE or step < 1 then

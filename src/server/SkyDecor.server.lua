@@ -103,9 +103,13 @@ local function build(world)
 	local tint = world.Theme and world.Theme.Glow or Color3.fromRGB(20, 18, 28)
 	local dark = Color3.fromRGB(20, 18, 28):Lerp(tint, world.Theme and 0.25 or 0)
 	ball("OilDrop", 70, DROP + offset, dark, Enum.Material.Glass, 0, folder)
-	local tip = ball("OilDropTip", 1, DROP + offset + Vector3.new(0, 44, 0), dark, Enum.Material.Glass, 0, folder)
-	tip.Size = Vector3.new(42, 52, 42)
-	ball("OilShine", 14, DROP + offset + Vector3.new(-16, 18, -28), Color3.new(1, 1, 1), Enum.Material.Neon, 0.2, folder)
+	-- a smooth teardrop: a stack of shrinking, overlapping spheres (diameter, height above the centre)
+	for index, step in ipairs({ { 62, 20 }, { 52, 36 }, { 40, 50 }, { 28, 61 }, { 17, 69 }, { 8, 75 } }) do
+		ball("OilDropTaper" .. index, step[1], DROP + offset + Vector3.new(0, step[2], 0), dark, Enum.Material.Glass, 0, folder)
+	end
+	-- a soft white glint on the drop's shoulder, flat against it (not a second ball)
+	local glint = ball("OilShine", 9, DROP + offset + Vector3.new(-17, 12, -24), Color3.new(1, 1, 1), Enum.Material.Neon, 0.25, folder)
+	glint.Size = Vector3.new(9, 22, 5)
 	if world.Theme then
 		local glow = Instance.new("PointLight")
 		glow.Color = tint
@@ -113,10 +117,9 @@ local function build(world)
 		glow.Brightness = 3
 		glow.Parent = folder:FindFirstChild("OilDrop")
 	end
-	for _, name in ipairs({ "OilDrop", "OilDropTip", "OilShine" }) do
-		local part = folder:FindFirstChild(name)
-		if part then
-			animate(part, Vector3.zero, 10) -- the drop bobs gently
+	for _, part in ipairs(folder:GetChildren()) do
+		if part.Name:find("^OilDrop") or part.Name == "OilShine" then
+			animate(part, Vector3.zero, 10) -- the whole drop bobs gently together
 		end
 	end
 

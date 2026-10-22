@@ -20,10 +20,31 @@ if old then
 	old:Destroy()
 end
 
--- the oil floor is turned 90 degrees: its LENGTH is Size.X (along Z), its width Size.Z
+-- Join the two lanes exactly: the apron runs from the oil floor's end to the first
+-- win tile's edge and is as wide as the win tiles (they are wider than the oil
+-- floor), so there is no gap and no step at the tile.
+-- The oil floor is turned 90 degrees: its LENGTH is Size.X (along Z), its width Size.Z.
 local floorEnd = floor.Position.Z + floor.Size.X / 2
-local startZ = WinCourseGenerator.GetStartPosition().Z
-local length = math.max(startZ + 2.4 - floorEnd, 1) -- ends right at the first tile (its edge is START + 2.45)
+
+-- the win course preview is built by WinCoursePreviewService; read the first tile from it
+local tileEdge = WinCourseGenerator.GetStartPosition().Z + 2.45
+local tileWidth = floor.Size.Z
+local preview = course:WaitForChild("WinCoursePreview", 30)
+if preview then
+	task.wait(1) -- the preview builder is still adding tiles
+	local best
+	for _, d in ipairs(preview:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name == "Floor" and (not best or d.Position.Z < best.Position.Z) then
+			best = d
+		end
+	end
+	if best then
+		tileEdge = best.Position.Z - best.Size.Z / 2
+		tileWidth = math.max(best.Size.X, tileWidth)
+	end
+end
+
+local length = math.max(tileEdge - floorEnd, 1)
 
 local apron = Instance.new("Part")
 apron.Name = "WinCourseApron"
@@ -31,8 +52,8 @@ apron.Anchored = true
 apron.CanCollide = true
 apron.CanTouch = false
 apron.CanQuery = true
-apron.Size = Vector3.new(floor.Size.Z, floor.Size.Y, length)
-apron.Position = Vector3.new(floor.Position.X, floor.Position.Y, floorEnd + length / 2 - 0.05)
+apron.Size = Vector3.new(tileWidth, floor.Size.Y, length)
+apron.Position = Vector3.new(floor.Position.X, floor.Position.Y - 0.01, floorEnd + length / 2)
 apron.Color = floor.Color
 apron.Material = floor.Material
 apron.Reflectance = floor.Reflectance

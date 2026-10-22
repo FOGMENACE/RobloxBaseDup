@@ -119,8 +119,11 @@ local function levelUp(level)
 	}, gui)
 	local function fitOpacity()
 		local state = player:GetAttribute("RunState") or "Waiting"
-		holder.GroupTransparency = (state == "Waiting") and 0 or 0.8
+		-- on a course the burst fades smoothly to almost invisible (it used to block the view)
+		local target = (state == "Waiting") and 0 or 0.92
+		TweenService:Create(holder, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { GroupTransparency = target }):Play()
 	end
+	holder.GroupTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.92
 	fitOpacity()
 	local stateConn = player:GetAttributeChangedSignal("RunState"):Connect(fitOpacity)
 	holder.Destroying:Once(function()

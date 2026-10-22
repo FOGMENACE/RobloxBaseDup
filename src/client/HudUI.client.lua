@@ -703,10 +703,10 @@ local function levelUpBurst(newLevel)
 		Text = "LEVEL UP!  " .. tostring(newLevel),
 		TextColor3 = LANE,
 		TextSize = 40,
-		TextTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.75,
+		TextTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.9,
 		ZIndex = 30,
 	}, gui)
-	create("UIStroke", { Color = INK, Thickness = 4 }, banner)
+	create("UIStroke", { Color = INK, Thickness = 4, Transparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.9 }, banner)
 	local bannerScale = create("UIScale", { Scale = 0.3 }, banner)
 
 	TweenService:Create(
