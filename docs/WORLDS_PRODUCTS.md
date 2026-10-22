@@ -13,13 +13,14 @@ larger in each later world: World 2 +10 -> +100, World 3 +40 -> +275, World 4 +8
 (prices end in 9). Paying Robux skips the original-ball requirement and also gives the original.
 After any skin purchase the ball is auto-equipped (the server validates the equip).
 
-## Developer Products to create (49 price points, one product per price)
-19, 25, 29, 39, 49, 59, 69, 89, 99, 109, 119, 129, 139, 149, 159, 169, 189, 199, 209, 229, 239, 249, 259, 279, 299, 309, 319, 349, 359, 369, 389, 399, 409, 439, 449, 469, 479, 509, 549, 559, 599, 609, 659, 679, 699, 759, 779, 849, 949
-
-Name each product after its price, then paste its id into `src/server/SkinProducts.luau`
-(`[price] = productId`). A price left at `0` shows "SOON" and cannot be bought; the server warns
-about prices missing from that file. The server decides which skin a purchase grants from its own
-pending record, never from the client.
+## Developer Products (60, one per evolved ball per world)
+Each product is named after its ball and world ("Pro Alley Voltage", "Master Arena Meteor",
+"GrandMaster Oil Barrel") so the Robux prompt shows the right item. Their ids live in
+`src/server/SkinProducts.luau` as `[ballId] = { [2] = ..., [3] = ..., [4] = ... }`
+(World 2 = Pro Alley, 3 = Master Arena, 4 = GrandMaster). All 60 pasted prices were checked
+against `WorldConfig`'s planned prices (0 mismatches). The server only grants a purchase when the
+product bought is the one for the ball and world in its own pending record.
 
 ## Status
-Wins route and shop UI built; the Robux route has not been exercised with live product ids.
+Wins route and shop UI built and tested in Studio. The Robux route is wired to the real
+product ids but no live purchase has been made, so it is untested end to end.

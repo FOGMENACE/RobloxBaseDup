@@ -1,51 +1,60 @@
 --------------------------------------------------
 -- PORTAL ANIMATOR
 --
--- CLIENT ONLY, visual. The WORLDS portal (built by WorldService) tags its
--- spokes and runes "PortalSpin"; each frame this turns them about the
--- disc's axis, locally, so the portal swirls without any server traffic.
+-- CLIENT ONLY, visual. The WORLDS portal (built by WorldService) tags the
+-- gradients of its swirl "PortalSwirl" and its floor chevrons "PortalChevron".
+-- A single loop turns the gradients and ripples the chevrons toward the wall,
+-- locally, so there is no per-part physics or server traffic.
 --------------------------------------------------
 
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 
-local parts = {}
-local VIEW_DISTANCE = 160
+local swirls = {}
+local chevrons = {}
 
-local function add(instance)
-	if instance:IsA("BasePart") then
-		parts[instance] = true
+local function track(set)
+	return function(instance)
+		set[instance] = true
 	end
 end
 
-for _, instance in ipairs(CollectionService:GetTagged("PortalSpin")) do
-	add(instance)
+local function untrack(set)
+	return function(instance)
+		set[instance] = nil
+	end
 end
-CollectionService:GetInstanceAddedSignal("PortalSpin"):Connect(add)
-CollectionService:GetInstanceRemovedSignal("PortalSpin"):Connect(function(instance)
-	parts[instance] = nil
-end)
+
+for _, instance in ipairs(CollectionService:GetTagged("PortalSwirl")) do
+	swirls[instance] = true
+end
+for _, instance in ipairs(CollectionService:GetTagged("PortalChevron")) do
+	chevrons[instance] = true
+end
+CollectionService:GetInstanceAddedSignal("PortalSwirl"):Connect(track(swirls))
+CollectionService:GetInstanceAddedSignal("PortalChevron"):Connect(track(chevrons))
+CollectionService:GetInstanceRemovedSignal("PortalSwirl"):Connect(untrack(swirls))
+CollectionService:GetInstanceRemovedSignal("PortalChevron"):Connect(untrack(chevrons))
 
 RunService.RenderStepped:Connect(function()
-	local camera = workspace.CurrentCamera
-	if not camera then
-		return
+	local now = os.clock()
+
+	for gradient in pairs(swirls) do
+		if not gradient.Parent then
+			swirls[gradient] = nil
+		else
+			gradient.Rotation = (now * (gradient:GetAttribute("SpinSpeed") or 60)) % 360
+		end
 	end
 
-	local now = os.clock()
-	local cameraPosition = camera.CFrame.Position
-
-	for part in pairs(parts) do
-		if not part.Parent then
-			parts[part] = nil
+	-- a pulse runs along the three chevrons toward the portal
+	for bar in pairs(chevrons) do
+		if not bar.Parent then
+			chevrons[bar] = nil
 		else
-			local center = part:GetAttribute("PortalCenter")
-			local offset = part:GetAttribute("PortalOffset")
-			local speed = part:GetAttribute("SpinSpeed")
-			if typeof(center) == "Vector3" and typeof(offset) == "CFrame" and typeof(speed) == "number"
-				and (center - cameraPosition).Magnitude < VIEW_DISTANCE then
-				part.CFrame = CFrame.new(center) * CFrame.Angles(now * speed, 0, 0) * offset
-			end
+			local index = bar:GetAttribute("ChevronIndex") or 1
+			local wave = (math.sin(now * 4 + index * 1.4) + 1) / 2
+			bar.Transparency = 0.7 - wave * 0.65
 		end
 	end
 end)

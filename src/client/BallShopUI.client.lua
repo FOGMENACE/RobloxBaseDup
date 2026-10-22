@@ -787,7 +787,7 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 
 		local price = WorldConfig.SkinRobuxPrice(ball.BallId, worldId)
 		if price and not (ball.BallId == "OilBarrel" and not ball.Owned) then
-			local onSale = string.find("," .. tostring(ReplicatedStorage:GetAttribute("SkinSalePrices") or "") .. ",", "," .. price .. ",", 1, true) ~= nil
+			local onSale = string.find("," .. tostring(ReplicatedStorage:GetAttribute("SkinSaleKeys") or "") .. ",", "," .. WorldConfig.SkinKey(ball.BallId, worldId) .. ",", 1, true) ~= nil
 			-- always show the price; until its Developer Product exists the button just says so when pressed
 			local robux = makeButton(actions, 2, " " .. price, ROBUX, true)
 			robux.Activated:Connect(function()

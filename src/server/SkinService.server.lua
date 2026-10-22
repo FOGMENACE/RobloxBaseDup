@@ -34,20 +34,25 @@ if not skinShop then
 	skinShop.Parent = remotes
 end
 
--- price points that already have a Developer Product: the shop shows SOON for the rest
+-- skins that already have a Developer Product ("Ball@World"): the shop shows the price but
+-- "opens soon" for the rest
 local live = {}
-for price, productId in pairs(SkinProducts) do
-	if productId ~= 0 then
-		table.insert(live, price)
+for ballId, row in pairs(SkinProducts) do
+	for worldId, productId in pairs(row) do
+		if productId ~= 0 then
+			table.insert(live, WorldConfig.SkinKey(ballId, worldId))
+		end
 	end
 end
 table.sort(live)
-for _, price in ipairs(WorldConfig.SkinRobuxTiers) do
-	if SkinProducts[price] == nil then
-		warn("[SkinService] SkinProducts.luau has no entry for the R$" .. price .. " tier")
+for ballId in pairs(WorldConfig.SkinRobux) do
+	for worldId = 2, #WorldConfig.Worlds do
+		if not (SkinProducts[ballId] and SkinProducts[ballId][worldId]) then
+			warn("[SkinService] SkinProducts.luau has no entry for " .. WorldConfig.SkinKey(ballId, worldId))
+		end
 	end
 end
-ReplicatedStorage:SetAttribute("SkinSalePrices", table.concat(live, ","))
+ReplicatedStorage:SetAttribute("SkinSaleKeys", table.concat(live, ","))
 
 local owned = {} -- [player] = { [key] = true }
 local pendingRobux = {} -- [player] = { Key, BallId, WorldId, ProductId, At }
@@ -129,8 +134,8 @@ skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 		if not world then
 			return finish(false, key)
 		end
-		local price = WorldConfig.SkinRobuxPrice(ballId, worldId)
-		local productId = price and SkinProducts[price]
+		local row = SkinProducts[ballId]
+		local productId = row and row[worldId]
 		if not productId or productId == 0 then
 			return finish(false, "NotOnSale")
 		end
@@ -165,39 +170,42 @@ skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 	finish(true, "Bought", key)
 end)
 
--- Robux receipts: one product per price point serves every ball at that price,
--- so the grant is the skin THIS player asked for (the server-side pending
--- record). No pending record = nothing granted and the receipt stays pending.
-for price, productId in pairs(SkinProducts) do
-	if productId ~= 0 then
-		PurchaseService.RegisterProduct(productId, function(player, receiptInfo)
-			if not player or not player:IsDescendantOf(Players) or not loaded[player] then
-				return false
-			end
-			local pending = pendingRobux[player]
-			if not pending or pending.ProductId ~= receiptInfo.ProductId or os.clock() - pending.At > 1800 then
-				warn("[AUDIT] skin product bought without a matching request, NOT granted:", player.Name, receiptInfo.PurchaseId)
-				return false
-			end
-			-- re-validated at the receipt: a modified client can prompt any product
-			if not WorldConfig.Unlocked(PlayerDataService.GetRebirths(player), pending.WorldId) then
-				return false
-			end
-			if pending.BallId == "OilBarrel" and not PlayerDataService.OwnsBall(player, "OilBarrel") then
-				return false
-			end
-			return ReceiptLedger.Consume(player, receiptInfo, function()
-				owned[player][pending.Key] = true
-				if pending.BallId ~= "OilBarrel" then
-					PlayerDataService.AddOwnedBall(player, pending.BallId) -- the original comes with it
+-- Robux receipts: the grant is the skin THIS player asked for (the server-side pending
+-- record), and it must be the product made for that exact ball and world. No pending
+-- record = nothing granted and the receipt stays pending.
+for productBall, row in pairs(SkinProducts) do
+	for productWorld, productId in pairs(row) do
+		if productId ~= 0 then
+			PurchaseService.RegisterProduct(productId, function(player, receiptInfo)
+				if not player or not player:IsDescendantOf(Players) or not loaded[player] then
+					return false
 				end
-				publish(player)
-				return save(player)
-			end, function(buyer)
-				pendingRobux[buyer] = nil
-				reply(buyer, true, "Bought", pending.Key)
+				local pending = pendingRobux[player]
+				if not pending or pending.ProductId ~= receiptInfo.ProductId or os.clock() - pending.At > 1800
+					or pending.BallId ~= productBall or pending.WorldId ~= productWorld then
+					warn("[AUDIT] skin product bought without a matching request, NOT granted:", player.Name, receiptInfo.PurchaseId)
+					return false
+				end
+				-- re-validated at the receipt: a modified client can prompt any product
+				if not WorldConfig.Unlocked(PlayerDataService.GetRebirths(player), pending.WorldId) then
+					return false
+				end
+				if pending.BallId == "OilBarrel" and not PlayerDataService.OwnsBall(player, "OilBarrel") then
+					return false
+				end
+				return ReceiptLedger.Consume(player, receiptInfo, function()
+					owned[player][pending.Key] = true
+					if pending.BallId ~= "OilBarrel" then
+						PlayerDataService.AddOwnedBall(player, pending.BallId) -- the original comes with it
+					end
+					publish(player)
+					return save(player)
+				end, function(buyer)
+					pendingRobux[buyer] = nil
+					reply(buyer, true, "Bought", pending.Key)
+				end)
 			end)
-		end)
+		end
 	end
 end
 

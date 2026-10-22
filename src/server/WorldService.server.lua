@@ -62,77 +62,107 @@ local portals = {} -- { Position, From, To }
 -- The WORLDS portal in every lobby: rolling into it opens the WORLDS menu.
 local machines = {} -- portal centre positions
 
+-- Simple wall portal: a dark stone-look ring around a swirling disc (a SurfaceGui whose
+-- gradient layers turn on the client, see PortalAnimator), and a floor pad with chevrons
+-- pointing at it. About a dozen parts and no per-part animation.
 local function makePortal(parent, position, toWorld, label, color)
 	local model = Instance.new("Model")
 	model.Name = "Portal_To_" .. toWorld
-	local function ring(name, size, y, transparency, material, c)
+
+	local hue = color:ToHSV()
+	local accent = Color3.fromHSV((hue + 0.16) % 1, 0.75, 1)
+
+	local function disc(name, diameter, thickness, dx, material, c, transparency)
 		local p = Instance.new("Part")
 		p.Name = name
-		p.Shape = Enum.PartType.Cylinder
-		p.Size = size
-		p.CFrame = CFrame.new(position + Vector3.new(0, y, 0)) -- cylinder axis along X: a vertical disc on the wall
+		p.Shape = Enum.PartType.Cylinder -- axis along X: a vertical disc on the wall
+		p.Size = Vector3.new(thickness, diameter, diameter)
+		p.CFrame = CFrame.new(position + Vector3.new(dx, 0, 0))
 		p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery, p.CastShadow = true, false, false, false, false
 		p.Material = material
 		p.Color = c
-		p.Transparency = transparency
+		p.Transparency = transparency or 0
 		p.Parent = model
 		return p
 	end
-	ring("Rim", Vector3.new(0.2, 11, 11), 0.05, 0, Enum.Material.Neon, color)
-	local core = ring("Core", Vector3.new(0.25, 9.6, 9.6), 0.08, 0.15, Enum.Material.ForceField, color)
+	local function slab(name, size, cframe, material, c, transparency)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Size = size
+		p.CFrame = cframe
+		p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery, p.CastShadow = true, false, false, false, false
+		p.Material = material
+		p.Color = c
+		p.Transparency = transparency or 0
+		p.Parent = model
+		return p
+	end
 
-	-- extra detail: dark metal frame, glowing inner ring, spinning spokes and runes
-	-- (the client turns every part tagged "PortalSpin", see PortalAnimator)
-	local hue = color:ToHSV()
-	local accent = Color3.fromHSV((hue + 0.18) % 1, 0.7, 1)
-	local function spin(p, speed)
-		p:SetAttribute("PortalCenter", position)
-		p:SetAttribute("PortalOffset", CFrame.new(position):ToObjectSpace(p.CFrame))
-		p:SetAttribute("SpinSpeed", speed)
-		CollectionService:AddTag(p, "PortalSpin")
-	end
-	local frame = ring("Frame", Vector3.new(0.7, 13.8, 13.8), 0, 0, Enum.Material.Metal, Color3.fromRGB(26, 24, 44))
-	frame.CFrame = frame.CFrame + Vector3.new(-0.35, 0, 0)
-	local dark = ring("DarkRing", Vector3.new(0.3, 10.6, 10.6), 0.02, 0, Enum.Material.SmoothPlastic, Color3.fromRGB(18, 16, 40))
-	dark.CFrame = dark.CFrame + Vector3.new(-0.05, 0, 0)
-	local inner = ring("InnerRing", Vector3.new(0.2, 8.6, 8.6), 0.06, 0.35, Enum.Material.Neon, accent)
-	inner.CFrame = inner.CFrame + Vector3.new(0.05, 0, 0)
-	local eye = ring("Eye", Vector3.new(0.2, 2.4, 2.4), 0.07, 0.1, Enum.Material.Neon, Color3.new(1, 1, 1))
-	eye.CFrame = eye.CFrame + Vector3.new(0.12, 0, 0)
+	-- ring + glowing rim
+	disc("Frame", 13.4, 0.7, -0.35, Enum.Material.Slate, Color3.fromRGB(44, 46, 84))
+	disc("Rim", 11.4, 0.25, 0, Enum.Material.Neon, color)
 
-	for index = 1, 6 do
-		local spoke = Instance.new("Part")
-		spoke.Name = "Spoke" .. index
-		spoke.Size = Vector3.new(0.12, 0.5, 8.4)
-		spoke.CFrame = CFrame.new(position) * CFrame.Angles(index * math.pi / 6, 0, 0) + Vector3.new(0.18, 0, 0)
-		spoke.Anchored, spoke.CanCollide, spoke.CanTouch, spoke.CanQuery, spoke.CastShadow = true, false, false, false, false
-		spoke.Material = Enum.Material.Neon
-		spoke.Color = (index % 2 == 0) and color or accent
-		spoke.Transparency = 0.4
-		spoke.Parent = model
-		spin(spoke, 0.6)
+	-- the swirl: layered gradient circles, turned by the client
+	local core = disc("Core", 10.4, 0.2, 0.05, Enum.Material.SmoothPlastic, Color3.fromRGB(14, 18, 44))
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Right
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+	gui.CanvasSize = Vector2.new(400, 400)
+	gui.LightInfluence = 0
+	gui.Brightness = 1.4
+	gui.Parent = core
+	local layers = {
+		{ size = 1.0, speed = 35, from = color, to = color:Lerp(Color3.fromRGB(20, 24, 80), 0.7), transparency = 0 },
+		{ size = 0.82, speed = -60, from = accent, to = accent:Lerp(Color3.fromRGB(30, 20, 90), 0.6), transparency = 0.1 },
+		{ size = 0.6, speed = 95, from = Color3.new(1, 1, 1), to = color, transparency = 0.2 },
+		{ size = 0.34, speed = -140, from = Color3.new(1, 1, 1), to = accent, transparency = 0.05 },
+	}
+	for _, layer in ipairs(layers) do
+		local circle = Instance.new("Frame")
+		circle.AnchorPoint = Vector2.new(0.5, 0.5)
+		circle.Position = UDim2.fromScale(0.5, 0.5)
+		circle.Size = UDim2.fromScale(layer.size, layer.size)
+		circle.BackgroundColor3 = Color3.new(1, 1, 1)
+		circle.BackgroundTransparency = layer.transparency
+		circle.BorderSizePixel = 0
+		circle.Parent = gui
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0.5, 0)
+		corner.Parent = circle
+		local gradient = Instance.new("UIGradient")
+		-- hard stripes read as swirling arms once the gradient turns
+		gradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, layer.from),
+			ColorSequenceKeypoint.new(0.2, layer.to),
+			ColorSequenceKeypoint.new(0.33, layer.from),
+			ColorSequenceKeypoint.new(0.53, layer.to),
+			ColorSequenceKeypoint.new(0.66, layer.from),
+			ColorSequenceKeypoint.new(0.86, layer.to),
+			ColorSequenceKeypoint.new(1, layer.from),
+		})
+		gradient.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.2, 0.45),
+			NumberSequenceKeypoint.new(0.33, 0),
+			NumberSequenceKeypoint.new(0.53, 0.45),
+			NumberSequenceKeypoint.new(0.66, 0),
+			NumberSequenceKeypoint.new(0.86, 0.45),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		gradient:SetAttribute("SpinSpeed", layer.speed)
+		CollectionService:AddTag(gradient, "PortalSwirl")
+		gradient.Parent = circle
 	end
-	for index = 1, 12 do
-		local angle = index * math.pi * 2 / 12
-		local rune = Instance.new("Part")
-		rune.Name = "Rune" .. index
-		rune.Size = Vector3.new(0.35, 0.9, 0.5)
-		rune.CFrame = CFrame.new(position) * CFrame.Angles(angle, 0, 0) * CFrame.new(0.05, 6.35, 0)
-		rune.Anchored, rune.CanCollide, rune.CanTouch, rune.CanQuery, rune.CastShadow = true, false, false, false, false
-		rune.Material = Enum.Material.Neon
-		rune.Color = (index % 2 == 0) and color or accent
-		rune.Parent = model
-		spin(rune, -0.3)
-	end
+
 	local mist = Instance.new("ParticleEmitter")
 	mist.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	mist.Rate = 18
+	mist.Rate = 10
 	mist.Lifetime = NumberRange.new(1.2, 2)
 	mist.Speed = NumberRange.new(2, 4)
 	mist.EmissionDirection = Enum.NormalId.Right
 	mist.SpreadAngle = Vector2.new(25, 25)
 	mist.Color = ColorSequence.new(color)
-	mist.Size = NumberSequence.new(0.6, 0)
+	mist.Size = NumberSequence.new(0.5, 0)
 	mist.LightEmission = 1
 	mist.Parent = core
 	local light = Instance.new("PointLight")
@@ -141,18 +171,21 @@ local function makePortal(parent, position, toWorld, label, color)
 	light.Brightness = 2
 	light.Parent = core
 
-	-- glowing floor pad where the ball must roll to use it (flat disc, like the old platform)
-	local pad = Instance.new("Part")
-	pad.Name = "FloorPad"
-	pad.Shape = Enum.PartType.Cylinder
-	pad.Size = Vector3.new(0.15, 9, 9)
-	pad.CFrame = CFrame.new(position.X + PAD_OFFSET_X, FLOOR_PAD_Y + 0.05, position.Z) * CFrame.Angles(0, 0, math.pi / 2)
-	pad.Anchored, pad.CanCollide, pad.CanTouch, pad.CanQuery, pad.CastShadow = true, false, false, false, false
-	pad.Material = Enum.Material.Neon
-	pad.Color = color
-	pad.Transparency = 0.45
-	pad.Parent = model
-
+	-- floor pad with chevrons pointing at the wall disc (roll onto it to open the menu)
+	local padCenter = Vector3.new(position.X + PAD_OFFSET_X, FLOOR_PAD_Y + 0.06, position.Z)
+	slab("FloorPad", Vector3.new(8.4, 0.12, 7.6), CFrame.new(padCenter), Enum.Material.Slate, Color3.fromRGB(44, 46, 84))
+	for _, side in ipairs({ -1, 1 }) do
+		slab("PadEdge", Vector3.new(8.4, 0.14, 0.35), CFrame.new(padCenter + Vector3.new(0, 0.02, side * 3.6)), Enum.Material.Neon, color)
+	end
+	for index = 1, 3 do
+		local tip = padCenter + Vector3.new((index - 2) * 2.3 - 1.2, 0.08, 0) -- tip points toward the wall (-X)
+		for _, side in ipairs({ -1, 1 }) do
+			local center = tip + Vector3.new(1.0, 0, side * 1.0)
+			local bar = slab("Chevron" .. index, Vector3.new(0.5, 0.1, 2.0), CFrame.lookAt(center, tip), Enum.Material.Neon, accent)
+			bar:SetAttribute("ChevronIndex", index)
+			CollectionService:AddTag(bar, "PortalChevron")
+		end
+	end
 	local sign = Instance.new("Part")
 	sign.Name = "SignAnchor"
 	sign.Size = Vector3.new(1, 1, 1)

@@ -765,8 +765,10 @@ UserInputService.WindowFocusReleased:Connect(
 --------------------------------------------------
 
 local LOCAL_JUMP_VELOCITY = 40
-local LOCAL_JUMP_COOLDOWN = 0.4
+local LOCAL_JUMP_COOLDOWN = 0.12 -- just enough that one press cannot fire twice
+local JUMP_BUFFER = 0.2 -- a press a hair before landing still jumps on touchdown
 local lastLocalJump = 0
+local jumpBufferedUntil = 0
 
 local function getOwnBall()
 	local balls = workspace:FindFirstChild("PlayerBalls")
@@ -805,10 +807,11 @@ RunService.RenderStepped:Connect(function()
 	)
 end)
 
+-- Returns true when the ball really jumped.
 local function localJump(ball)
 	local now = os.clock()
 	if now - lastLocalJump < LOCAL_JUMP_COOLDOWN then
-		return
+		return false
 	end
 
 	local params = RaycastParams.new()
@@ -821,16 +824,22 @@ local function localJump(ball)
 	local radius = ball.Size.Y * 0.5
 	local hit = workspace:Raycast(
 		ball.Position,
-		Vector3.new(0, -(radius + 0.75), 0),
+		Vector3.new(0, -(radius + 1.1), 0), -- a little slack so a landing bounce still counts as ground
 		params
 	)
 	if not hit then
-		return
+		return false
+	end
+
+	-- already flying upward from a jump: do not stack another one
+	local v = ball.AssemblyLinearVelocity
+	if v.Y > 12 then
+		return false
 	end
 
 	lastLocalJump = now
-	local v = ball.AssemblyLinearVelocity
 	ball.AssemblyLinearVelocity = Vector3.new(v.X, LOCAL_JUMP_VELOCITY, v.Z)
+	return true
 end
 
 --------------------------------------------------
@@ -844,7 +853,7 @@ end
 
 local lastJumpSent = 0
 
-local function requestJump()
+local function requestJump(held)
 	if UserInputService:GetFocusedTextBox() then
 		return
 	end
@@ -854,22 +863,30 @@ local function requestJump()
 		return
 	end
 
+	local ownBall = getOwnBall()
+	if isClientDriven(ownBall) then
+		if localJump(ownBall) then
+			jumpBufferedUntil = 0
+		elseif held ~= true then
+			-- not on the ground yet: remember the press so it fires on touchdown
+			jumpBufferedUntil = os.clock() + JUMP_BUFFER
+		end
+		return
+	end
+
+	-- server-driven ball: the remote is rate limited
 	local now = os.clock()
 	if now - lastJumpSent < 0.25 then
 		return
 	end
 	lastJumpSent = now
-	local ownBall = getOwnBall()
-	if isClientDriven(ownBall) then
-		localJump(ownBall)
-		return
-	end
-
 
 	ballMovement:FireServer(getLobbyMovement(), true)
 end
 
-UserInputService.JumpRequest:Connect(requestJump)
+UserInputService.JumpRequest:Connect(function()
+	requestJump(false)
+end)
 
 -- HOLD TO KEEP JUMPING: JumpRequest only fires on the press, so while the key
 -- (or gamepad A / the touch button) stays down the ball jumps again as soon
@@ -898,7 +915,13 @@ end)
 
 RunService.Heartbeat:Connect(function()
 	if jumpHeld then
-		requestJump()
+		requestJump(true)
+	elseif jumpBufferedUntil > 0 then
+		if os.clock() > jumpBufferedUntil then
+			jumpBufferedUntil = 0
+		else
+			requestJump(true) -- keeps trying until the ball touches down (does not re-buffer)
+		end
 	end
 end)
 
@@ -1026,7 +1049,9 @@ if UserInputService.TouchEnabled then
 	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = button
 
-	button.Activated:Connect(requestJump)
+	button.Activated:Connect(function()
+		requestJump(false)
+	end)
 	-- holding the touch button keeps jumping too
 	button.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
