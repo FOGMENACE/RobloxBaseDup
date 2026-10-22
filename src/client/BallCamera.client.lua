@@ -68,6 +68,22 @@ local function uiBlocksZoom()
 		return true
 	end
 
+	-- the admin console is open: the wheel scrolls its output, never the camera
+	local adminGui = Players.LocalPlayer.PlayerGui:FindFirstChild("AdminConsole")
+	if adminGui ~= nil and adminGui:IsA("ScreenGui") and adminGui.Enabled then
+		local mouse = UserInputService:GetMouseLocation()
+		local inset = game:GetService("GuiService"):GetGuiInset()
+		local point = mouse - inset -- ScreenGui space (the console ignores no inset)
+		for _, child in ipairs(adminGui:GetChildren()) do
+			if child:IsA("GuiObject") and child.Visible then
+				local p, s = child.AbsolutePosition, child.AbsoluteSize
+				if point.X >= p.X and point.X <= p.X + s.X and point.Y >= p.Y and point.Y <= p.Y + s.Y then
+					return true -- over the console: the wheel scrolls its output
+				end
+			end
+		end
+	end
+
 	-- the mouse is over the hologram leaderboard: the wheel scrolls its lists
 	local camera = workspace.CurrentCamera
 	if camera then
