@@ -386,6 +386,113 @@ local function request(action, ballId)
 end
 
 --------------------------------------------------
+-- "GET THE ORIGINAL FIRST" POPUP (themed worlds)
+--------------------------------------------------
+
+local popup, popupBall = nil, nil
+
+local function closePopup()
+	if popup then
+		popup:Destroy()
+	end
+	popup, popupBall = nil, nil
+end
+
+local function showOriginalPopup(ball, wins, rebirths)
+	closePopup()
+	popupBall = ball.BallId
+	-- full-screen container (covers the top bar too); the dim and the box are SIBLINGS
+	-- so the dim can never sit over the popup or swallow its clicks
+	local inset = game:GetService("GuiService"):GetGuiInset()
+	popup = create("Frame", {
+		Name = "OriginalPopup",
+		Position = UDim2.fromOffset(0, -inset.Y),
+		Size = UDim2.new(1, 0, 1, inset.Y),
+		BackgroundTransparency = 1,
+		ZIndex = 50,
+	}, gui)
+	local dim = create("TextButton", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 50,
+	}, popup)
+	dim.Activated:Connect(closePopup)
+
+	local box = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(320, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = CREAM,
+		Active = true, -- clicks on the box must not reach the dim behind it
+		ZIndex = 51,
+	}, popup)
+	round(box, 14)
+	outline(box, 3)
+	create("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, box)
+	create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center }, box)
+
+	create("TextLabel", {
+		LayoutOrder = 1,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 24),
+		Font = FONT,
+		Text = "GET THE ORIGINAL FIRST",
+		TextColor3 = INK,
+		TextSize = 20,
+	}, box)
+	create("TextLabel", {
+		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 36),
+		Font = FONT,
+		Text = string.upper(ball.DisplayName or ball.BallId) .. "\nneeded to buy its evolved ball.",
+		TextColor3 = Color3.fromRGB(110, 70, 30),
+		TextSize = 14,
+		TextWrapped = true,
+	}, box)
+
+	local locked = (ball.RequiredRebirths or 0) > rebirths
+	local affordable = wins >= (ball.WinsCost or 0)
+	local winsButton = makeButton(
+		box, 3,
+		locked and ("🔒 REBIRTH " .. ball.RequiredRebirths) or (formatNumber(ball.WinsCost or 0) .. " WINS"),
+		LANE, (not locked) and affordable
+	)
+	winsButton.Size = UDim2.new(1, 0, 0, 38)
+	winsButton.Activated:Connect(function()
+		if locked then
+			return
+		elseif affordable then
+			request("BuyWithWins", ball.BallId)
+		else
+			setStatus("You need " .. formatNumber((ball.WinsCost or 0) - wins) .. " more Wins.")
+		end
+	end)
+
+	if ball.HasDeveloperProduct and not ball.IsTutorial then
+		local price = ShopConfig.RobuxPrices[ball.BallId]
+		local robux = makeButton(box, 4, price and (" " .. price) or " BUY", ROBUX, true)
+		robux.Size = UDim2.new(1, 0, 0, 38)
+		robux.Activated:Connect(function()
+			closePopup()
+			request("BuyWithRobux", ball.BallId)
+		end)
+	end
+
+	local close = makeButton(box, 5, "CLOSE", GREY, true)
+	close.Activated:Connect(closePopup)
+
+	for _, d in ipairs(box:GetDescendants()) do
+		if d:IsA("GuiObject") then
+			d.ZIndex = 52
+		end
+	end
+end
+--------------------------------------------------
 -- EVOLVED SKINS (collapsible list under every ball)
 --------------------------------------------------
 
@@ -452,7 +559,7 @@ buildSkins = function(card, ball, wins, rebirths)
 			Size = UDim2.new(1, 0, 0, 40),
 			BackgroundColor3 = Color3.fromRGB(215, 45, 55),
 			Font = FONT,
-			Text = "⚠  OWN THE ROOKIE LANES " .. string.upper(ball.DisplayName or ball.BallId) .. " FIRST TO UNLOCK ITS SKINS WITH WINS",
+			Text = "OWN THE ORIGINAL FIRST TO BUY SKINS WITH WINS",
 			TextColor3 = Color3.new(1, 1, 1),
 			TextSize = 15,
 			TextWrapped = true,
@@ -530,7 +637,7 @@ buildSkins = function(card, ball, wins, rebirths)
 	end
 end
 
-local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice)
+local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice, skinWorld)
 	local card = create("Frame", {
 		Name = ball.BallId,
 		LayoutOrder = (ball.DisplayOrder or 0) * 10,
@@ -563,6 +670,9 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 	}, card)
 
 	local info = {}
+	if skinWorld then
+		table.insert(info, "EVOLVED  •  " .. skinWorld.Name)
+	end
 	if ball.IsTutorial then
 		table.insert(info, "Starter ball")
 	end
@@ -640,6 +750,56 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 	}, actions)
+
+	-- THEMED WORLD: each card IS the evolved ball of this world (Wins or Robux)
+	if skinWorld then
+		local worldId = skinWorld.Id
+		local hasSkin = WorldConfig.OwnsSkin(player, ball.BallId, worldId)
+		if ball.Owned and hasSkin then
+			if ball.Equipped then
+				makeButton(actions, 1, "EQUIPPED", GREEN, false)
+			else
+				local equip = makeButton(actions, 1, "EQUIP", GREEN, true)
+				equip.Activated:Connect(function()
+					request("Equip", ball.BallId)
+				end)
+			end
+			return
+		end
+
+		local cost = WorldConfig.SkinWinsCost(ball.BallId, worldId, ball.WinsCost) or 0
+		if not ball.Owned then
+			local need = makeButton(actions, 1, "🔒 " .. formatNumber(cost) .. " WINS", LANE, true)
+			need.Activated:Connect(function()
+				showOriginalPopup(ball, wins, rebirths)
+			end)
+		elseif wins >= cost then
+			local buy = makeButton(actions, 1, formatNumber(cost) .. " WINS", LANE, true)
+			buy.Activated:Connect(function()
+				skinShop:FireServer("Buy", ball.BallId, worldId)
+			end)
+		else
+			local short = makeButton(actions, 1, formatNumber(cost) .. " WINS", LANE, false)
+			short.Activated:Connect(function()
+				setStatus("You need " .. formatNumber(cost - wins) .. " more Wins.")
+			end)
+		end
+
+		local price = WorldConfig.SkinRobuxPrice(ball.BallId, worldId)
+		if price and not (ball.BallId == "OilBarrel" and not ball.Owned) then
+			local onSale = string.find("," .. tostring(ReplicatedStorage:GetAttribute("SkinSalePrices") or "") .. ",", "," .. price .. ",", 1, true) ~= nil
+			-- always show the price; until its Developer Product exists the button just says so when pressed
+			local robux = makeButton(actions, 2, " " .. price, ROBUX, true)
+			robux.Activated:Connect(function()
+				if onSale then
+					skinShop:FireServer("BuyRobux", ball.BallId, worldId)
+				else
+					setStatus("Robux R$" .. price .. " opens soon.")
+				end
+			end)
+		end
+		return
+	end
 
 	if ball.Owned then
 		if ball.Equipped then
@@ -749,6 +909,11 @@ refresh = function()
 	table.sort(balls, function(a, b)
 		return (a.DisplayOrder or 0) < (b.DisplayOrder or 0)
 	end)
+	for _, ball in ipairs(balls) do
+		if ball.BallId == popupBall and ball.Owned then
+			closePopup()
+		end
+	end
 
 	-- Comparison data for the cards: how fast is the ball you roll now,
 	-- what is the fastest ball, and what is the priciest (legendary) one.
@@ -765,9 +930,30 @@ refresh = function()
 	table.clear(shines)
 	updateBanner(balls)
 
+	local world = WorldConfig.Of(player)
+	local skinWorld = (world.Id >= 2 and world.Theme) and world or nil
+
+	if skinWorld then
+		-- one big, clear rule (not a small hidden note)
+		local rule = create("TextLabel", {
+			Name = "SkinRule",
+			LayoutOrder = -1,
+			Size = UDim2.new(1, -4, 0, 40),
+			BackgroundColor3 = Color3.fromRGB(205, 40, 52),
+			Font = FONT,
+			Text = "EVOLVED BALLS  •  Wins need the original ball  •  Robux skips it",
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 15,
+			TextWrapped = true,
+		}, list)
+		round(rule, 10)
+		outline(rule, 3)
+		create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, rule)
+	end
+
 	for _, ball in ipairs(balls) do
 		if not (ball.IsExclusive and not ball.Owned) then
-			buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice)
+			buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice, skinWorld)
 		end
 	end
 end
@@ -832,6 +1018,9 @@ ballShop.OnClientEvent:Connect(function(kind, result)
 	if kind == "EquipResult" and result.Success then
 		text = "Equipped!"
 	end
+	if kind == "PurchaseResult" and result.Success then
+		closePopup()
+	end
 	setStatus(text)
 
 	if gui.Enabled then
@@ -842,7 +1031,8 @@ end)
 -- skin purchase answers
 local SKIN_REASONS = {
 	Bought = "Skin unlocked! It shows while you roll in that world.",
-	NeedOriginal = "Own the Rookie Lanes ball first.",
+	NeedOriginal = "Get the original ball first!",
+	NotOnSale = "This price is not on sale yet.",
 	NotEnoughWins = "Not enough Wins.",
 	NotInWorld = "Go to that world to buy its skin.",
 	WorldLocked = "That world is still locked.",
@@ -851,6 +1041,11 @@ local SKIN_REASONS = {
 skinShop.OnClientEvent:Connect(function(kind, result)
 	if kind == "Result" and typeof(result) == "table" then
 		setStatus(SKIN_REASONS[result.Reason] or "Could not buy that skin.")
+		-- equip the ball you just bought the skin for (the server checks ownership)
+		local boughtBall = result.Success and typeof(result.Key) == "string" and string.match(result.Key, "^(.-)@")
+		if boughtBall then
+			request("Equip", boughtBall)
+		end
 		if gui.Enabled then
 			refresh()
 		end

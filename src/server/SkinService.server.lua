@@ -19,6 +19,11 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
 local PlayerDataService = require(ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService"))
 
+local MarketplaceService = game:GetService("MarketplaceService")
+local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
+local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
+local SkinProducts = require(script.Parent:WaitForChild("SkinProducts"))
+
 local store = DataStoreService:GetDataStore("WorldSkins_v1")
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -29,7 +34,23 @@ if not skinShop then
 	skinShop.Parent = remotes
 end
 
+-- price points that already have a Developer Product: the shop shows SOON for the rest
+local live = {}
+for price, productId in pairs(SkinProducts) do
+	if productId ~= 0 then
+		table.insert(live, price)
+	end
+end
+table.sort(live)
+for _, price in ipairs(WorldConfig.SkinRobuxTiers) do
+	if SkinProducts[price] == nil then
+		warn("[SkinService] SkinProducts.luau has no entry for the R$" .. price .. " tier")
+	end
+end
+ReplicatedStorage:SetAttribute("SkinSalePrices", table.concat(live, ","))
+
 local owned = {} -- [player] = { [key] = true }
+local pendingRobux = {} -- [player] = { Key, BallId, WorldId, ProductId, At }
 local loaded = {}
 local busy = {}
 
@@ -63,10 +84,34 @@ local function reply(player, success, reason, key)
 	skinShop:FireClient(player, "Result", { Success = success, Reason = reason, Key = key })
 end
 
+-- Checks shared by the Wins and the Robux route. Returns the world and key, or nil + reason.
+local function check(player, ballId, worldId, viaRobux)
+	local world = WorldConfig.Worlds[worldId]
+	if not world or worldId < 2 or not PlayerDataService.IsValidBallId(ballId) then
+		return nil, "Invalid"
+	end
+	if (player:GetAttribute("World") or 1) ~= worldId then
+		return nil, "NotInWorld"
+	end
+	if not WorldConfig.Unlocked(PlayerDataService.GetRebirths(player), worldId) then
+		return nil, "WorldLocked"
+	end
+	local key = WorldConfig.SkinKey(ballId, worldId)
+	if owned[player][key] then
+		return nil, "AlreadyOwned"
+	end
+	-- the Oil Barrel skin always needs the original barrel; every other skin needs
+	-- the original with Wins but not with Robux (that purchase also gives the ball)
+	if (ballId == "OilBarrel" or not viaRobux) and not PlayerDataService.OwnsBall(player, ballId) then
+		return nil, "NeedOriginal"
+	end
+	return world, key
+end
+
 skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 	-- exact integer world ids only (3.5 must never round into world 3)
-	if action ~= "Buy" or typeof(ballId) ~= "string" or #ballId > 40 or typeof(worldId) ~= "number"
-		or worldId ~= worldId or worldId % 1 ~= 0 then
+	if (action ~= "Buy" and action ~= "BuyRobux") or typeof(ballId) ~= "string" or #ballId > 40
+		or typeof(worldId) ~= "number" or worldId ~= worldId or worldId % 1 ~= 0 then
 		return
 	end
 	if busy[player] or not loaded[player] then
@@ -79,22 +124,26 @@ skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 		reply(player, success, reason, key)
 	end
 
-	local world = WorldConfig.Worlds[worldId]
-	if not world or worldId < 2 or not PlayerDataService.IsValidBallId(ballId) then
-		return finish(false, "Invalid")
+	if action == "BuyRobux" then
+		local world, key = check(player, ballId, worldId, true)
+		if not world then
+			return finish(false, key)
+		end
+		local price = WorldConfig.SkinRobuxPrice(ballId, worldId)
+		local productId = price and SkinProducts[price]
+		if not productId or productId == 0 then
+			return finish(false, "NotOnSale")
+		end
+		pendingRobux[player] = { Key = key, BallId = ballId, WorldId = worldId, ProductId = productId, At = os.clock() }
+		busy[player] = nil
+		pcall(function()
+			MarketplaceService:PromptProductPurchase(player, productId)
+		end)
+		return
 	end
-	if (player:GetAttribute("World") or 1) ~= worldId then
-		return finish(false, "NotInWorld")
-	end
-	if not WorldConfig.Unlocked(PlayerDataService.GetRebirths(player), worldId) then
-		return finish(false, "WorldLocked")
-	end
-	local key = WorldConfig.SkinKey(ballId, worldId)
-	if owned[player][key] then
-		return finish(false, "AlreadyOwned")
-	end
-	if not PlayerDataService.OwnsBall(player, ballId) then
-		return finish(false, "NeedOriginal")
+	local world, key = check(player, ballId, worldId, false)
+	if not world then
+		return finish(false, key)
 	end
 	local definition = PlayerDataService.GetBallDefinition(ballId)
 	local cost = WorldConfig.SkinWinsCost(ballId, worldId, definition and definition.WinsCost or 0)
@@ -115,6 +164,42 @@ skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 	end
 	finish(true, "Bought", key)
 end)
+
+-- Robux receipts: one product per price point serves every ball at that price,
+-- so the grant is the skin THIS player asked for (the server-side pending
+-- record). No pending record = nothing granted and the receipt stays pending.
+for price, productId in pairs(SkinProducts) do
+	if productId ~= 0 then
+		PurchaseService.RegisterProduct(productId, function(player, receiptInfo)
+			if not player or not player:IsDescendantOf(Players) or not loaded[player] then
+				return false
+			end
+			local pending = pendingRobux[player]
+			if not pending or pending.ProductId ~= receiptInfo.ProductId or os.clock() - pending.At > 1800 then
+				warn("[AUDIT] skin product bought without a matching request, NOT granted:", player.Name, receiptInfo.PurchaseId)
+				return false
+			end
+			-- re-validated at the receipt: a modified client can prompt any product
+			if not WorldConfig.Unlocked(PlayerDataService.GetRebirths(player), pending.WorldId) then
+				return false
+			end
+			if pending.BallId == "OilBarrel" and not PlayerDataService.OwnsBall(player, "OilBarrel") then
+				return false
+			end
+			return ReceiptLedger.Consume(player, receiptInfo, function()
+				owned[player][pending.Key] = true
+				if pending.BallId ~= "OilBarrel" then
+					PlayerDataService.AddOwnedBall(player, pending.BallId) -- the original comes with it
+				end
+				publish(player)
+				return save(player)
+			end, function(buyer)
+				pendingRobux[buyer] = nil
+				reply(buyer, true, "Bought", pending.Key)
+			end)
+		end)
+	end
+end
 
 local function onJoin(player)
 	owned[player] = {}
@@ -145,7 +230,7 @@ end
 
 Players.PlayerRemoving:Connect(function(player)
 	save(player)
-	owned[player], loaded[player], busy[player] = nil, nil, nil
+	owned[player], loaded[player], busy[player], pendingRobux[player] = nil, nil, nil, nil
 end)
 
 game:BindToClose(function()

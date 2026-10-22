@@ -213,6 +213,7 @@ local function make(ball, spec)
 	end
 
 	part.Name = "Acc_" .. spec.Name
+	part:SetAttribute("AccKind", kind)
 	part.Size = spec.Size * scale
 	part.Color = spec.Color or CREAM
 	part.Material = spec.Mat or Enum.Material.SmoothPlastic
@@ -1010,7 +1011,7 @@ designs.SingleKnot = function(ball)
 		local c = piece.Center
 		P(ball, "Dragon" .. piece.Key, "Block", piece.Size * DRAGON_SCALE, CFrame.new(Vector3.new(c.X, c.Y, -c.Z) * DRAGON_SCALE + shift / scaleOf(ball)), piece.Color, {
 			Template = dragonTemplates[piece.Key], Mat = piece.Mat, Refl = piece.Refl, Transp = piece.Transp,
-			Mode = "Upright", Spin = 1.1, Bob = 0.35, BobSpeed = 1.6,
+			Mode = "Upright", Spin = -1.1, Bob = 0.35, BobSpeed = 1.6,
 		})
 	end
 	if dragonTemplates.Knot then
@@ -1018,7 +1019,7 @@ designs.SingleKnot = function(ball)
 			Template = dragonTemplates.Knot, Mat = Enum.Material.Fabric, Mode = "Upright",
 		})
 	end
-	local fire = P(ball, "DragonBreath", "Ball", Vector3.new(0.3, 0.3, 0.3), CFrame.new(Vector3.new(4.4, 1.6, -1.5) * 0.75), rgb(255, 140, 40), { Mode = "Upright", Transp = 1, Spin = 1.1, Bob = 0.35, BobSpeed = 1.6 })
+	local fire = P(ball, "DragonBreath", "Ball", Vector3.new(0.3, 0.3, 0.3), CFrame.new(Vector3.new(4.4, 1.6, -1.5) * 0.75), rgb(255, 140, 40), { Mode = "Upright", Transp = 1, Spin = -1.1, Bob = 0.35, BobSpeed = 1.6 })
 	emitter(fire, {
 		Texture = FIRE, Rate = 22, Lifetime = NumberRange.new(0.3, 0.6), Speed = NumberRange.new(3, 6),
 		SpreadAngle = Vector2.new(15, 15), Color = ColorSequence.new(rgb(255, 200, 80), rgb(255, 60, 20)),
@@ -1360,12 +1361,64 @@ local function barrelFrame(ball, now)
 end
 
 -- Animate Upright / Orbit parts. `now` is a time in seconds.
+-- Spikes/prongs built on the SERVER are plain blocks (code-built cone meshes do
+-- not replicate). Each client swaps them for the real cone locally so a rolling
+-- ball looks exactly like its shop preview. Returns the new part, or nil.
+local function upgradeProng(ball, old)
+	if not coneTemplate then
+		return nil
+	end
+	local new = coneTemplate:Clone()
+	pcall(function()
+		new:ApplyMesh(coneTemplate)
+	end)
+	new.Name = old.Name
+	new.Size = old.Size
+	new.Color = old.Color
+	new.Material = old.Material
+	new.Transparency = old.Transparency
+	new.Reflectance = old.Reflectance
+	new.DoubleSided = false
+	new.Massless = true
+	new.CanCollide = false
+	new.CanTouch = false
+	new.CanQuery = false
+	new.CastShadow = false
+	new.Anchored = old.Anchored
+	for key, value in pairs(old:GetAttributes()) do
+		new:SetAttribute(key, value)
+	end
+	new:SetAttribute("AccKind", "Cone")
+
+	local oldWeld = old:FindFirstChild("AccWeld")
+	local weld = Instance.new("Weld")
+	weld.Name = "AccWeld"
+	weld.Part0 = ball
+	weld.Part1 = new
+	weld.C0 = oldWeld and oldWeld.C0 or CFrame.new()
+	weld.Enabled = oldWeld == nil or oldWeld.Enabled
+	weld.Parent = new
+	new.CFrame = old.CFrame
+
+	for _, extra in ipairs(old:GetChildren()) do
+		if extra ~= oldWeld then
+			extra.Parent = new
+		end
+	end
+	new.Parent = ball
+	old:Destroy()
+	return new
+end
+
 function BallAccessories.Pose(ball, now)
 	local scale = scaleOf(ball)
 	local center = ball.Position
 	local yawCF, spinCF, barrelSpeed = nil, nil, nil
 
 	for _, child in ipairs(ball:GetChildren()) do
+		if IS_CLIENT and child.ClassName == "Part" and child:GetAttribute("AccKind") == "Pyramid" then
+			child = upgradeProng(ball, child) or child
+		end
 		if child:IsA("BasePart") then
 			local mode = child:GetAttribute("AccMode")
 			local animPhase = child:GetAttribute("AnimPhase") or 0

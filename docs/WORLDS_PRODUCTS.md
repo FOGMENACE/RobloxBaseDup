@@ -1,58 +1,25 @@
-# Worlds: products to create
+# Evolved skin products (Worlds 2-4)
 
-Create these in Creator Hub (your experience > Monetization), then send me the IDs. Prices are my recommendations; each world costs more than the one before.
+Evolved balls are sold with Wins (server-validated) or Robux (Developer Products).
+Pricing lives in `src/shared/WorldConfig.luau`. The original lobby (World 1) shop is unchanged.
 
-## 1. Admin XP generator Game Passes (Monetization > Passes)
+## Wins price
+`max(original WinsCost, 300) * world multiplier` (World 2 x3, World 3 x8, World 4 x20), two significant figures.
+The Oil Barrel uses fixed prices. Wins need the Rookie Lanes original first (the shop offers a popup to buy it).
 
-| World | Pass | Multiplier | Price |
-|---|---|---|---|
-| Pro Alley (2) | Admin XP II | x200 | R$ 1,499 |
-| Pro Alley (2) | Admin XP II MAX | x1300 | R$ 4,999 |
-| Master Arena (3) | Admin XP III | x400 | R$ 2,999 |
-| Master Arena (3) | Admin XP III MAX | x2600 | R$ 9,999 |
-| Grandmaster Palace (4) | Admin XP IV | x800 | R$ 5,999 |
-| Grandmaster Palace (4) | Admin XP IV MAX | x5200 | R$ 19,999 |
+## Robux price
+Original lobby Robux price + an extra that grows from the slowest to the fastest ball and is
+larger in each later world: World 2 +10 -> +100, World 3 +40 -> +275, World 4 +85 -> +450
+(prices end in 9). Paying Robux skips the original-ball requirement and also gives the original.
+After any skin purchase the ball is auto-equipped (the server validates the equip).
 
-These go into `GamePassConfig.WorldAdminGenerators` in `src/server/GamePassConfig.luau`.
+## Developer Products to create (49 price points, one product per price)
+19, 25, 29, 39, 49, 59, 69, 89, 99, 109, 119, 129, 139, 149, 159, 169, 189, 199, 209, 229, 239, 249, 259, 279, 299, 309, 319, 349, 359, 369, 389, 399, 409, 439, 449, 469, 479, 509, 549, 559, 599, 609, 659, 679, 699, 759, 779, 849, 949
 
-## 2. Re-themed ball Developer Products (Monetization > Developer Products)
+Name each product after its price, then paste its id into `src/server/SkinProducts.luau`
+(`[price] = productId`). A price left at `0` shows "SOON" and cannot be bought; the server warns
+about prices missing from that file. The server decides which skin a purchase grants from its own
+pending record, never from the client.
 
-The server uses one product per price point and records which ball you clicked, so you don't need one product per ball. Slower balls are cheaper and faster balls cost more. Each world uses a higher band.
-
-| Product name | Price |
-|---|---|
-| Ball Tier 1 | R$ 49 |
-| Ball Tier 2 | R$ 99 |
-| Ball Tier 3 | R$ 149 |
-| Ball Tier 4 | R$ 249 |
-| Ball Tier 5 | R$ 399 |
-| Ball Tier 6 | R$ 599 |
-| Ball Tier 7 | R$ 899 |
-| Ball Tier 8 | R$ 1,299 |
-| Ball Tier 9 | R$ 1,799 |
-| Ball Tier 10 | R$ 2,499 |
-
-Which balls use which tier:
-- **Pro Alley:** slowest uses Tier 1, fastest uses Tier 6.
-- **Master Arena:** Tier 3 to Tier 8.
-- **Grandmaster Palace:** Tier 5 to Tier 10.
-
-## 3. Rainbow Oil Barrel world skins (Developer Products)
-
-These can only be bought by players who own the original Oil Barrel pass. Each is the fastest ball in its world (+5 speed over that world's fastest).
-
-| Skin | Price |
-|---|---|
-| Barrel: Pro Alley | R$ 3,499 |
-| Barrel: Master Arena | R$ 6,999 |
-| Barrel: Grandmaster Palace | R$ 12,999 |
-
-## What to send me
-
-Send the IDs in this format:
-
-```
-AdminXP-II: <id>, AdminXP-II-MAX: <id>, ... (6 pass ids)
-BallTier1: <id> ... BallTier10: <id>
-Barrel2: <id>, Barrel3: <id>, Barrel4: <id>
-```
+## Status
+Wins route and shop UI built; the Robux route has not been exercised with live product ids.

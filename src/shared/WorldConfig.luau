@@ -79,15 +79,76 @@ WorldConfig.Worlds = {
 	},
 }
 
--- EVOLVED SKINS: a world's skin of a ball (owning the Rookie Lanes original is
--- required to buy it with Wins). Wins price = max(ball WinsCost, MinWins) * mult.
+-- EVOLVED BALLS (a world's version of a ball). In a themed world the ball shop
+-- sells these instead of the plain originals.
+--   Wins : max(ball WinsCost, 300) x WinsMult, rounded to 2 significant figures
+--          (needs the Rookie Lanes original of the ball first).
+--   Robux: WorldConfig.SkinRobux[ballId][worldId - 1] - a pattern over the
+--          original lobby's prices: each world adds more than the last, and the
+--          step grows from about +10 (slowest ball) to +150 / +300 / +450
+--          (fastest ball) for worlds 2 / 3 / 4, snapped to the product tiers
+--          (see docs/WORLDS_PRODUCTS.md). Paying Robux skips the original-ball
+--          requirement and also unlocks the original ball.
 WorldConfig.Skins = {
-	[2] = { WinsMult = 4, MinWins = 25000 },
-	[3] = { WinsMult = 12, MinWins = 250000 },
-	[4] = { WinsMult = 30, MinWins = 2500000 },
+	[2] = { WinsMult = 3 },
+	[3] = { WinsMult = 8 },
+	[4] = { WinsMult = 20 },
 }
-WorldConfig.BarrelSkinWins = { [2] = 5000000, [3] = 40000000, [4] = 250000000 }
+WorldConfig.BarrelSkinWins = { [2] = 1500000, [3] = 6000000, [4] = 20000000 }
 
+-- Robux price of every evolved ball, derived from the ORIGINAL lobby shop's price
+-- (ShopConfig.RobuxPrices) plus an extra that grows from the slowest to the
+-- fastest ball and is bigger in every later world:
+--   world 2: +10 -> +100   world 3: +40 -> +275   world 4: +85 -> +450
+local ShopConfig = require(script.Parent:WaitForChild("ShopConfig"))
+local BALL_ORDER = {
+	"StraightBall", "Aftershock", "CatPlz", "Thrifty", "Voltage", "Venom", "SnotOoze", "Meteor",
+	"AttitudePausible", "GreenNature", "Detailo", "NeonVestOff", "StarDoodle", "PainMoon",
+	"VoidMinter", "Voidwalker", "PinkMonster", "StormGatherer", "SingleKnot", "OilBarrel",
+}
+local UNSOLD_BASE = { StraightBall = 9, Aftershock = 12, OilBarrel = 499 } -- not in the original Robux list
+local EXTRA_SLOWEST = { 10, 40, 85 }
+local EXTRA_FASTEST = { 100, 275, 450 }
+
+local function snapPrice(n)
+	if n < 30 then
+		return math.floor(n + 0.5)
+	end
+	return math.floor((n + 1) / 10 + 0.5) * 10 - 1 -- ends in 9
+end
+
+WorldConfig.SkinRobux = {}
+local tierSet = {}
+for i, ballId in ipairs(BALL_ORDER) do
+	local base = UNSOLD_BASE[ballId] or ShopConfig.RobuxPrices[ballId] or 0
+	local t = (i - 1) / (#BALL_ORDER - 1)
+	local row = {}
+	for w = 1, 3 do
+		row[w] = snapPrice(base + EXTRA_SLOWEST[w] + (EXTRA_FASTEST[w] - EXTRA_SLOWEST[w]) * t ^ 1.2)
+		tierSet[row[w]] = true
+	end
+	WorldConfig.SkinRobux[ballId] = row
+end
+
+-- every Robux price point that needs a Developer Product (one product each)
+WorldConfig.SkinRobuxTiers = {}
+for price in pairs(tierSet) do
+	table.insert(WorldConfig.SkinRobuxTiers, price)
+end
+table.sort(WorldConfig.SkinRobuxTiers)
+function WorldConfig.SkinRobuxPrice(ballId, worldId)
+	local row = WorldConfig.SkinRobux[ballId]
+	return row and row[worldId - 1] or nil
+end
+
+local function twoSignificant(n)
+	if n < 100 then
+		return math.floor(n + 0.5)
+	end
+	local digits = math.floor(math.log10(n)) - 1
+	local scale = 10 ^ digits
+	return math.floor(n / scale + 0.5) * scale
+end
 function WorldConfig.SkinKey(ballId, worldId)
 	return ballId .. "@" .. worldId
 end
@@ -97,9 +158,8 @@ function WorldConfig.SkinWinsCost(ballId, worldId, baseWinsCost)
 		return WorldConfig.BarrelSkinWins[worldId]
 	end
 	local s = WorldConfig.Skins[worldId]
-	return s and math.floor(math.max(baseWinsCost or 0, s.MinWins) * s.WinsMult) or nil
+	return s and twoSignificant(math.max(baseWinsCost or 0, 300) * s.WinsMult) or nil
 end
-
 -- the owner's skins (server-set attribute "Skins": "Ball@2,Ball@3")
 function WorldConfig.OwnsSkin(player, ballId, worldId)
 	local list = player and player:GetAttribute("Skins")
