@@ -144,15 +144,68 @@ local dailyFrame = create("Frame", {
 	BackgroundTransparency = 1,
 }, panel)
 
-local rows = {}
+-- The paid SKIP as a slanted gold ribbon on the right edge of a quest row: tilted,
+-- with a shine, so it reads as a "tempting offer" and not a plain button. The
+-- server still opens the purchase and validates it (this is display only).
+local function skipRibbon(row, fromRight, height)
+	local ribbon = button({
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -fromRight, 0.5, 0),
+		Size = UDim2.fromOffset(84, height),
+		BackgroundColor3 = Color3.fromRGB(255, 176, 40),
+		Text = "",
+		TextColor3 = Color3.fromRGB(60, 24, 6),
+		TextSize = 16,
+		Rotation = -4,
+	}, row)
+	-- the word is its own label: white with a thin outline so it stays crisp on the gold
+	local word = create("TextLabel", {
+		Position = UDim2.fromOffset(0, 4),
+		Size = UDim2.new(1, 0, 0, 22),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = "SKIP",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 18,
+	}, ribbon)
+	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 1.5 }, word)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(255, 214, 90), Color3.fromRGB(240, 120, 30)),
+		Rotation = 90,
+	}, ribbon)
+	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 2 }, ribbon)
+	local price = create("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -3),
+		Size = UDim2.new(1, -8, 0, 16),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = utf8.char(0xE002) .. " 29",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 14,
+	}, ribbon)
+	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 1.5 }, price)
+	Shine.Attach(ribbon, { Offset = 1.7 })
+	-- gentle wiggle so the eye catches it
+	task.spawn(function()
+		while ribbon.Parent do
+			ribbon.Rotation = -4 + math.sin(os.clock() * 2.4) * 2
+			task.wait(0.05)
+		end
+	end)
+	return ribbon
+end
 
+local rows = {}
 for index = 1, 3 do
 	local row = create("Frame", {
 		Position = UDim2.fromOffset(16, (index - 1) * 80),
 		Size = UDim2.new(1, -32, 0, 74),
-		BackgroundColor3 = Color3.fromRGB(30, 24, 66),
+		BackgroundColor3 = Color3.fromRGB(36, 28, 80),
 	}, dailyFrame)
-	create("UICorner", { CornerRadius = UDim.new(0, 12) }, row)
+	create("UICorner", { CornerRadius = UDim.new(0, 14) }, row)
+	create("UIStroke", { Color = Color3.fromRGB(96, 78, 190), Thickness = 1.5, Transparency = 0.3 }, row)
+	create("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(190, 180, 230)), Rotation = 90 }, row)
 
 	local title = label({
 		Position = UDim2.fromOffset(12, 6),
@@ -182,15 +235,7 @@ for index = 1, 3 do
 	}, track)
 
 	-- paid skip (R$ 29), only while the quest is unfinished
-	local skip = button({
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -128, 0.5, 0),
-		Size = UDim2.fromOffset(76, 44),
-		BackgroundColor3 = Color3.fromRGB(235, 140, 60),
-		Text = "SKIP" .. "\n" .. utf8.char(0xE002) .. " 29",
-		TextColor3 = CREAM,
-		TextSize = 13,
-	}, row)
+	local skip = skipRibbon(row, 128, 52)
 
 	local claim = button({
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -238,9 +283,11 @@ for index = 1, 7 do
 	local row = create("Frame", {
 		LayoutOrder = index,
 		Size = UDim2.new(1, -8, 0, 62),
-		BackgroundColor3 = Color3.fromRGB(30, 24, 66),
+		BackgroundColor3 = Color3.fromRGB(36, 28, 80),
 	}, weeklyList)
-	create("UICorner", { CornerRadius = UDim.new(0, 12) }, row)
+	create("UICorner", { CornerRadius = UDim.new(0, 14) }, row)
+	create("UIStroke", { Color = Color3.fromRGB(96, 78, 190), Thickness = 1.5, Transparency = 0.3 }, row)
+	create("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(190, 180, 230)), Rotation = 90 }, row)
 
 	local title = label({
 		Position = UDim2.fromOffset(12, 4),
@@ -277,15 +324,7 @@ for index = 1, 7 do
 	}, row)
 
 	-- paid skip (one per milestone), shown while it is unfinished
-	local skip = button({
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -118, 0.5, 0),
-		Size = UDim2.fromOffset(76, 46),
-		BackgroundColor3 = Color3.fromRGB(235, 140, 60),
-		Text = "SKIP" .. "\n" .. utf8.char(0xE002) .. " 29",
-		TextColor3 = CREAM,
-		TextSize = 13,
-	}, row)
+	local skip = skipRibbon(row, 118, 46)
 
 	weeklyRows[index] = { Title = title, Fill = fill, Progress = progress, Claim = claim, Skip = skip }
 end

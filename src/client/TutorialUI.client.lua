@@ -543,7 +543,7 @@ end
 local introActive = false
 local introDone = false
 
-local function showIntro(onContinue)
+local function showCard(opts, onContinue)
 	introActive = true
 	local dim = create("Frame", {
 		Name = "TutorialIntro",
@@ -578,7 +578,7 @@ local function showIntro(onContinue)
 		Size = UDim2.fromOffset(250, 38),
 		BackgroundColor3 = Color3.fromRGB(255, 205, 70),
 		Font = FONT,
-		Text = "TUTORIAL",
+		Text = opts.Tab,
 		TextColor3 = Color3.fromRGB(40, 24, 70),
 		TextSize = 24,
 		ZIndex = 43,
@@ -590,7 +590,7 @@ local function showIntro(onContinue)
 		Size = UDim2.new(1, -40, 0, 44),
 		BackgroundTransparency = 1,
 		Font = FONT,
-		Text = "WELCOME TO +1 OIL BOWLING!",
+		Text = opts.Heading,
 		TextColor3 = Color3.fromRGB(255, 232, 130),
 		TextSize = 26,
 		ZIndex = 42,
@@ -600,14 +600,13 @@ local function showIntro(onContinue)
 		Size = UDim2.new(1, -60, 0, 56),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamMedium,
-		Text = "Let's learn the basics, which will only take a few steps! Follow the hints and arrows at the top of your screen.",
+		Text = opts.Body,
 		TextColor3 = Color3.fromRGB(240, 236, 255),
 		TextSize = 17,
 		TextWrapped = true,
 		ZIndex = 42,
 	}, card)
-	local goals = { { "🛢️", "Roll the oil course" }, { "⚡", "Earn XP on the generator" }, { "♻️", "Rebirth for big bonuses" }, { "🎳", "Buy your first new ball" } }
-	for index, goal in ipairs(goals) do
+	for index, goal in ipairs(opts.Goals) do
 		local column = (index - 1) % 2
 		local row = math.floor((index - 1) / 2)
 		local chip = create("Frame", {
@@ -636,7 +635,7 @@ local function showIntro(onContinue)
 		Size = UDim2.fromOffset(260, 54),
 		BackgroundColor3 = Color3.fromRGB(88, 196, 110),
 		Font = FONT,
-		Text = "CONTINUE",
+		Text = opts.Button,
 		TextColor3 = Color3.fromRGB(255, 255, 255),
 		TextSize = 26,
 		AutoButtonColor = true,
@@ -659,6 +658,27 @@ local function showIntro(onContinue)
 	end)
 end
 
+
+local function showIntro(onContinue)
+	showCard({
+		Tab = "TUTORIAL",
+		Heading = "WELCOME TO +1 OIL BOWLING!",
+		Body = "Let's learn the basics, which will only take a few steps! Follow the hints and arrows at the top of your screen.",
+		Goals = { { "🛢️", "Roll the oil course" }, { "⚡", "Earn XP on the generator" }, { "♻️", "Rebirth for big bonuses" }, { "🎳", "Buy your first new ball" } },
+		Button = "CONTINUE",
+	}, onContinue)
+end
+
+local function showOutro()
+	showCard({
+		Tab = "TUTORIAL COMPLETE",
+		Heading = "GOOD JOB BOWLER! KEEP GOING!",
+		Body = "You know the loop: roll, earn oil, win, rebirth. Now go bigger!",
+		Goals = { { "🎳", "Collect every ball" }, { "🌍", "Unlock new worlds" }, { "🏆", "Climb the leaderboards" }, { "🎁", "Claim your daily gifts" } },
+		Button = "KEEP GOING!",
+	}, function() end)
+end
+
 local shownStep = nil
 local calendarOpened = false
 local wasInTutorial = false
@@ -677,24 +697,14 @@ local function updateBanner(step)
 	shownStep = step
 
 	if step == DONE and wasInTutorial then
-		-- finished this session: a short, proud send-off, then the banner goes away
+		-- finished this session: the completion card (same style as the welcome card)
 		wasInTutorial = false
-		banner.Text = "YOU'RE A PRO! Roll, win, rebirth, collect every ball!"
-		tab.Text = "TUTORIAL COMPLETE"
-		iconLabel.Text = "🏆"
-		for _, dot in ipairs(dots) do
-			dot.BackgroundColor3 = Color3.fromRGB(255, 205, 70)
+		banner.Visible = false
+		if not introActive then
+			showOutro()
 		end
-		banner.Visible = true
-		fitBanner()
-		task.delay(6, function()
-			if shownStep == DONE then
-				banner.Visible = false
-			end
-		end)
 		return
 	end
-
 	if step == nil or step >= DONE or step < 1 then
 		banner.Visible = false
 		return
@@ -705,6 +715,9 @@ local function updateBanner(step)
 		task.spawn(fetchAftershockCost)
 	end
 
+	if step == 5 and PanelManager.IsOpen("Rebirth") then
+		PanelManager.Close("Rebirth") -- the panel used to sit open and hide the next hint
+	end
 	banner.Text = textFor(step)
 	setStepDecor(step)
 	banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting" and not introActive

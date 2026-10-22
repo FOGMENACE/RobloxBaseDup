@@ -195,7 +195,13 @@ local list = create("ScrollingFrame", {
 	Size = UDim2.new(1, -24, 0, 378),
 	CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 6,
+	-- a thick, always-visible, draggable bar: works with a touchpad, a mouse or a finger
+	ScrollBarThickness = 16,
+	ScrollBarImageColor3 = Color3.fromRGB(240, 178, 82),
+	ScrollBarImageTransparency = 0,
+	VerticalScrollBarInset = Enum.ScrollBarInset.Always,
+	VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
 	BorderSizePixel = 0,
 }, panel)
 round(list, 12)
@@ -740,9 +746,9 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 	create("TextLabel", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(114, 36),
-		Size = UDim2.new(1, -266, 0, 40),
+		Size = UDim2.new(1, -266, 0, 40), -- two short lines fit (TextScaled is off)
 		Font = Enum.Font.Gotham,
-		Text = table.concat(info, "  •  "),
+		Text = table.concat(info, " • "),
 		TextColor3 = Color3.fromRGB(110, 70, 30),
 		TextSize = 13,
 		TextWrapped = true,
