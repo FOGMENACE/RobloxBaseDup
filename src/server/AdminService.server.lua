@@ -139,7 +139,8 @@ local commands = {}
 
 commands.help = function()
 	return true, table.concat({
-		"help | whoami | find <text> | inspect <name|userid>",
+		"players  (numbered list of this server; then use the number instead of a name, e.g. reset 2 progression)",
+		"help | whoami | find <text> | inspect <name|userid|#>",
 		"kick <name> [reason] | ban <name|id> [reason] | unban <id> | banlist",
 		"goto <name> | bring <name>",
 		"give <name> wins|oil <amount> | grant <name> ball <id> | grant <name> skin <ballId> <world>",
@@ -314,6 +315,25 @@ end
 
 commands.whoami = function(admin)
 	return true, string.format("%s (%d) - admin: %s", admin.Name, admin.UserId, tostring(AdminConfig.Admins[admin.UserId]))
+end
+
+-- "players": a numbered list of everyone in THIS server. Afterwards any command that
+-- takes a player accepts the number instead of a name / id, e.g. "reset 3 progression",
+-- "kick 5", "inspect 2", "give 4 wins 5000".
+local numbered = {} -- [admin] = { userId1, userId2, ... } from the last "players"
+
+commands.players = function(admin)
+	local list = Players:GetPlayers()
+	table.sort(list, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+	local ids, lines = {}, { string.format("%d player(s) in this server  (use the number in commands, e.g. reset 2 progression):", #list) }
+	for index, p in ipairs(list) do
+		ids[index] = p.UserId
+		table.insert(lines, string.format("%2d. %s (@%s)  id %d  rebirths %s  %s", index, p.DisplayName, p.Name, p.UserId, tostring(p:GetAttribute("Rebirths") or 0), p == admin and "[you]" or ""))
+	end
+	numbered[admin] = ids
+	return true, table.concat(lines, "\n")
 end
 
 commands.find = function(_, args)
@@ -511,7 +531,7 @@ commands.reset = function(admin, args)
 
 	local description = string.format("%d (%s)\nNOW: %s", id, online and ("online as " .. online.Name) or "offline", summary(data))
 
-	if args[2] == "dry" then
+	if args[2] == "dry" or args[3] == "dry" then
 		return true, "DRY RUN - nothing changed.\n" .. description .. "\nWOULD BECOME: Level 1, global level 1, Strike/Reach level 65 (base), 0 wins, 0 rebirths, 0 oil, StraightBall only, auto-rebirth off"
 	end
 
@@ -609,13 +629,25 @@ commandRemote.OnServerInvoke = function(player, text)
 		return false, "unknown command - type help"
 	end
 
+	-- "reset 3 progression": a small number means row 3 of the last "players" list
+	local lowered = name:lower()
+	local takesNumber = lowered ~= "players" and lowered ~= "help" and lowered ~= "whoami" and lowered ~= "find" and lowered ~= "unban"
+		and lowered ~= "banlist" and lowered ~= "confirm" and lowered ~= "cancel" and lowered ~= "feedback" and lowered ~= "flags"
+	local picked = tokens[1] and tonumber(tokens[1])
+	if takesNumber and picked and picked >= 1 and picked <= 99 and picked % 1 == 0 and numbered[player] then
+		local userId = numbered[player][picked]
+		if not userId then
+			return false, "no player " .. picked .. " in the last list - type players"
+		end
+		tokens[1] = tostring(userId)
+	end
 	local ok, success, message = pcall(handler, player, tokens)
 	if not ok then
 		warn("[AdminService] command error:", success)
 		return false, "command error"
 	end
 
-	local readOnly = { help = true, whoami = true, find = true, inspect = true, banlist = true, feedback = true, flags = true, history = true, blockers = true }
+	local readOnly = { help = true, whoami = true, players = true, find = true, inspect = true, banlist = true, feedback = true, flags = true, history = true, blockers = true }
 	if not readOnly[name:lower()] then
 		log(player, name:lower(), table.concat(tokens, " "), success)
 	end
@@ -664,6 +696,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	numbered[player] = nil
 	lastCommand[player] = nil
 	pending[player] = nil
 end)
