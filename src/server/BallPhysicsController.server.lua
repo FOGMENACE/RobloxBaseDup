@@ -1772,6 +1772,12 @@ local generatorMultiplier, generatorName =
 generatorMultiplier = generatorMultiplier
     * GamePassService.GetSecretMultiplier(player)
 
+-- Tutorial (steps 1-3): rolling around freely earns practically nothing, so the
+-- first level-up comes from the X1 generator the tutorial points at.
+if not generatorName and (player:GetAttribute("TutorialStep") or 12) <= 3 then
+    generatorMultiplier *= 0.0001
+end
+
 player:SetAttribute(
     "ActiveXPGenerator",
     generatorName or ""

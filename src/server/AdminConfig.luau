@@ -26,4 +26,16 @@ AdminConfig.ConfirmSeconds = 60
 -- a real player.
 AdminConfig.ResetAllowList = nil -- e.g. { [123456789] = true }
 
+-- ExploitWatch: progress between two 5-minute snapshots above these limits is
+-- FLAGGED for review (never auto-punished). Tune after launch from real players'
+-- "history": set each a bit above the best honest rate you see.
+AdminConfig.WatchLimits = {
+	WinsPerMinute = 2000000, -- late-game x2 wins + passes can be very high; adjust
+	RebirthsPerSnapshot = 6, -- more than 6 rebirths in 5 minutes
+	LevelsPerSnapshot = 3000, -- global levels in 5 minutes
+}
+
+-- give <player> wins|oil <amount>: the largest single support grant
+AdminConfig.MaxGrant = 10000000
+
 return AdminConfig

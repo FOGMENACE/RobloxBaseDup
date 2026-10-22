@@ -142,9 +142,139 @@ commands.help = function()
 		"help | whoami | find <text> | inspect <name|userid>",
 		"kick <name> [reason] | ban <name|id> [reason] | unban <id> | banlist",
 		"goto <name> | bring <name>",
+		"give <name> wins|oil <amount> | grant <name> ball <id> | grant <name> skin <ballId> <world>",
+		"feedback [YYYY-MM-DD | days ago] | flags [YYYY-MM-DD | days ago] | history <name|userid>",
 		"reset <userid> [dry]  then  confirm <code>  (progression reset, backed up)",
 		"cancel",
 	}, "\n")
+end
+
+--------------------------------------------------
+-- SUPPORT / REVIEW COMMANDS
+--------------------------------------------------
+
+local ServerStorage = game:GetService("ServerStorage")
+
+-- "2026-10-22", "3" (days ago) or nothing (today), always UTC like the stores
+local function dayKey(arg)
+	if typeof(arg) == "string" and arg:match("^%d%d%d%d%-%d%d%-%d%d$") then
+		return arg
+	end
+	local daysAgo = tonumber(arg or "0") or 0
+	return os.date("!%Y-%m-%d", os.time() - math.clamp(math.floor(daysAgo), 0, 60) * 86400)
+end
+
+local function clock(t)
+	return os.date("!%m-%d %H:%M", t or 0)
+end
+
+commands.give = function(_, args)
+	local target = findPlayer(args[1])
+	local what = (args[2] or ""):lower()
+	local amount = tonumber(args[3] or "")
+	if not target or (what ~= "wins" and what ~= "oil") or not amount then
+		return false, "usage: give <name> wins|oil <amount>   (online players only)"
+	end
+	amount = math.floor(amount)
+	if amount <= 0 or amount > (AdminConfig.MaxGrant or 1e7) then
+		return false, "amount must be 1 .. " .. tostring(AdminConfig.MaxGrant or 1e7)
+	end
+	local ok = what == "wins" and PlayerDataService.AddWins(target, amount) or PlayerDataService.AddOil(target, amount)
+	if not ok then
+		return false, "grant failed (data not loaded?)"
+	end
+	PlayerDataService.SavePlayer(target)
+	return true, string.format("gave %s %d %s", target.Name, amount, what)
+end
+
+commands.grant = function(_, args)
+	local target = findPlayer(args[1])
+	local what = (args[2] or ""):lower()
+	local ballId = args[3]
+	if not target or not ballId or not PlayerDataService.IsValidBallId(ballId) then
+		return false, "usage: grant <name> ball <BallId> | grant <name> skin <BallId> <world 2-4>   (exact BallId, online only)"
+	end
+	if what == "ball" then
+		if PlayerDataService.OwnsBall(target, ballId) then
+			return false, target.Name .. " already owns " .. ballId
+		end
+		if not PlayerDataService.AddOwnedBall(target, ballId) then
+			return false, "grant failed"
+		end
+		PlayerDataService.SavePlayer(target)
+		return true, "granted ball " .. ballId .. " to " .. target.Name
+	elseif what == "skin" then
+		local worldId = tonumber(args[4] or "")
+		local hook = ServerStorage:FindFirstChild("SkinService") and ServerStorage.SkinService:FindFirstChild("GrantSkin")
+		if not worldId or not hook then
+			return false, "usage: grant <name> skin <BallId> <world 2-4>"
+		end
+		local ok, message = hook:Invoke(target, ballId, worldId)
+		return ok == true, tostring(message)
+	end
+	return false, "grant what? ball or skin"
+end
+
+commands.feedback = function(_, args)
+	local day = dayKey(args[1])
+	local ok, list = pcall(function()
+		return DataStoreService:GetDataStore("Feedback_v1"):GetAsync(day)
+	end)
+	if not ok then
+		return false, "could not read feedback"
+	end
+	if typeof(list) ~= "table" or #list == 0 then
+		return true, "no feedback on " .. day
+	end
+	local lines = { string.format("%d message(s) on %s (newest first):", #list, day) }
+	for index = #list, math.max(1, #list - 14), -1 do
+		local e = list[index]
+		table.insert(lines, string.format("%s  %s R%s: %s", clock(e.Time), tostring(e.Name), tostring(e.Rebirths), tostring(e.Text)))
+	end
+	return true, table.concat(lines, "\n")
+end
+
+commands.flags = function(_, args)
+	local day = dayKey(args[1])
+	local ok, list = pcall(function()
+		return DataStoreService:GetDataStore("Flags_v1"):GetAsync(day)
+	end)
+	if not ok then
+		return false, "could not read flags"
+	end
+	if typeof(list) ~= "table" or #list == 0 then
+		return true, "no flags on " .. day
+	end
+	local lines = { string.format("%d flag(s) on %s (newest first). Review with: history <userid>", #list, day) }
+	for index = #list, math.max(1, #list - 19), -1 do
+		local e = list[index]
+		table.insert(lines, string.format("%s  %s (%s) %s %s", clock(e.Time), tostring(e.Name), tostring(e.UserId), tostring(e.Kind), tostring(e.Detail)))
+	end
+	return true, table.concat(lines, "\n")
+end
+
+commands.history = function(_, args)
+	local target = findPlayer(args[1])
+	local id = target and target.UserId or tonumber(args[1] or "")
+	if not id then
+		return false, "usage: history <name|userid>"
+	end
+	local ok, list = pcall(function()
+		return DataStoreService:GetDataStore("ProgressHistory_v1"):GetAsync("u_" .. id)
+	end)
+	if not ok then
+		return false, "could not read history"
+	end
+	if typeof(list) ~= "table" or #list == 0 then
+		return true, "no snapshots yet for " .. id .. " (one is saved every 5 minutes and on leave)"
+	end
+	local lines = { string.format("%d snapshot(s) for %d (UTC, newest first):", #list, id) }
+	for index = #list, math.max(1, #list - 14), -1 do
+		local s = list[index]
+		table.insert(lines, string.format("%s  wins %s  rebirths %s  level %s  global %s  oil %s  session %sm",
+			clock(s.T), tostring(s.Wins), tostring(s.Rebirths), tostring(s.Level), tostring(s.Global), tostring(s.Oil), tostring(s.Session)))
+	end
+	return true, table.concat(lines, "\n")
 end
 
 commands.whoami = function(admin)
@@ -450,7 +580,7 @@ commandRemote.OnServerInvoke = function(player, text)
 		return false, "command error"
 	end
 
-	local readOnly = { help = true, whoami = true, find = true, inspect = true, banlist = true }
+	local readOnly = { help = true, whoami = true, find = true, inspect = true, banlist = true, feedback = true, flags = true, history = true }
 	if not readOnly[name:lower()] then
 		log(player, name:lower(), table.concat(tokens, " "), success)
 	end

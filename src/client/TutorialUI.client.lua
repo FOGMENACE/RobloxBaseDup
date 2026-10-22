@@ -380,7 +380,10 @@ local function textFor(step)
 		end
 		return "Nice! Your WinCourse is next. Roll through the tiles to collect Wins!"
 	elseif step == 3 then
-		return "Roll onto the X1 generator and earn XP to level up!"
+		if player:GetAttribute("ActiveXPGenerator") == "GenX1" then
+			return "You're earning XP! Stay on the X1 generator until your level bar is FULL."
+		end
+		return "XP comes from the GENERATORS! Follow the arrows to the X1 generator."
 	elseif step == 4 then
 		if PanelManager.IsOpen("Rebirth") then
 			return "Press REBIRTH NOW - it's FREE!"
@@ -409,7 +412,7 @@ local function textFor(step)
 		if PanelManager.IsOpen("Calendar") then
 			return "Claim DAY 1 of your daily calendar!"
 		end
-		return "Your DAILY calendar is here! Tap it and claim Day 1."
+		return "TUTORIAL COMPLETE! Your DAILY gift is ready: tap the calendar and claim Day 1."
 	end
 
 	return ""
@@ -421,6 +424,7 @@ end
 
 local shownStep = nil
 local calendarOpened = false
+local wasInTutorial = false
 
 local function updateBanner(step)
 	if step == shownStep then
@@ -428,10 +432,25 @@ local function updateBanner(step)
 	end
 	shownStep = step
 
+	if step == DONE and wasInTutorial then
+		-- finished this session: a short, proud send-off, then the banner goes away
+		wasInTutorial = false
+		banner.Text = "YOU'RE A PRO! Roll, collect oil, win, rebirth and collect every ball!"
+		banner.Visible = true
+		fitBanner()
+		task.delay(6, function()
+			if shownStep == DONE then
+				banner.Visible = false
+			end
+		end)
+		return
+	end
+
 	if step == nil or step >= DONE or step < 1 then
 		banner.Visible = false
 		return
 	end
+	wasInTutorial = true
 
 	if step == 7 then
 		task.spawn(fetchAftershockCost)

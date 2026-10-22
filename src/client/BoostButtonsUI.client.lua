@@ -66,11 +66,12 @@ local function fitColumn()
 	-- the scale when it really changes (setting it re-fires this signal)
 	local content = math.max(columnLayout.AbsoluteContentSize.Y / math.max(columnScale.Scale, 0.01), 220)
 	if h < 520 then
-		-- phone-height screens: tuck it into the top-right corner, above the
-		-- Music / zoom buttons
-		column.AnchorPoint = Vector2.new(1, 0)
-		column.Position = UDim2.new(1, -12, 0, 8)
-		local s = math.clamp((h - 266 - 16) / content, 0.4, 0.55)
+		-- phone-height screens: sitting right above the camera-zoom (FOV) button
+		-- (its top edge is 202 px above the bottom), as big as the space allows
+		-- while staying below the top-right player list
+		column.AnchorPoint = Vector2.new(1, 1)
+		column.Position = UDim2.new(1, -12, 1, -212)
+		local s = math.clamp((h - 212 - 50) / content, 0.6, 0.85)
 		if math.abs(s - columnScale.Scale) > 0.005 then columnScale.Scale = s end
 	else
 		column.AnchorPoint = Vector2.new(1, 0.5)

@@ -209,6 +209,30 @@ for productBall, row in pairs(SkinProducts) do
 	end
 end
 
+-- Server-only hook for admin support grants (ServerStorage: clients can never
+-- reach it). Returns ok, message.
+do
+	local ServerStorage = game:GetService("ServerStorage")
+	local folder = ServerStorage:FindFirstChild("SkinService") or Instance.new("Folder")
+	folder.Name = "SkinService"
+	folder.Parent = ServerStorage
+	local grant = folder:FindFirstChild("GrantSkin") or Instance.new("BindableFunction")
+	grant.Name = "GrantSkin"
+	grant.Parent = folder
+	grant.OnInvoke = function(player, ballId, worldId)
+		if not loaded[player] then
+			return false, "skins not loaded for that player"
+		end
+		if not PlayerDataService.IsValidBallId(ballId) or not WorldConfig.Worlds[worldId] or worldId < 2 then
+			return false, "invalid ball or world"
+		end
+		local key = WorldConfig.SkinKey(ballId, worldId)
+		owned[player][key] = true
+		publish(player)
+		return save(player), "granted " .. key
+	end
+end
+
 local function onJoin(player)
 	owned[player] = {}
 	player:SetAttribute("Skins", "")

@@ -925,6 +925,45 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
+-- Roblox's own DynamicThumbstick fades a dark background over the left part of
+-- the screen (its touch area) until the player first touches it. Keep that
+-- frame's background invisible; the stick itself still appears where they touch.
+if UserInputService.TouchEnabled then
+	task.spawn(function()
+		local playerGui = player:WaitForChild("PlayerGui")
+		local function hideBackground(frame)
+			if not frame:IsA("Frame") then
+				return
+			end
+			frame.BackgroundTransparency = 1
+			frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
+				if frame.BackgroundTransparency ~= 1 then
+					frame.BackgroundTransparency = 1
+				end
+			end)
+		end
+		local function watch(gui)
+			if gui.Name ~= "TouchGui" then
+				return
+			end
+			for _, d in ipairs(gui:GetDescendants()) do
+				if d.Name == "DynamicThumbstickFrame" then
+					hideBackground(d)
+				end
+			end
+			gui.DescendantAdded:Connect(function(d)
+				if d.Name == "DynamicThumbstickFrame" then
+					hideBackground(d)
+				end
+			end)
+		end
+		for _, gui in ipairs(playerGui:GetChildren()) do
+			watch(gui)
+		end
+		playerGui.ChildAdded:Connect(watch)
+	end)
+end
+
 -- On-screen joystick: a floating stick that appears where the left-hand thumb
 -- lands (left 45% of the screen, outside any button/panel). Only used when
 -- Roblox's own control module is absent, so there is never a second stick.

@@ -23,6 +23,7 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
 
 local GiftConfig = require(ReplicatedStorage:WaitForChild("GiftConfig"))
 local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
@@ -138,7 +139,10 @@ local COLUMN_HEIGHT = 326 -- content height at scale 1
 local function updateRootScale()
 	local viewport = gui.AbsoluteSize
 	local rebirthScale = math.clamp(viewport.X / 900, 0.65, 1)
-	local rebirthTop = viewport.Y - 10 - 132 * rebirthScale - 10
+	-- touch screens: the rebirth panel sits beside the column (HudUI), so the
+	-- column only has to stay clear of the thumbstick corner
+	local rebirthTop = UserInputService.TouchEnabled and (viewport.Y - 70)
+		or (viewport.Y - 10 - 132 * rebirthScale - 10)
 
 	local topFraction = 0.335
 	local fit = (rebirthTop - topFraction * viewport.Y) / COLUMN_HEIGHT

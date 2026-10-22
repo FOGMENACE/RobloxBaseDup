@@ -647,12 +647,35 @@ rebirthPanel.Activated:Connect(function()
 	end
 end)
 
+-- Touch screens: the panel sits to the RIGHT of the wins hub column (HubUI)
+-- instead of under it, so on short / rotated phones it can never end up behind
+-- the hub, and it stays out of the thumbstick's bottom-left corner.
+local hubColumn = nil
 local function fitRebirth()
 	local viewport = gui.AbsoluteSize
 	rebirthScale.Scale = math.clamp(viewport.X / 900, 0.65, 1)
+	if touch then
+		local hub = playerGui:FindFirstChild("HubUI")
+		hubColumn = hubColumn or (hub and hub:FindFirstChild("Left"))
+		if hubColumn then
+			local right = hubColumn.AbsolutePosition.X + hubColumn.AbsoluteSize.X + 10
+			local top = hubColumn.AbsolutePosition.Y
+			-- just right of the hub, level with the lower half of the column
+			rebirthPanel.AnchorPoint = Vector2.new(0, 0)
+			rebirthPanel.Position = UDim2.fromOffset(right, math.max(top, viewport.Y * 0.35))
+		end
+	end
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitRebirth)
 fitRebirth()
+if touch then
+	task.spawn(function()
+		while true do
+			task.wait(1) -- follows the hub column as it rescales / reflows
+			fitRebirth()
+		end
+	end)
+end
 
 --------------------------------------------------
 -- LEVEL UP
