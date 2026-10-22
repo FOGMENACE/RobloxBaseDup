@@ -186,6 +186,52 @@ local captainTimeLabel = create("TextLabel", {
 create("UIStroke", { Color = INK, Thickness = 2.5 }, captainTimeLabel)
 Shine.Attach(captainTile, { Offset = 0.4 })
 
+-- x4 XP timer tile (the "WAIT! Don't Leave!" gift and quest rewards): shown while
+-- the boost runs, counting down to when it ends
+local xpTile = create("Frame", {
+	LayoutOrder = 6,
+	Size = UDim2.fromOffset(160, 62),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	Visible = false,
+}, column)
+create("UICorner", { CornerRadius = UDim.new(0, 14) }, xpTile)
+create("UIStroke", { Color = INK, Thickness = 3 }, xpTile)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 130, 230), Color3.fromRGB(130, 80, 255)),
+	Rotation = 90,
+}, xpTile)
+local xpTitleLabel = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 4),
+	Size = UDim2.new(1, 0, 0, 28),
+	Font = FONT,
+	Text = "x4 XP",
+	TextColor3 = CREAM,
+	TextSize = 24,
+}, xpTile)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, xpTitleLabel)
+local xpTimeLabel = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 32),
+	Size = UDim2.new(1, 0, 0, 26),
+	Font = FONT,
+	Text = "",
+	TextColor3 = Color3.fromRGB(255, 255, 255),
+	TextSize = 22,
+}, xpTile)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, xpTimeLabel)
+Shine.Attach(xpTile, { Offset = 0.7 })
+
+local function refreshXPTile()
+	local left = math.ceil((player:GetAttribute("BoostXPUntil") or 0) - workspace:GetServerTimeNow())
+	xpTile.Visible = left > 0
+	if left > 0 then
+		xpTimeLabel.Text = string.format("%d:%02d", left // 60, left % 60)
+	end
+end
+player:GetAttributeChangedSignal("BoostXPUntil"):Connect(refreshXPTile)
+refreshXPTile()
+
 local function refreshCaptainTile()
 	local left = (player:GetAttribute("BoostCaptainUntil") or 0) - os.time()
 	captainTile.Visible = left > 0
@@ -209,6 +255,7 @@ task.spawn(function()
 			end
 		end
 		refreshCaptainTile()
+		refreshXPTile()
 		task.wait(0.5)
 	end
 end)

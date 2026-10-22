@@ -793,10 +793,14 @@ local function refreshLevel()
 		if barTween then
 			barTween:Cancel()
 		end
+		-- the fill is never narrower than its own height (24 px), so its rounded end
+		-- always sits inside the track instead of poking out past the border
+		local p = math.clamp(progress, 0, 1)
+		barFill.Visible = p > 0.002
 		barTween = TweenService:Create(
 			barFill,
 			TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{ Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1) }
+			{ Size = UDim2.new(p, math.floor((1 - p) * 24), 1, 0) }
 		)
 		barTween:Play()
 	end

@@ -38,10 +38,10 @@ local WALL_ROWS = 10       -- shown on the wall boards
 local REFRESH_SECONDS = 90
 local WRITE_SECONDS = 90
 
--- Lobby back wall (inner face at z = -242.3), facing +Z.
+-- Lobby back wall (inner face at z = -285.5), facing +Z.
 local BOARD_LAYOUT = {
 	Y = 82.5,
-	Z = -278.0,
+	Z = -285.0,
 	BOARD_WIDTH = 17,
 	BOARD_HEIGHT = 18,
 	Centers = { Wins = -88, Rebirths = -65, Robux = -42 },

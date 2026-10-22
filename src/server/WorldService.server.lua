@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
 
 local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
 
@@ -45,7 +46,12 @@ local startWall = Workspace:WaitForChild("StartWall")
 --------------------------------------------------
 
 -- the WORLDS portal (world-1 coordinates; each copy adds its offset)
-local NEXT_PORTAL = Vector3.new(-30, 63.55, -232)
+-- WALL-mounted on the west wall (centre of the disc), between the ROLL. WIN. REBIRTH!
+-- screen and the ball rack that was cut in half (LobbyDecor). The disc faces the room (+X);
+-- the ball rolls onto the glowing pad on the floor in front of it to open the menu.
+local NEXT_PORTAL = Vector3.new(-104.2, 72, -245.5)
+local FLOOR_PAD_Y = 63.55
+local PAD_OFFSET_X = 3.5 -- the floor pad sits this far in front of the wall disc
 
 local worldsFolder = Instance.new("Folder")
 worldsFolder.Name = "Worlds"
@@ -64,7 +70,7 @@ local function makePortal(parent, position, toWorld, label, color)
 		p.Name = name
 		p.Shape = Enum.PartType.Cylinder
 		p.Size = size
-		p.CFrame = CFrame.new(position + Vector3.new(0, y, 0)) * CFrame.Angles(0, 0, math.pi / 2)
+		p.CFrame = CFrame.new(position + Vector3.new(0, y, 0)) -- cylinder axis along X: a vertical disc on the wall
 		p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery, p.CastShadow = true, false, false, false, false
 		p.Material = material
 		p.Color = c
@@ -74,6 +80,50 @@ local function makePortal(parent, position, toWorld, label, color)
 	end
 	ring("Rim", Vector3.new(0.2, 11, 11), 0.05, 0, Enum.Material.Neon, color)
 	local core = ring("Core", Vector3.new(0.25, 9.6, 9.6), 0.08, 0.15, Enum.Material.ForceField, color)
+
+	-- extra detail: dark metal frame, glowing inner ring, spinning spokes and runes
+	-- (the client turns every part tagged "PortalSpin", see PortalAnimator)
+	local hue = color:ToHSV()
+	local accent = Color3.fromHSV((hue + 0.18) % 1, 0.7, 1)
+	local function spin(p, speed)
+		p:SetAttribute("PortalCenter", position)
+		p:SetAttribute("PortalOffset", CFrame.new(position):ToObjectSpace(p.CFrame))
+		p:SetAttribute("SpinSpeed", speed)
+		CollectionService:AddTag(p, "PortalSpin")
+	end
+	local frame = ring("Frame", Vector3.new(0.7, 13.8, 13.8), 0, 0, Enum.Material.Metal, Color3.fromRGB(26, 24, 44))
+	frame.CFrame = frame.CFrame + Vector3.new(-0.35, 0, 0)
+	local dark = ring("DarkRing", Vector3.new(0.3, 10.6, 10.6), 0.02, 0, Enum.Material.SmoothPlastic, Color3.fromRGB(18, 16, 40))
+	dark.CFrame = dark.CFrame + Vector3.new(-0.05, 0, 0)
+	local inner = ring("InnerRing", Vector3.new(0.2, 8.6, 8.6), 0.06, 0.35, Enum.Material.Neon, accent)
+	inner.CFrame = inner.CFrame + Vector3.new(0.05, 0, 0)
+	local eye = ring("Eye", Vector3.new(0.2, 2.4, 2.4), 0.07, 0.1, Enum.Material.Neon, Color3.new(1, 1, 1))
+	eye.CFrame = eye.CFrame + Vector3.new(0.12, 0, 0)
+
+	for index = 1, 6 do
+		local spoke = Instance.new("Part")
+		spoke.Name = "Spoke" .. index
+		spoke.Size = Vector3.new(0.12, 0.5, 8.4)
+		spoke.CFrame = CFrame.new(position) * CFrame.Angles(index * math.pi / 6, 0, 0) + Vector3.new(0.18, 0, 0)
+		spoke.Anchored, spoke.CanCollide, spoke.CanTouch, spoke.CanQuery, spoke.CastShadow = true, false, false, false, false
+		spoke.Material = Enum.Material.Neon
+		spoke.Color = (index % 2 == 0) and color or accent
+		spoke.Transparency = 0.4
+		spoke.Parent = model
+		spin(spoke, 0.6)
+	end
+	for index = 1, 12 do
+		local angle = index * math.pi * 2 / 12
+		local rune = Instance.new("Part")
+		rune.Name = "Rune" .. index
+		rune.Size = Vector3.new(0.35, 0.9, 0.5)
+		rune.CFrame = CFrame.new(position) * CFrame.Angles(angle, 0, 0) * CFrame.new(0.05, 6.35, 0)
+		rune.Anchored, rune.CanCollide, rune.CanTouch, rune.CanQuery, rune.CastShadow = true, false, false, false, false
+		rune.Material = Enum.Material.Neon
+		rune.Color = (index % 2 == 0) and color or accent
+		rune.Parent = model
+		spin(rune, -0.3)
+	end
 	local mist = Instance.new("ParticleEmitter")
 	mist.Texture = "rbxasset://textures/particles/sparkles_main.dds"
 	mist.Rate = 18
@@ -91,15 +141,29 @@ local function makePortal(parent, position, toWorld, label, color)
 	light.Brightness = 2
 	light.Parent = core
 
+	-- glowing floor pad where the ball must roll to use it (flat disc, like the old platform)
+	local pad = Instance.new("Part")
+	pad.Name = "FloorPad"
+	pad.Shape = Enum.PartType.Cylinder
+	pad.Size = Vector3.new(0.15, 9, 9)
+	pad.CFrame = CFrame.new(position.X + PAD_OFFSET_X, FLOOR_PAD_Y + 0.05, position.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	pad.Anchored, pad.CanCollide, pad.CanTouch, pad.CanQuery, pad.CastShadow = true, false, false, false, false
+	pad.Material = Enum.Material.Neon
+	pad.Color = color
+	pad.Transparency = 0.45
+	pad.Parent = model
+
 	local sign = Instance.new("Part")
 	sign.Name = "SignAnchor"
 	sign.Size = Vector3.new(1, 1, 1)
 	sign.Transparency = 1
 	sign.Anchored, sign.CanCollide, sign.CanTouch, sign.CanQuery = true, false, false, false
-	sign.CFrame = CFrame.new(position + Vector3.new(0, 7.5, 0))
+	sign.CFrame = CFrame.new(position + Vector3.new(1.5, 8.6, 0)) -- above the frame, in front of the wall
 	sign.Parent = model
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromScale(12, 3)
+	bb.Size = UDim2.fromScale(14, 3.4)
+	bb.Adornee = sign
+	bb.AlwaysOnTop = true -- never hidden behind the wall or the screens
 	bb.LightInfluence = 0
 	bb.MaxDistance = 120
 	bb.Parent = sign
@@ -415,7 +479,8 @@ task.spawn(function()
 	for _, p in ipairs(worldsFolder:GetDescendants()) do
 		if p:IsA("Model") and p:GetAttribute("ToWorld") then
 			local core = p:FindFirstChild("Core")
-			table.insert(machines, core.Position) -- rolling in opens the WORLDS menu
+			-- rolling onto the floor pad in front of the wall disc opens the WORLDS menu
+			table.insert(machines, Vector3.new(core.Position.X + PAD_OFFSET_X, FLOOR_PAD_Y + 0.5, core.Position.Z))
 		end
 	end
 	Workspace:SetAttribute("WorldsReady", true)

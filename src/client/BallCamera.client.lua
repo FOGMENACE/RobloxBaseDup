@@ -761,7 +761,7 @@ local function updateLobbyCamera(
 	-- the higher worlds are copies of this room shifted along X
 	local worldX = (Players.LocalPlayer:GetAttribute("World") and WORLD_OFFSETS[Players.LocalPlayer:GetAttribute("World")]) or 0
 	local LOBBY_X_MIN, LOBBY_X_MAX = -104.6 + worldX, -25.2 + worldX
-	local LOBBY_Z_MIN, LOBBY_Z_MAX = -277.4, -197.9
+	local LOBBY_Z_MIN, LOBBY_Z_MAX = -284.4, -197.9 -- back wall is at z -285.5
 	local ceilingY = (floorHit and floorHit.Position.Y or (ballPosition.Y - 2)) + 26
 
 	cameraPosition = Vector3.new(

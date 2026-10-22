@@ -23,7 +23,7 @@ local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"
 
 -- Room interior (from the Studio layout).
 local X_MIN, X_MAX = -105.7, -24.1
-local Z_MIN, Z_MAX = -278.4, -196.8
+local Z_MIN, Z_MAX = -285.4, -196.8 -- back wall moved 7 studs back to give the camera room behind the XP generators
 local FLOOR_Y = 63.5
 local WALL_TOP = 95
 
@@ -172,36 +172,36 @@ for _, model in ipairs(ballModels:GetChildren()) do
 end
 table.sort(ballIds)
 
-local ballsPerShelf = 9
-local ballSpacing = 3.6
 local RACK_Z_START = -252 -- clear of the generator row at the back
+local RACK_LENGTH = 33.4
 
 -- One rack against a side wall. side = +1 for the east wall (balls face
--- west), -1 for the west wall. ballOffset spreads the ball models so the
--- two racks do not show the same balls.
-local function buildRack(rackX, side, ballOffset)
+-- west), -1 for the west wall. `models` are the ball ids this rack shows: the
+-- two racks show different halves of the ball list, split over two shelves.
+local function buildRack(rackX, side, zStart, zLength, models)
+	local perShelf = math.max(math.ceil(#models / 2), 1)
+
 	for shelf = 1, 2 do
 		local shelfY = FLOOR_Y + 3.2 + (shelf - 1) * 5.2
-		local length = ballsPerShelf * ballSpacing + 1
 
 		-- Shelf board (lane wood) with cream lip
 		part(
 			"RackShelf" .. shelf,
-			Vector3.new(3.6, 0.5, length),
-			CFrame.new(rackX, shelfY, RACK_Z_START + length / 2),
+			Vector3.new(3.6, 0.5, zLength),
+			CFrame.new(rackX, shelfY, zStart + zLength / 2),
 			LANE,
 			Enum.Material.WoodPlanks
 		)
 		part(
 			"RackLip" .. shelf,
-			Vector3.new(0.4, 0.4, length),
-			CFrame.new(rackX - side * 1.7, shelfY + 0.4, RACK_Z_START + length / 2),
+			Vector3.new(0.4, 0.4, zLength),
+			CFrame.new(rackX - side * 1.7, shelfY + 0.4, zStart + zLength / 2),
 			Color3.fromRGB(196, 140, 66)
 		)
 
-		for slot = 1, ballsPerShelf do
-			local index = ((shelf - 1) * ballsPerShelf + slot - 1 + ballOffset) % math.max(#ballIds, 1) + 1
-			local ballId = ballIds[index]
+		local first = (shelf - 1) * perShelf
+		for slot = 1, math.min(perShelf, #models - first) do
+			local ballId = models[first + slot]
 			local template = ballId and ballModels:FindFirstChild(ballId)
 
 			if template then
@@ -218,7 +218,7 @@ local function buildRack(rackX, side, ballOffset)
 				ball.CFrame = CFrame.new(
 					rackX,
 					shelfY + 0.25 + ball.Size.Y / 2,
-					RACK_Z_START + 1.2 + (slot - 1) * ballSpacing
+					zStart + zLength * (slot - 0.5) / perShelf
 				)
 				ball.Parent = decor
 
@@ -233,15 +233,24 @@ local function buildRack(rackX, side, ballOffset)
 	-- Backboard behind the balls
 	part(
 		"RackBack",
-		Vector3.new(0.5, 12.5, ballsPerShelf * ballSpacing + 3),
-		CFrame.new(rackX + side * 2.0, FLOOR_Y + 7.4, RACK_Z_START + (ballsPerShelf * ballSpacing + 1) / 2),
+		Vector3.new(0.5, 12.5, zLength + 2),
+		CFrame.new(rackX + side * 2.0, FLOOR_Y + 7.4, zStart + zLength / 2),
 		NAVY
 	)
 end
 
-buildRack(X_MAX - 2.2, 1, 0)
-buildRack(X_MIN + 2.2, -1, 9)
+-- The ball list is split in two: the east wall shows the second half over its
+-- full length; the west wall is cut in half (only the front part next to the
+-- pins stays, the back half makes room for the WORLDS portal, see WorldService)
+-- and shows the first half.
+local halfCount = math.ceil(#ballIds / 2)
+local firstHalf, secondHalf = {}, {}
+for index, id in ipairs(ballIds) do
+	table.insert(index <= halfCount and firstHalf or secondHalf, id)
+end
 
+buildRack(X_MAX - 2.2, 1, RACK_Z_START, RACK_LENGTH, secondHalf)
+buildRack(X_MIN + 2.2, -1, RACK_Z_START + RACK_LENGTH / 2, RACK_LENGTH / 2, firstHalf)
 --------------------------------------------------
 -- PIN CLUSTERS
 --------------------------------------------------

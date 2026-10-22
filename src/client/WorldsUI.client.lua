@@ -254,6 +254,7 @@ local function showArrowTo(targetId)
 	local searchIn = here == 1 and worldsFolder or worldsFolder:FindFirstChild("World" .. here)
 	local portal = searchIn and searchIn:FindFirstChild("Portal_To_0") -- the WORLDS portal
 	local core = portal and portal:FindFirstChild("Core")
+	local pad = portal and portal:FindFirstChild("FloorPad") -- the arrow leads to the floor pad in front of the wall disc
 	if not core then
 		return
 	end
@@ -268,7 +269,7 @@ local function showArrowTo(targetId)
 	conn = RunService.RenderStepped:Connect(function()
 		local balls = workspace:FindFirstChild("PlayerBalls")
 		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
-		trail:Update(ball, core.Position)
+		trail:Update(ball, (pad or core).Position)
 		if currentWorld() == targetId or os.clock() - started > 180 or not core.Parent then
 			clear()
 		end

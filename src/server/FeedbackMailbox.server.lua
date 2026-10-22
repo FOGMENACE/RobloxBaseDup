@@ -20,7 +20,7 @@ local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 
 local FLOOR_Y = 63.5
-local POSITION = Vector3.new(-98.5, FLOOR_Y, -237) -- beside the west bowling-pin stand, against the wall side
+local POSITION = Vector3.new(-31.5, FLOOR_Y, -212.5) -- east wall, front end: clear floor between the ball rack and the front screen
 local MIN_LENGTH, MAX_LENGTH = 5, 400
 local COOLDOWN = 45 -- seconds between messages per player
 local MAX_PER_SESSION = 6
@@ -176,7 +176,7 @@ prompt.Parent = promptHolder
 
 -- Make the whole mailbox a compact prop, standing on the floor.
 do
-	model:PivotTo(CFrame.new(POSITION) * CFrame.Angles(0, -math.pi / 2, 0) * CFrame.new(-POSITION) * model:GetPivot()) -- door faces the room (+X)
+	model:PivotTo(CFrame.new(POSITION) * CFrame.Angles(0, math.pi / 2, 0) * CFrame.new(-POSITION) * model:GetPivot()) -- door faces the room (-X)
 	model:ScaleTo(0.62)
 	local cf, size = model:GetBoundingBox()
 	local bottom = cf.Position.Y - size.Y / 2

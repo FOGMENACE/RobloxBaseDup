@@ -41,13 +41,14 @@ local DISPLAY_REBIRTH_REQUIREMENT = {
 	GenX10 = 10,
 }
 
+local addFade -- defined below (the icon builder needs it first)
 local GUI_NAME = "GeneratorFloatingUI"
 local ICON_NAME = "GeneratorIcon"
 
 -- World sizes, in studs
 local LABEL_WIDTH = 9.0
 local LABEL_HEIGHT = 2.7
-local LABEL_LIFT = 4.6 -- label centre above the pad's top surface
+local LABEL_LIFT = 6.6 -- label centre above the pad's top surface (raised so it is not in the camera's face)
 
 --------------------------------------------------
 -- GENERATOR CONFIGURATION
@@ -214,7 +215,48 @@ local function createGeneratorIcon(part, info)
 		Sparks = sparks,
 		Parent = billboard,
 	})
+	addFade(billboard, part)
 end
+
+-- The labels and icons fade out when the camera is close (they used to sit right
+-- in the player's face on the platforms) and are fully readable from a distance.
+-- Their height is unchanged so they do not cover the leaderboards on the back wall.
+local fadeList = {} -- { Billboard, Group, Part }
+local FADE_NEAR, FADE_FAR = 16, 50
+local NEAR_TRANSPARENCY, FAR_TRANSPARENCY = 0.85, 0.06 -- nearly see-through right next to it
+local NEAR_SCALE = 0.55 -- and smaller, so it never fills the screen
+
+addFade = function(billboard, part)
+	local group = Instance.new("CanvasGroup")
+	group.Name = "Fade"
+	group.BackgroundTransparency = 1
+	group.Size = UDim2.fromScale(1, 1)
+	for _, child in ipairs(billboard:GetChildren()) do
+		child.Parent = group
+	end
+	group.Parent = billboard
+	table.insert(fadeList, { Billboard = billboard, Group = group, Part = part, Base = billboard.Size })
+end
+
+RunService.Heartbeat:Connect(function()
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local cameraPosition = camera.CFrame.Position
+	for index = #fadeList, 1, -1 do
+		local entry = fadeList[index]
+		if not entry.Billboard.Parent or not entry.Part.Parent then
+			table.remove(fadeList, index)
+		else
+			local distance = (entry.Part.Position + Vector3.new(0, 5, 0) - cameraPosition).Magnitude
+			local k = math.clamp((distance - FADE_NEAR) / (FADE_FAR - FADE_NEAR), 0, 1)
+			entry.Group.GroupTransparency = NEAR_TRANSPARENCY + (FAR_TRANSPARENCY - NEAR_TRANSPARENCY) * k
+			local scale = NEAR_SCALE + (1 - NEAR_SCALE) * k
+			entry.Billboard.Size = UDim2.fromScale(entry.Base.X.Scale * scale, entry.Base.Y.Scale * scale)
+		end
+	end
+end)
 
 RunService.RenderStepped:Connect(function()
 	local now = os.clock()
@@ -427,6 +469,7 @@ local function createGeneratorUI(part, world)
 		end
 	end)
 
+	addFade(billboard, part)
 	refreshState()
 	createGeneratorIcon(part, info)
 end

@@ -895,7 +895,7 @@ refresh = function()
 	end
 
 	for _, child in ipairs(list:GetChildren()) do
-		if child:IsA("Frame") then
+		if child:IsA("Frame") or child.Name == "SkinRule" then
 			child:Destroy()
 		end
 	end
@@ -939,11 +939,11 @@ refresh = function()
 			Name = "SkinRule",
 			LayoutOrder = -1,
 			Size = UDim2.new(1, -4, 0, 40),
-			BackgroundColor3 = Color3.fromRGB(205, 40, 52),
+			BackgroundColor3 = Color3.fromRGB(46, 38, 96),
 			Font = FONT,
-			Text = "EVOLVED BALLS  •  Wins need the original ball  •  Robux skips it",
-			TextColor3 = Color3.new(1, 1, 1),
-			TextSize = 15,
+			Text = "Own the original to pay Wins  •  or skip it with Robux",
+			TextColor3 = Color3.fromRGB(255, 226, 120),
+			TextSize = 14,
 			TextWrapped = true,
 		}, list)
 		round(rule, 10)
