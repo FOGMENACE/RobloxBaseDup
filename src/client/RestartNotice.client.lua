@@ -86,6 +86,6 @@ RunService.RenderStepped:Connect(function()
 	end
 	local left = math.max(0, math.ceil(deadline - os.clock()))
 	title.Text = "UPDATE! RESTARTING IN " .. left .. "s"
-	sub.Text = "Your progress is saved. Please rejoin when you are kicked. " .. reasonText
+	sub.Text = "Your progress is saved. You will be moved to a fresh server automatically. " .. reasonText
 	stroke.Thickness = 3 + math.sin(os.clock() * 5) * 0.8
 end)

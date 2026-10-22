@@ -27,6 +27,7 @@ end
 local floorEnd = floor.Position.Z + floor.Size.X / 2
 
 -- the win course preview is built by WinCoursePreviewService; read the first tile from it
+local tileColor, tileMaterial = nil, nil
 local tileEdge = WinCourseGenerator.GetStartPosition().Z + 2.45
 local tileWidth = floor.Size.Z
 local preview = course:WaitForChild("WinCoursePreview", 30)
@@ -39,12 +40,19 @@ if preview then
 		end
 	end
 	if best then
+		tileColor, tileMaterial = best.Color, best.Material
 		tileEdge = best.Position.Z - best.Size.Z / 2
 		tileWidth = math.max(best.Size.X, tileWidth)
 	end
 end
 
-local length = math.max(tileEdge - floorEnd, 1)
+-- The oil floor is a see-through ForceField lane, so a plain continuation of it looked
+-- like an empty gap before the first win tile. The apron is SOLID and looks like the
+-- win lane (first tile's colour / material), and it starts a few studs BEFORE the oil
+-- floor ends (under the finish wall) so the two lanes overlap instead of just touching.
+local OVERLAP = 6
+local startEdge = floorEnd - OVERLAP
+local length = math.max(tileEdge - startEdge, 1)
 
 local apron = Instance.new("Part")
 apron.Name = "WinCourseApron"
@@ -53,10 +61,10 @@ apron.CanCollide = true
 apron.CanTouch = false
 apron.CanQuery = true
 apron.Size = Vector3.new(tileWidth, floor.Size.Y, length)
-apron.Position = Vector3.new(floor.Position.X, floor.Position.Y - 0.01, floorEnd + length / 2)
-apron.Color = floor.Color
-apron.Material = floor.Material
-apron.Reflectance = floor.Reflectance
+apron.Position = Vector3.new(floor.Position.X, floor.Position.Y + 0.02, startEdge + length / 2) -- a hair above the oil floor: no z-fighting
+apron.Color = tileColor or floor.Color
+apron.Material = tileMaterial or Enum.Material.SmoothPlastic
+apron.Reflectance = 0
 apron.TopSurface = Enum.SurfaceType.Smooth
 apron.BottomSurface = Enum.SurfaceType.Smooth
 apron.Parent = course

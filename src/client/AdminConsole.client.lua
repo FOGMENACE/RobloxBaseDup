@@ -34,7 +34,18 @@ gui.Parent = playerGui
 local frame = Instance.new("Frame")
 frame.AnchorPoint = Vector2.new(0, 1)
 frame.Size = UDim2.fromOffset(560, 320)
-frame.Position = UDim2.new(0, 12, 1, -12)
+-- Top centre, under the top edge: clear of the Roblox hotbar / backpack tooltips
+-- (bottom centre), the chat and menu (top left) and the game's wins hub (left).
+frame.AnchorPoint = Vector2.new(0.5, 0)
+frame.Position = UDim2.new(0.5, 0, 0, 40)
+local frameScale = Instance.new("UIScale")
+frameScale.Parent = frame
+local function fitFrame()
+	local viewport = gui.AbsoluteSize
+	frameScale.Scale = math.clamp(math.min(viewport.X * 0.9 / 580, (viewport.Y - 60) / 340), 0.55, 1)
+end
+fitFrame()
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitFrame)
 frame.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
 frame.BackgroundTransparency = 0.05
 frame.Active = true
@@ -68,7 +79,7 @@ output.Text = "Admin console. Type help."
 output.Parent = scroll
 
 local box = Instance.new("TextBox")
-box.Size = UDim2.new(1, -16, 0, 28)
+box.Size = UDim2.new(1, -96, 0, 28)
 box.Position = UDim2.new(0, 8, 1, -36)
 box.BackgroundColor3 = Color3.fromRGB(36, 36, 52)
 box.TextColor3 = Color3.new(1, 1, 1)
@@ -78,6 +89,19 @@ box.TextSize = 15
 box.ClearTextOnFocus = false
 box.Text = ""
 box.Parent = frame
+
+-- visible SEND button (also for touch screens with no Enter key)
+local sendButton = Instance.new("TextButton")
+sendButton.AnchorPoint = Vector2.new(1, 0)
+sendButton.Position = UDim2.new(1, -8, 1, -36)
+sendButton.Size = UDim2.fromOffset(76, 28)
+sendButton.BackgroundColor3 = Color3.fromRGB(70, 150, 90)
+sendButton.Font = Enum.Font.GothamBold
+sendButton.Text = "SEND"
+sendButton.TextColor3 = Color3.new(1, 1, 1)
+sendButton.TextSize = 14
+sendButton.Parent = frame
+Instance.new("UICorner", sendButton).CornerRadius = UDim.new(0, 6)
 
 local lines = { "Admin console. Type help." }
 local MAX_LINES = 300
@@ -107,8 +131,8 @@ local function push(text)
 	relayout()
 end
 
-box.FocusLost:Connect(function(enter)
-	if not enter or box.Text == "" then
+local function sendCurrent()
+	if box.Text == "" then
 		return
 	end
 
@@ -121,19 +145,51 @@ box.FocusLost:Connect(function(enter)
 	end)
 
 	push(ok and tostring(message) or "request failed")
+end
+
+box.FocusLost:Connect(function(enter)
+	if enter then
+		sendCurrent()
+	end
 end)
+sendButton.Activated:Connect(sendCurrent)
+
+local function toggle()
+	gui.Enabled = not gui.Enabled
+	if gui.Enabled then
+		task.defer(scrollToNewest)
+		task.defer(function()
+			box:CaptureFocus()
+		end)
+	end
+end
+
+-- a small always-visible ADMIN tab (own ScreenGui so it stays when the console is closed),
+-- at the top centre, away from the hotbar; the ` key still works too
+local tabGui = Instance.new("ScreenGui")
+tabGui.Name = "AdminConsoleTab"
+tabGui.ResetOnSpawn = false
+tabGui.DisplayOrder = 199
+tabGui.Parent = playerGui
+local tab = Instance.new("TextButton")
+tab.AnchorPoint = Vector2.new(0.5, 0)
+tab.Position = UDim2.new(0.5, 0, 0, 6)
+tab.Size = UDim2.fromOffset(64, 26)
+tab.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
+tab.BackgroundTransparency = 0.15
+tab.Font = Enum.Font.GothamBold
+tab.Text = "ADMIN"
+tab.TextColor3 = Color3.fromRGB(150, 230, 170)
+tab.TextSize = 11
+tab.Parent = tabGui
+Instance.new("UICorner", tab).CornerRadius = UDim.new(0, 6)
+tab.Activated:Connect(toggle)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
 	if input.KeyCode == Enum.KeyCode.Backquote then
-		gui.Enabled = not gui.Enabled
-		if gui.Enabled then
-			task.defer(scrollToNewest)
-			task.defer(function()
-				box:CaptureFocus()
-			end)
-		end
+		toggle()
 	end
 end)

@@ -547,13 +547,40 @@ local function startRestart(seconds, reason)
 		if restartState.Token ~= token or not restartState.Active then
 			return -- cancelled
 		end
-		for _, p in ipairs(Players:GetPlayers()) do
+		local everyone = Players:GetPlayers()
+		for _, p in ipairs(everyone) do
 			pcall(PlayerDataService.SavePlayer, p)
 		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			p:Kick("The game updated! Please rejoin. " .. reason)
+		-- Move everyone into a NEW server of the latest version (they rejoin by
+		-- themselves, nobody is kicked out of the game). Friends travel together:
+		-- one TeleportAsync for the whole group, then single players as fallback.
+		-- Teleports do not run in Studio, so there it only logs.
+		if game:GetService("RunService"):IsStudio() then
+			print("[AdminService] (Studio) would now move", #everyone, "player(s) to a new server")
+		elseif #everyone > 0 then
+			local TeleportService = game:GetService("TeleportService")
+			local options = Instance.new("TeleportOptions")
+			options:SetTeleportData({ Transfer = "update" })
+			local ok = pcall(function()
+				TeleportService:TeleportAsync(game.PlaceId, everyone, options)
+			end)
+			if not ok then
+				for _, p in ipairs(everyone) do
+					local single = Instance.new("TeleportOptions")
+					single:SetTeleportData({ Transfer = "update" })
+					pcall(function()
+						TeleportService:TeleportAsync(game.PlaceId, { p }, single)
+					end)
+				end
+			end
+			task.delay(12, function()
+				-- anyone the teleport could not move (rare): a clear message instead of a stuck game
+				for _, p in ipairs(Players:GetPlayers()) do
+					p:Kick("The game updated! Please rejoin. " .. reason)
+				end
+			end)
 		end
-		-- stays "Active": anyone who still joins this old server is bounced below
+		-- stays "Active": anyone who still joins this old server is moved on below
 	end)
 	return true
 end
@@ -572,7 +599,13 @@ Players.PlayerAdded:Connect(function(player)
 	if restartState.Active then
 		if os.clock() >= restartState.Deadline then
 			task.defer(function()
-				player:Kick("The game is updating. Please rejoin in a moment.")
+				-- a late joiner on an old server is sent on to a fresh one
+				local ok = not game:GetService("RunService"):IsStudio() and pcall(function()
+					game:GetService("TeleportService"):TeleportAsync(game.PlaceId, { player })
+				end)
+				if not ok then
+					player:Kick("The game is updating. Please rejoin in a moment.")
+				end
 			end)
 		else
 			restartRemote:FireClient(player, math.ceil(restartState.Deadline - os.clock()), restartState.Reason)
@@ -616,14 +649,14 @@ commands.restart = function(admin, args)
 	local seconds, reason = parseRestart(args)
 	local code = tostring(math.random(1000, 9999))
 	pending[admin] = { Code = code, Kind = "restart", Scope = "this", Seconds = seconds, Reason = reason, Time = os.clock() }
-	return true, string.format("RESTART THIS SERVER in %ds (%d player(s), you included, get kicked with a rejoin message; data is saved first).\nType:  confirm %s   (within %ds) or  cancel", seconds, #Players:GetPlayers(), code, AdminConfig.ConfirmSeconds)
+	return true, string.format("RESTART THIS SERVER in %ds (%d player(s), you included, are moved to a NEW server of the latest version automatically; data is saved first).\nType:  confirm %s   (within %ds) or  cancel", seconds, #Players:GetPlayers(), code, AdminConfig.ConfirmSeconds)
 end
 
 commands.restartall = function(admin, args)
 	local seconds, reason = parseRestart(args)
 	local code = tostring(math.random(1000, 9999))
 	pending[admin] = { Code = code, Kind = "restart", Scope = "all", Seconds = seconds, Reason = reason, Time = os.clock() }
-	return true, string.format("RESTART EVERY SERVER in %ds: all players everywhere get a countdown, are saved and are kicked with a rejoin message (use after you publish).\nType:  confirm %s   (within %ds) or  cancel", seconds, code, AdminConfig.ConfirmSeconds)
+	return true, string.format("RESTART EVERY SERVER in %ds: all players everywhere get a countdown, are saved and are moved into new servers of the latest version automatically (use after you publish).\nType:  confirm %s   (within %ds) or  cancel", seconds, code, AdminConfig.ConfirmSeconds)
 end
 
 commands.cancelrestart = function()
