@@ -41,26 +41,37 @@ end
 
 -- REACH-LEVEL SCHEDULE: the level you must reach to rebirth, per rebirth
 -- you already have. Index 1 = 0 rebirths (the tutorial rebirth: just earn
--- your first level-up on the X1 generator). Steps are strategic: small
--- early, +10 / +15 in the middle, wider later, but never huge jumps.
+-- your first level-up on the X1 generator).
+--
+-- Tuned for the ADDITIVE pass XP (pass numbers are added to the rebirth bonus,
+-- not multiplied) and the generator ladder. Target time for a player with NO
+-- passes rolling on the best generator they can use:
+--   R0-3 : 1-4 min    R4-10 : 5-10 min    R11-20 : 10-19 min
+--   R21-40 : 19-30 min    R41-75 : 30-45 min    R76-100 : 45-60 min
+-- The jumps at R8 / R15 / R20 / R25 ... line up with the new generator that
+-- unlocks there (each one pays more XP, so the next climb is longer).
+-- Pass owners are several times faster (a x240 pass about 2x early, all six
+-- passes a lot more), which is the thing they pay for.
 local REQUIRED_LEVELS = {
-	2, 9, 17, 30, 45, 55, 70, 80, 95, 110,
-	125, 145, 165, 190, 215, 245, 275, 310, 345, 385,
+	2, 8, 17, 23, 36, 42, 50, 57, 83, 90,
+	110, 121, 129, 138, 149, 190, 200, 210, 224, 238,
+	279, 288, 302, 317, 326, 367, 383, 399, 409, 418,
+	468, 486, 497, 507, 526, 579, 590, 602, 621, 641,
+	689,
 }
-
 function RebirthBonuses.RequiredLevel(rebirths)
 	local count = clean(rebirths)
 	if count + 1 <= #REQUIRED_LEVELS then
 		return REQUIRED_LEVELS[count + 1]
 	end
 
-	-- beyond the table: a steady +35 levels per rebirth. The old rule grew the
+	-- beyond the table: a steady +22 levels per rebirth. The old rule grew the
 	-- step by 5 every rebirth (quadratic), so around 37 rebirths one cycle
 	-- needed ~1,960 levels and kept exploding. Linear steps keep each rebirth a
 	-- similar, reachable climb while the rebirth XP bonus keeps growing too:
-	-- 30 -> 770, 37 -> 1,015, 50 -> 1,470, 75 -> 2,345, 100 -> 3,220.
+	-- 50 -> 909, 75 -> 1,459, 100 -> 2,009.
 	local extra = count - (#REQUIRED_LEVELS - 1)
-	return REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 35
+	return REQUIRED_LEVELS[#REQUIRED_LEVELS] + extra * 22
 end
 
 return RebirthBonuses

@@ -13,6 +13,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
@@ -237,6 +238,12 @@ local genHolder = create("Frame", {
 	Visible = false,
 }, gui)
 local genScale = create("UIScale", {}, genHolder)
+-- phones / tablets: a small badge up by the x2 buttons instead of a big card mid-screen
+local TOUCH_SIZE = UserInputService.TouchEnabled and 0.55 or 1
+if UserInputService.TouchEnabled then
+	genHolder.AnchorPoint = Vector2.new(1, 0)
+	genHolder.Position = UDim2.new(1, -150, 0, 120)
+end
 
 -- sunburst behind everything (turns slowly)
 local rays = create("Frame", {
@@ -406,9 +413,9 @@ RunService.RenderStepped:Connect(function()
 	genOil.Position = UDim2.new(0.5, 0, 0.5, math.sin(now * 2.6) * 4)
 	genOil.Rotation = -12 + math.sin(now * 1.7) * 4
 	if player:GetAttribute("X6Mode") == "Ready" then
-		genScale.Scale = 0.9 + math.sin(now * 4) * 0.045
+		genScale.Scale = (0.9 + math.sin(now * 4) * 0.045) * TOUCH_SIZE
 	else
-		genScale.Scale = 0.9
+		genScale.Scale = 0.9 * TOUCH_SIZE
 	end
 end)
 --------------------------------------------------

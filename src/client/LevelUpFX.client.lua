@@ -109,12 +109,23 @@ end
 --------------------------------------------------
 
 local function levelUp(level)
-	local holder = create("Frame", {
+	-- a CanvasGroup so the whole burst can be made see-through at once: during a
+	-- course (or the win course) it must not blind the player
+	local holder = create("CanvasGroup", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.4),
 		Size = UDim2.fromOffset(600, 220),
 		BackgroundTransparency = 1,
 	}, gui)
+	local function fitOpacity()
+		local state = player:GetAttribute("RunState") or "Waiting"
+		holder.GroupTransparency = (state == "Waiting") and 0 or 0.8
+	end
+	fitOpacity()
+	local stateConn = player:GetAttributeChangedSignal("RunState"):Connect(fitOpacity)
+	holder.Destroying:Once(function()
+		stateConn:Disconnect()
+	end)
 	local scale = create("UIScale", { Scale = 0 }, holder)
 
 	-- spinning burst behind the text

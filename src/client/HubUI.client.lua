@@ -139,11 +139,12 @@ local COLUMN_HEIGHT = 326 -- content height at scale 1
 local function updateRootScale()
 	local viewport = gui.AbsoluteSize
 	local rebirthScale = math.clamp(viewport.X / 900, 0.65, 1)
-	-- touch screens: the rebirth badge is about half size (HudUI)
-	local panelScale = UserInputService.TouchEnabled and rebirthScale * 0.5 or rebirthScale
-	local rebirthTop = viewport.Y - 8 - 132 * panelScale - 8
+	-- touch screens: the rebirth badge sits in the empty slot beside QUESTS (HudUI),
+	-- so the column may use the full height
+	local rebirthTop = UserInputService.TouchEnabled and (viewport.Y - 12)
+		or (viewport.Y - 10 - 132 * rebirthScale - 10)
 
-	local topFraction = 0.335
+	local topFraction = UserInputService.TouchEnabled and 0.2 or 0.335 -- phones: a little higher
 	local fit = (rebirthTop - topFraction * viewport.Y) / COLUMN_HEIGHT
 	if fit < 0.75 then
 		topFraction = 0.28

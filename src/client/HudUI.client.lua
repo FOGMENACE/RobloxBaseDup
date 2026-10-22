@@ -648,23 +648,40 @@ rebirthPanel.Activated:Connect(function()
 	end
 end)
 
--- Touch screens: the panel is a compact corner badge (about half size) in the
--- very bottom-left, smaller than the wins hub above it, and clear of the
--- on-screen jump/zoom buttons on the right. The floating thumbstick only
--- appears where the player touches, so the corner stays free.
-local TOUCH_PANEL_SCALE = 0.5
+-- Touch screens: the panel fills the empty slot beside the QUESTS button in the
+-- wins hub grid (not attached to it), as tall as one hub button, so it no longer
+-- sits over the thumbstick in the bottom-left corner.
+local questsButton = nil
 local function fitRebirth()
 	local viewport = gui.AbsoluteSize
 	local scale = math.clamp(viewport.X / 900, 0.65, 1)
 	if touch then
-		scale *= TOUCH_PANEL_SCALE
-		rebirthPanel.AnchorPoint = Vector2.new(0, 1)
-		rebirthPanel.Position = UDim2.new(0, 8, 1, -8)
+		local hub = playerGui:FindFirstChild("HubUI")
+		questsButton = (questsButton and questsButton.Parent) and questsButton or (hub and hub:FindFirstChild("QuestsButton", true))
+		if questsButton and questsButton.AbsoluteSize.Y > 0 then
+			local rect = questsButton.AbsolutePosition
+			local height = questsButton.AbsoluteSize.Y
+			scale = height / 132
+			rebirthPanel.AnchorPoint = Vector2.new(0, 0)
+			rebirthPanel.Position = UDim2.fromOffset(rect.X + questsButton.AbsoluteSize.X + 6, rect.Y)
+		else
+			scale *= 0.5
+			rebirthPanel.AnchorPoint = Vector2.new(0, 1)
+			rebirthPanel.Position = UDim2.new(0, 8, 1, -8)
+		end
 	end
 	rebirthScale.Scale = scale
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitRebirth)
 fitRebirth()
+if touch then
+	task.spawn(function()
+		while true do
+			task.wait(0.5) -- follows the hub as it rescales / reflows
+			fitRebirth()
+		end
+	end)
+end
 --------------------------------------------------
 -- LEVEL UP
 --------------------------------------------------
@@ -686,6 +703,7 @@ local function levelUpBurst(newLevel)
 		Text = "LEVEL UP!  " .. tostring(newLevel),
 		TextColor3 = LANE,
 		TextSize = 40,
+		TextTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.75,
 		ZIndex = 30,
 	}, gui)
 	create("UIStroke", { Color = INK, Thickness = 4 }, banner)
