@@ -147,55 +147,66 @@ local dailyFrame = create("Frame", {
 -- The paid SKIP as a slanted gold ribbon on the right edge of a quest row: tilted,
 -- with a shine, so it reads as a "tempting offer" and not a plain button. The
 -- server still opens the purchase and validates it (this is display only).
-local function skipRibbon(row, fromRight, height)
-	local ribbon = button({
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -fromRight, 0.5, 0),
-		Size = UDim2.fromOffset(84, height),
+local function skipRibbon(row, fromRight, rowHeight)
+	-- A slanted SASH running through the quest row (top to bottom, clipped by the
+	-- row's edges), like a sale ribbon: "SKIP" over the Robux price. The whole sash
+	-- is the button.
+	row.ClipsDescendants = true
+	local sash = button({
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -fromRight - 34, 0.5, 0),
+		Size = UDim2.fromOffset(64, rowHeight * 2),
 		BackgroundColor3 = Color3.fromRGB(255, 176, 40),
 		Text = "",
-		TextColor3 = Color3.fromRGB(60, 24, 6),
-		TextSize = 16,
-		Rotation = -4,
+		Rotation = 18,
 	}, row)
-	-- the word is its own label: white with a thin outline so it stays crisp on the gold
+	for _, child in ipairs(sash:GetChildren()) do
+		if child:IsA("UICorner") then
+			child:Destroy() -- a sash has straight edges
+		end
+	end
+	create("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(230, 120, 20)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 214, 90)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(230, 120, 20)),
+		}),
+		Rotation = 0,
+	}, sash)
+	-- thin darker edge lines down both sides of the sash
+	for _, x in ipairs({ 0, 1 }) do
+		create("Frame", {
+			AnchorPoint = Vector2.new(x, 0),
+			Position = UDim2.fromScale(x, 0),
+			Size = UDim2.new(0, 3, 1, 0),
+			BackgroundColor3 = Color3.fromRGB(150, 60, 10),
+			BorderSizePixel = 0,
+		}, sash)
+	end
 	local word = create("TextLabel", {
-		Position = UDim2.fromOffset(0, 4),
-		Size = UDim2.new(1, 0, 0, 22),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, -9),
+		Size = UDim2.new(1, -6, 0, 20),
 		BackgroundTransparency = 1,
 		Font = FONT,
 		Text = "SKIP",
 		TextColor3 = Color3.fromRGB(255, 255, 255),
 		TextSize = 18,
-	}, ribbon)
-	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 1.5 }, word)
-	create("UIGradient", {
-		Color = ColorSequence.new(Color3.fromRGB(255, 214, 90), Color3.fromRGB(240, 120, 30)),
-		Rotation = 90,
-	}, ribbon)
-	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 2 }, ribbon)
+	}, sash)
+	create("UIStroke", { Color = Color3.fromRGB(130, 50, 10), Thickness = 1.5 }, word)
 	local price = create("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -3),
-		Size = UDim2.new(1, -8, 0, 16),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 10),
+		Size = UDim2.new(1, -6, 0, 16),
 		BackgroundTransparency = 1,
 		Font = FONT,
 		Text = utf8.char(0xE002) .. " 29",
-		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextColor3 = Color3.fromRGB(70, 28, 6),
 		TextSize = 14,
-	}, ribbon)
-	create("UIStroke", { Color = Color3.fromRGB(120, 50, 10), Thickness = 1.5 }, price)
-	Shine.Attach(ribbon, { Offset = 1.7 })
-	-- gentle wiggle so the eye catches it
-	task.spawn(function()
-		while ribbon.Parent do
-			ribbon.Rotation = -4 + math.sin(os.clock() * 2.4) * 2
-			task.wait(0.05)
-		end
-	end)
-	return ribbon
+	}, sash)
+	Shine.Attach(sash, { Offset = 1.7 })
+	return sash
 end
-
 local rows = {}
 for index = 1, 3 do
 	local row = create("Frame", {
@@ -235,7 +246,7 @@ for index = 1, 3 do
 	}, track)
 
 	-- paid skip (R$ 29), only while the quest is unfinished
-	local skip = skipRibbon(row, 128, 52)
+	local skip = skipRibbon(row, 128, 74)
 
 	local claim = button({
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -324,7 +335,7 @@ for index = 1, 7 do
 	}, row)
 
 	-- paid skip (one per milestone), shown while it is unfinished
-	local skip = skipRibbon(row, 118, 46)
+	local skip = skipRibbon(row, 118, 62)
 
 	weeklyRows[index] = { Title = title, Fill = fill, Progress = progress, Claim = claim, Skip = skip }
 end

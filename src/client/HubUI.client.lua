@@ -860,14 +860,18 @@ end)
 local calendarPanel = create("Frame", {
 	Name = "CalendarPanel",
 	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(760, 250),
+	Position = UDim2.fromScale(0.5, 0.44),
+	Size = UDim2.fromOffset(760, 262),
 	BackgroundColor3 = LANE,
 	Visible = false,
 	ZIndex = 20,
 }, gui)
 round(calendarPanel, 18)
 outline(calendarPanel, INK, 4)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 214, 120), Color3.fromRGB(240, 160, 60)),
+	Rotation = 90,
+}, calendarPanel)
 local calendarScale = create("UIScale", { Scale = 1 }, calendarPanel)
 
 local function updateCalendarScale()
@@ -937,7 +941,7 @@ local function slotText(reward)
 	elseif reward.Type == "Oil" then
 		return formatNumber(reward.Amount) .. " OIL\nSTART"
 	elseif reward.Type == "Ball" then
-		return "BALL"
+		return "OIL BARREL\nBALL"
 	elseif reward.Type == "BallNext" then
 		return "NEXT\nBALL"
 	elseif reward.Type == "Rebirth" then
@@ -991,27 +995,41 @@ rebuildCalendar = function()
 		local claimed = index <= claimedUpTo
 		local claimable = nextSlot == index
 
+		local jackpot = reward.Special == true
 		local slot = create("TextButton", {
 			LayoutOrder = index,
 			Size = UDim2.fromOffset(94, 154),
 			BackgroundColor3 = claimable and Color3.fromRGB(255, 244, 190)
-				or (claimed and Color3.fromRGB(210, 235, 210) or CREAM),
+				or (claimed and Color3.fromRGB(214, 238, 214) or (jackpot and Color3.fromRGB(255, 220, 110) or CREAM)),
 			Text = "",
 			AutoButtonColor = false,
 			ZIndex = 22,
 		}, slotRow)
 		round(slot, 12)
 		create("UIStroke", {
-			Color = claimable and PIN_RED or INK,
-			Thickness = claimable and 4 or 3,
+			Color = claimable and PIN_RED or (jackpot and Color3.fromRGB(200, 130, 0) or INK),
+			Thickness = (claimable or jackpot) and 4 or 3,
 		}, slot)
+		if jackpot then
+			-- the day 7 jackpot stands out: gold card with a shine
+			create("UIGradient", {
+				Color = ColorSequence.new(Color3.fromRGB(255, 240, 160), Color3.fromRGB(255, 190, 60)),
+				Rotation = 90,
+			}, slot)
+			Shine.Attach(slot, { Offset = 0.5 })
+		end
+		if claimable then
+			-- today's reward breathes so the eye goes straight to it
+			local pulse = create("UIScale", { Scale = 1 }, slot)
+			TweenService:Create(pulse, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Scale = 1.06 }):Play()
+		end
 
 		create("TextLabel", {
 			BackgroundTransparency = 1,
 			Position = UDim2.fromOffset(0, 4),
 			Size = UDim2.new(1, 0, 0, 20),
 			Font = FONT,
-			Text = reward.Special and ("DAY " .. index .. " *") or ("DAY " .. index),
+			Text = reward.Special and "JACKPOT!" or ("DAY " .. index),
 			TextColor3 = reward.Special and PIN_RED or INK,
 			TextSize = 14,
 			ZIndex = 23,
@@ -1024,6 +1042,38 @@ rebuildCalendar = function()
 			ZIndex = 23,
 		}, slot)
 		slotIcon(iconHolder, reward)
+		if reward.Type == "Ball" then
+			-- a 3D barrel preview did not render reliably here (its mesh loads late):
+			-- the jackpot slot shows a big swaying barrel icon instead, never empty
+			for _, child in ipairs(iconHolder:GetChildren()) do
+				child:Destroy()
+			end
+			local icon = create("TextLabel", {
+				BackgroundTransparency = 1,
+				Size = UDim2.fromScale(1, 1),
+				Font = FONT,
+				Text = "🛢️",
+				TextSize = 44,
+				ZIndex = 24,
+			}, iconHolder)
+			TweenService:Create(icon, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Rotation = 8 }):Play()
+		end
+		if claimed then
+			-- a clear check over every collected day
+			local check = create("TextLabel", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(40, 40),
+				BackgroundColor3 = GREEN,
+				Font = FONT,
+				Text = "✓",
+				TextColor3 = CREAM,
+				TextSize = 28,
+				ZIndex = 25,
+			}, iconHolder)
+			round(check, 20)
+			outline(check, INK, 2)
+		end
 
 		create("TextLabel", {
 			BackgroundTransparency = 1,
