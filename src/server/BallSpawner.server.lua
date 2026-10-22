@@ -467,6 +467,20 @@ local function getBallTemplate(
 	end
 
 	--------------------------------------------------
+	-- OIL BARREL: its barrel is an accessory drawn over an invisible ball. Use
+	-- the standard ball MESH for that invisible ball (not the plain Part), so a
+	-- mid-run swap away from the barrel (a downgrade platform) can happen in
+	-- place like every other tier swap; swapping between a Part and a MeshPart
+	-- re-creates the ball, which froze it on the client for ~0.25 s.
+	--------------------------------------------------
+	if ballId == "OilBarrel" then
+		local straight = ballModels and ballModels:FindFirstChild("StraightBall")
+		if straight and straight:IsA("MeshPart") then
+			return straight
+		end
+	end
+
+	--------------------------------------------------
 	-- UNIVERSAL TEMPLATE
 	--------------------------------------------------
 
