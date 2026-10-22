@@ -67,13 +67,15 @@ local gui = create("ScreenGui", {
 
 local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
 
--- the player's world when it is a re-themed one with its own X6 generator number
+-- The gift card is shown in EVERY world (the old random "FREE x6" popup is no
+-- longer used). It names that world's X6 generator: x6 in the Rookie Lanes,
+-- the world's own number (x30 / x60 / ...) in the higher worlds.
 local function themedWorld()
-	local world = WorldConfig.Of(player)
-	if world.Id >= 2 and world.Generators and world.Generators.GenX6 then
-		return world
-	end
-	return nil
+	return WorldConfig.Of(player)
+end
+
+local function x6Value(world)
+	return world.Generators and world.Generators.GenX6 or 6
 end
 
 --------------------------------------------------
@@ -355,7 +357,7 @@ genButton.Activated:Connect(function()
 	if mode == "Ready" then
 		remotes:WaitForChild("X6Claim"):FireServer()
 	elseif mode == "Active" then
-		showTip("Boost on! Roll onto the X" .. world.Generators.GenX6 .. " generator.")
+		showTip("Boost on! Roll onto the X" .. x6Value(world) .. " generator.")
 	else
 		local minutes = math.max(1, math.ceil(remainingSeconds() / 60))
 		showTip("Will be FREE IN " .. minutes .. (minutes == 1 and " minute." or " minutes."))
@@ -370,7 +372,7 @@ task.spawn(function()
 		genHolder.Visible = show
 		if show then
 			local mode = player:GetAttribute("X6Mode")
-			genName.Text = "X" .. world.Generators.GenX6 .. " XP"
+			genName.Text = "X" .. x6Value(world) .. " XP"
 			if mode == "Ready" then
 				genTop.Text = "FREE!"
 				genSub.Text = "CLAIM!"
