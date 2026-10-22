@@ -143,7 +143,7 @@ commands.help = function()
 		"kick <name> [reason] | ban <name|id> [reason] | unban <id> | banlist",
 		"goto <name> | bring <name>",
 		"give <name> wins|oil <amount> | grant <name> ball <id> | grant <name> skin <ballId> <world>",
-		"feedback [YYYY-MM-DD | days ago] | flags [YYYY-MM-DD | days ago] | history <name|userid>",
+		"feedback [YYYY-MM-DD | days ago] | flags [YYYY-MM-DD | days ago] | history <name|userid> | blockers [name]",
 		"reset <userid> [dry]  then  confirm <code>  (progression reset, backed up)",
 		"cancel",
 	}, "\n")
@@ -166,6 +166,41 @@ end
 
 local function clock(t)
 	return os.date("!%m-%d %H:%M", t or 0)
+end
+
+-- "blockers [name]": what solid things are within 9 studs of that player's ball
+-- (default: yours), to find out what stops a ball. Includes other balls and
+-- characters, with their collision groups.
+commands.blockers = function(admin, args)
+	local target = args[1] and findPlayer(args[1]) or admin
+	local balls = workspace:FindFirstChild("PlayerBalls")
+	local ball = target and balls and balls:FindFirstChild("PlayerBall_" .. target.UserId)
+	if not ball then
+		return false, "no ball found for that player"
+	end
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { ball }
+	local lines = { string.format("ball of %s at %.0f, %.0f, %.0f (group %s)", target.Name, ball.Position.X, ball.Position.Y, ball.Position.Z, ball.CollisionGroup) }
+	local seen = {}
+	for _, part in ipairs(workspace:GetPartBoundsInRadius(ball.Position, 9, params)) do
+		local top = part
+		while top.Parent and top.Parent ~= workspace do
+			top = top.Parent
+		end
+		local floorLike = part.Size.Y < 1 and part.Size.X > 20 and part.Size.Z > 20
+		if part.CanCollide and not floorLike then
+			local key = top.Name .. "/" .. part.Name
+			if not seen[key] then
+				seen[key] = true
+				table.insert(lines, string.format("SOLID %s  size %.1f x %.1f x %.1f  group %s", key, part.Size.X, part.Size.Y, part.Size.Z, part.CollisionGroup))
+			end
+		end
+	end
+	if #lines == 1 then
+		table.insert(lines, "nothing solid within 9 studs (besides the floor)")
+	end
+	return true, table.concat(lines, "\n")
 end
 
 commands.give = function(_, args)
@@ -580,7 +615,7 @@ commandRemote.OnServerInvoke = function(player, text)
 		return false, "command error"
 	end
 
-	local readOnly = { help = true, whoami = true, find = true, inspect = true, banlist = true, feedback = true, flags = true, history = true }
+	local readOnly = { help = true, whoami = true, find = true, inspect = true, banlist = true, feedback = true, flags = true, history = true, blockers = true }
 	if not readOnly[name:lower()] then
 		log(player, name:lower(), table.concat(tokens, " "), success)
 	end

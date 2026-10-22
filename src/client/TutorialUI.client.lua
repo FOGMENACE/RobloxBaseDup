@@ -216,11 +216,10 @@ local tab = create("TextLabel", {
 	Font = FONT,
 	Text = "TUTORIAL",
 	TextColor3 = Color3.fromRGB(40, 24, 70),
-	TextSize = 16,
+	TextSize = 15,
 	ZIndex = 11,
 }, panel)
 create("UICorner", { CornerRadius = UDim.new(0, 15) }, tab)
-create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 2 }, tab)
 local iconBox = create("Frame", {
 	AnchorPoint = Vector2.new(0, 0.5),
 	Position = UDim2.new(0, 14, 0.5, 4),
@@ -243,16 +242,15 @@ local banner = create("TextLabel", {
 	Position = UDim2.fromOffset(86, 16),
 	Size = UDim2.new(1, -100, 0, 52),
 	BackgroundTransparency = 1,
-	Font = FONT,
+	Font = Enum.Font.GothamMedium, -- lighter than the game font: easy to read at a glance
 	Text = "",
-	TextColor3 = Color3.fromRGB(250, 240, 215),
-	TextSize = 22,
+	TextColor3 = Color3.fromRGB(255, 250, 235),
+	TextSize = 20,
 	TextWrapped = true,
 	TextXAlignment = Enum.TextXAlignment.Left,
 	Visible = false,
 	ZIndex = 10,
 }, panel)
-create("UIStroke", { Color = Color3.fromRGB(20, 12, 50), Thickness = 1, Transparency = 0.35 }, banner) -- light outline: readable, not heavy
 local TOTAL_STEPS = 8
 local dots = {}
 local dotRow = create("Frame", {
@@ -535,6 +533,132 @@ end
 -- UPDATE
 --------------------------------------------------
 
+--------------------------------------------------
+-- WELCOME SCREEN (first time only, at step 1)
+--
+-- A full-screen card so the player knows they are in the TUTORIAL before any
+-- hints appear. They press CONTINUE to start.
+--------------------------------------------------
+
+local introActive = false
+local introDone = false
+
+local function showIntro(onContinue)
+	introActive = true
+	local dim = create("Frame", {
+		Name = "TutorialIntro",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(8, 6, 26),
+		BackgroundTransparency = 1,
+		ZIndex = 40,
+		Active = true, -- swallows clicks behind it
+	}, gui)
+	TweenService:Create(dim, TweenInfo.new(0.35), { BackgroundTransparency = 0.35 }):Play()
+
+	local card = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(520, 340),
+		BackgroundColor3 = Color3.fromRGB(24, 16, 60),
+		ZIndex = 41,
+	}, dim)
+	create("UICorner", { CornerRadius = UDim.new(0, 22) }, card)
+	create("UIStroke", { Color = Color3.fromRGB(255, 205, 70), Thickness = 3 }, card)
+	local cardScale = create("UIScale", { Scale = 0.6 }, card)
+	local function fit()
+		local viewport = gui.AbsoluteSize
+		cardScale.Scale = math.clamp(math.min(viewport.X / 560, viewport.Y / 380), 0.5, 1.1)
+	end
+	fit()
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+
+	local tab = create("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, 0),
+		Size = UDim2.fromOffset(250, 38),
+		BackgroundColor3 = Color3.fromRGB(255, 205, 70),
+		Font = FONT,
+		Text = "TUTORIAL",
+		TextColor3 = Color3.fromRGB(40, 24, 70),
+		TextSize = 24,
+		ZIndex = 43,
+	}, card)
+	create("UICorner", { CornerRadius = UDim.new(0, 19) }, tab)
+
+	create("TextLabel", {
+		Position = UDim2.fromOffset(20, 34),
+		Size = UDim2.new(1, -40, 0, 44),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = "WELCOME TO +1 OIL BOWLING!",
+		TextColor3 = Color3.fromRGB(255, 232, 130),
+		TextSize = 26,
+		ZIndex = 42,
+	}, card)
+	create("TextLabel", {
+		Position = UDim2.fromOffset(30, 84),
+		Size = UDim2.new(1, -60, 0, 56),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		Text = "Let's learn the basics, which will only take a few steps! Follow the hints and arrows at the top of your screen.",
+		TextColor3 = Color3.fromRGB(240, 236, 255),
+		TextSize = 17,
+		TextWrapped = true,
+		ZIndex = 42,
+	}, card)
+	local goals = { { "🛢️", "Roll the oil course" }, { "⚡", "Earn XP on the generator" }, { "♻️", "Rebirth for big bonuses" }, { "🎳", "Buy your first new ball" } }
+	for index, goal in ipairs(goals) do
+		local column = (index - 1) % 2
+		local row = math.floor((index - 1) / 2)
+		local chip = create("Frame", {
+			Position = UDim2.fromOffset(30 + column * 240, 150 + row * 50),
+			Size = UDim2.fromOffset(230, 40),
+			BackgroundColor3 = Color3.fromRGB(52, 36, 112),
+			ZIndex = 42,
+		}, card)
+		create("UICorner", { CornerRadius = UDim.new(0, 12) }, chip)
+		create("TextLabel", {
+			Size = UDim2.new(1, -8, 1, 0),
+			Position = UDim2.fromOffset(8, 0),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamMedium,
+			Text = goal[1] .. "  " .. goal[2],
+			TextColor3 = Color3.fromRGB(245, 240, 255),
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 43,
+		}, chip)
+	end
+
+	local button = create("TextButton", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -22),
+		Size = UDim2.fromOffset(260, 54),
+		BackgroundColor3 = Color3.fromRGB(88, 196, 110),
+		Font = FONT,
+		Text = "CONTINUE",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 26,
+		AutoButtonColor = true,
+		ZIndex = 43,
+	}, card)
+	create("UICorner", { CornerRadius = UDim.new(0, 16) }, button)
+	create("UIStroke", { Color = Color3.fromRGB(20, 60, 30), Thickness = 2 }, button)
+
+	TweenService:Create(cardScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = math.clamp(math.min(gui.AbsoluteSize.X / 560, gui.AbsoluteSize.Y / 380), 0.5, 1.1) }):Play()
+
+	button.Activated:Once(function()
+		introDone = true
+		TweenService:Create(dim, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(cardScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 }):Play()
+		task.delay(0.3, function()
+			dim:Destroy()
+			introActive = false
+			onContinue()
+		end)
+	end)
+end
+
 local shownStep = nil
 local calendarOpened = false
 local wasInTutorial = false
@@ -542,6 +666,13 @@ local wasInTutorial = false
 local function updateBanner(step)
 	if step == shownStep then
 		return
+	end
+	-- first time in the tutorial: the welcome card comes first, hints start after CONTINUE
+	if step == 1 and not introDone and not introActive and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
+		showIntro(function()
+			shownStep = nil
+			updateBanner(player:GetAttribute("TutorialStep"))
+		end)
 	end
 	shownStep = step
 
@@ -576,7 +707,7 @@ local function updateBanner(step)
 
 	banner.Text = textFor(step)
 	setStepDecor(step)
-	banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting" and not introActive
 	panel.Position = UDim2.new(0.5, 0, PANEL_Y - 0.05, 0)
 	TweenService:Create(panel, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, 0, PANEL_Y, 0) }):Play()
 	fitBanner()
@@ -593,7 +724,7 @@ RunService.RenderStepped:Connect(function()
 	local step = player:GetAttribute("TutorialStep")
 	updateBanner(step)
 
-	local active = typeof(step) == "number" and step >= 1 and step < DONE
+	local active = typeof(step) == "number" and step >= 1 and step < DONE and not introActive
 
 	-- the banner text depends on state (wins, panels), so keep it fresh
 	if active and banner.Visible then

@@ -20,6 +20,47 @@ pcall(function()
 	PhysicsService:CollisionGroupSetCollidable(GROUP, "Default", true)
 end)
 
+-- Hidden player characters (BallSpawner parks them at the spawn, invisible) must
+-- never block a ball either. Their owner's Humanoid turns CanCollide back on for
+-- its body parts, so the collision GROUP is what keeps them out of the way: this
+-- pair used to stay collidable, and a friend's invisible character could stop your
+-- ball (you could even roll up onto it).
+local CHARACTER_GROUP = "HiddenPlayerCharacter"
+pcall(function()
+	PhysicsService:RegisterCollisionGroup(CHARACTER_GROUP)
+end)
+pcall(function()
+	PhysicsService:CollisionGroupSetCollidable(CHARACTER_GROUP, GROUP, false)
+	PhysicsService:CollisionGroupSetCollidable(CHARACTER_GROUP, "Default", false)
+	PhysicsService:CollisionGroupSetCollidable(CHARACTER_GROUP, CHARACTER_GROUP, false)
+end)
+
+-- keep EVERY part of every character (also accessories that load later) in the
+-- hidden group, so nothing a character owns is ever solid to a ball
+local Players = game:GetService("Players")
+local function groupCharacter(character)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = CHARACTER_GROUP
+		end
+	end
+	character.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = CHARACTER_GROUP
+		end
+	end)
+end
+local function watchPlayer(player)
+	if player.Character then
+		groupCharacter(player.Character)
+	end
+	player.CharacterAdded:Connect(groupCharacter)
+end
+Players.PlayerAdded:Connect(watchPlayer)
+for _, player in ipairs(Players:GetPlayers()) do
+	watchPlayer(player)
+end
+
 local function apply(instance)
 	if instance:IsA("BasePart") then
 		instance.CollisionGroup = GROUP
