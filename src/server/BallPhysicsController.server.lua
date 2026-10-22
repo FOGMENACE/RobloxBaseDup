@@ -1766,11 +1766,10 @@ local rebirthMultiplier =
 local generatorMultiplier, generatorName =
     getActiveGeneratorMultiplier(player, ball)
 
--- Silent Game Pass multiplier (server-side only, no UI): applies
--- everywhere and STACKS with the generator (it used to be "the higher of
--- the two wins", which made every generator pay the same for pass owners).
-generatorMultiplier = generatorMultiplier
-    * GamePassService.GetSecretMultiplier(player)
+-- Silent Game Pass XP bonus: it ADDS to the rebirth bonus (rebirth +4600% and a
+-- x240 pass = +4600% + 23900%), it no longer multiplies it. The generator
+-- number still multiplies the combined bonus, like before.
+rebirthMultiplier = rebirthMultiplier + GamePassService.GetSecretBonus(player)
 
 -- Tutorial (steps 1-3): rolling around freely earns practically nothing, so the
 -- first level-up comes from the X1 generator the tutorial points at.

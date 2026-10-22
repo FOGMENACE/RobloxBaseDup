@@ -85,17 +85,23 @@ function GamePassService.OwnsAdminGenerator(player, generatorName, worldId)
 	return passId ~= nil and passId ~= 0 and GamePassService.Owns(player, passId)
 end
 
--- Highest silent XP multiplier the player owns (1 = none).
-function GamePassService.GetSecretMultiplier(player)
-	local best = 1
+-- Silent XP bonus: the SUM of the numbers on every pass the player owns
+-- (0 = none). It is added to the rebirth XP bonus, never multiplied with it.
+function GamePassService.GetSecretBonus(player)
+	local sum = 0
 
-	for passId, multiplier in pairs(GamePassConfig.SecretMultipliers) do
-		if multiplier > best and GamePassService.Owns(player, passId) then
-			best = multiplier
+	for passId, amount in pairs(GamePassConfig.SecretMultipliers) do
+		if GamePassService.Owns(player, passId) then
+			sum += amount
 		end
 	end
 
-	return best
+	return sum
+end
+
+-- kept for older callers: 1 + the bonus
+function GamePassService.GetSecretMultiplier(player)
+	return 1 + GamePassService.GetSecretBonus(player)
 end
 
 
@@ -103,6 +109,7 @@ end
 local function publish(player)
 	if player.Parent then
 		player:SetAttribute("PassXPMultiplier", GamePassService.GetSecretMultiplier(player))
+		player:SetAttribute("PassXPBonus", GamePassService.GetSecretBonus(player)) -- display: the pass numbers, summed
 	end
 end
 --------------------------------------------------

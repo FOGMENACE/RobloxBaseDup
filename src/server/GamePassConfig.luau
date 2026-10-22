@@ -22,8 +22,8 @@ GamePassConfig.WorldAdminGenerators = {
 	[4] = { ["GenX100 Admin XP"] = 2036387283, ["GenX1000 Admin XP"] = 2039765108 }, -- x490 R$ 869 / x2800 R$ 2,299
 }
 
--- Silent passes: Game Pass id -> XP multiplier (applies everywhere).
--- If a player owns several, the highest one applies.
+-- Silent passes: Game Pass id -> XP bonus (applies everywhere). Every owned pass
+-- counts: the numbers are SUMMED and added to the rebirth XP bonus.
 GamePassConfig.SecretMultipliers = {
 	[2039960889] = 2200,
 	[2037033103] = 360,

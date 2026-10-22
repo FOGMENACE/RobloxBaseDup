@@ -447,26 +447,27 @@ local passBonusLine = bonusLine(19, Color3.fromRGB(140, 240, 165))
 local function percentText(value)
 	value = math.floor(value + 0.5)
 	-- plain digits, no thousands separators (commas looked choppy)
-	return "+" .. tostring(value) .. "%"
+	return "+" .. tostring(value) .. "x"
 end
 
 local function refreshBonusPill()
 	local rebirths = player:GetAttribute("Rebirths") or 0
-	local rebirthPercent = (RebirthBonuses.XPMultiplier(rebirths) - 1) * 100
-	local passMultiplier = player:GetAttribute("PassXPMultiplier") or 1
-	local passPercent = math.max(passMultiplier - 1, 0) * 100
+	-- both lines are in the same unit as the passes: the real XP bonus that gets
+	-- ADDED (rebirths: +10 each; passes: the sum of the numbers on the passes you own)
+	local passBonus = player:GetAttribute("PassXPBonus") or 0
 
 	-- Stays at +1000% up to the x10 wins multiplier, then follows it 1:1 (x11 = +1100%,
 	-- x12 = +1200%, x13 = +1300% ...): 100% per extra wins multiplier.
-	local winsNow = RebirthBonuses.WinsMultiplier(rebirths)
-	local pillPercent = math.max(1000, winsNow * 100)
-	rebirthBonusLine.Text = "REBIRTH XP " .. percentText(pillPercent)
-	passBonusLine.Text = "PASS XP " .. percentText(passPercent)
+	-- the rebirth line keeps its original display: stays +1000% up to the x10 wins
+	-- multiplier, then follows it 100% per extra wins multiplier
+	local pillPercent = math.max(1000, RebirthBonuses.WinsMultiplier(rebirths) * 100)
+	rebirthBonusLine.Text = "REBIRTH XP +" .. tostring(math.floor(pillPercent + 0.5)) .. "%"
+	passBonusLine.Text = "PASS XP " .. percentText(passBonus)
 	bump(bonusScale, 1.08)
 end
 
 player:GetAttributeChangedSignal("Rebirths"):Connect(refreshBonusPill)
-player:GetAttributeChangedSignal("PassXPMultiplier"):Connect(refreshBonusPill)
+player:GetAttributeChangedSignal("PassXPBonus"):Connect(refreshBonusPill)
 refreshBonusPill()
 
 --------------------------------------------------
