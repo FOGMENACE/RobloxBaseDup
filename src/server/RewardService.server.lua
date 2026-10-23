@@ -20,6 +20,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService = game:GetService("DataStoreService")
 
 local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local PlayerDataService = require(
 	ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
 )
@@ -131,7 +132,9 @@ leaveClaim.OnServerInvoke = function(player)
 	end
 
 	publishLeave(player, newNext)
+	local winsBefore = GameAnalytics.WinsBefore(player)
 	PlayerDataService.AddWins(player, LEAVE_WINS)
+	GameAnalytics.WinsChanged(player, winsBefore, "Social", "LeaveReward")
 	BoostService.Grant(player, "XP4", LEAVE_BOOST_SECONDS)
 	PlayerDataService.SavePlayer(player)
 
@@ -204,11 +207,14 @@ communityClaim.OnServerInvoke = function(player)
 			end)
 		end)
 
+		local winsBefore = GameAnalytics.WinsBefore(player)
+
 		if not ok then
 			reason = "SAVE_FAILED"
 		elseif not won then
 			reason = "CLAIMED"
 		elseif PlayerDataService.AddWins(player, COMMUNITY_WINS) then
+			GameAnalytics.WinsChanged(player, winsBefore, "Social", "CommunityReward")
 			PlayerDataService.SavePlayer(player)
 			result, reason = true, "OK"
 		else

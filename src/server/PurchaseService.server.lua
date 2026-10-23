@@ -493,6 +493,20 @@ MarketplaceService.ProcessReceipt =
 
 		end
 
+		-- Analytics (report only; never affects the purchase itself).
+		pcall(
+			function()
+				require(
+					ServerScriptService:WaitForChild(
+						"GameAnalytics"
+					)
+				).ProductPurchased(
+					player,
+					receiptInfo
+				)
+			end
+		)
+
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 
 	end

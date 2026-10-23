@@ -16,6 +16,7 @@ local DataStoreService = game:GetService("DataStoreService")
 
 local StoreConfig = require(ServerScriptService:WaitForChild("StoreConfig"))
 local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local PlayerDataService = require(
 	ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
 )
@@ -63,7 +64,9 @@ local function grantOnce(player)
 		end)
 
 		if saved and won then
+			local winsBefore = GameAnalytics.WinsBefore(player)
 			if PlayerDataService.AddWins(player, pack.Wins) then
+				GameAnalytics.WinsChanged(player, winsBefore, "IAP", "StarterPack")
 				BoostService.Grant(player, "Oil2x", pack.BoostSeconds)
 				BoostService.Grant(player, "Wins2x", pack.BoostSeconds)
 				PlayerDataService.SavePlayer(player)

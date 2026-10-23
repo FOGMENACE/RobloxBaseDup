@@ -22,6 +22,7 @@ local PlayerDataService = require(ServerScriptService:WaitForChild("PlayerDataLo
 local MarketplaceService = game:GetService("MarketplaceService")
 local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
 local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local SkinProducts = require(script.Parent:WaitForChild("SkinProducts"))
 
 local store = DataStoreService:GetDataStore("WorldSkins_v1")
@@ -158,9 +159,11 @@ skinShop.OnServerEvent:Connect(function(player, action, ballId, worldId)
 	if (PlayerDataService.GetWins(player) or 0) < cost then
 		return finish(false, "NotEnoughWins")
 	end
+	local winsBefore = GameAnalytics.WinsBefore(player)
 	if not PlayerDataService.RemoveWins(player, cost) then
 		return finish(false, "NotEnoughWins")
 	end
+	GameAnalytics.WinsChanged(player, winsBefore, "Shop", "Skin_W" .. tostring(worldId))
 	owned[player][key] = true
 	publish(player)
 	if not save(player) then

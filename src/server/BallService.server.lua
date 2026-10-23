@@ -72,6 +72,9 @@ local MarketplaceService =
 local ServerScriptService =
 	game:GetService("ServerScriptService")
 
+local GameAnalytics =
+	require(ServerScriptService:WaitForChild("GameAnalytics"))
+
 
 --------------------------------------------------
 -- DURABLE RECEIPT RECORD
@@ -1833,10 +1836,12 @@ local function registerBallProducts()
 									)
 
 									if cost and cost > 0 then
+										local winsBefore = GameAnalytics.WinsBefore(player)
 										PlayerDataService.AddWins(
 											player,
 											cost
 										)
+										GameAnalytics.WinsChanged(player, winsBefore, "IAP", "BallCredit")
 									end
 
 									warn(
@@ -2157,11 +2162,17 @@ local function buyWithWins(
 				-- REMOVE WINS
 				--------------------------------------------------
 
+				local winsBefore = GameAnalytics.WinsBefore(player)
+
 				local removed =
 					PlayerDataService.RemoveWins(
 						player,
 						definition.WinsCost
 					)
+
+				-- analytics: measured now, logged only once the ball is granted
+				local winsDelta, winsAfter =
+					GameAnalytics.WinsDelta(player, winsBefore)
 
 
 				if not removed then
@@ -2229,6 +2240,8 @@ local function buyWithWins(
 					}
 
 				end
+
+				GameAnalytics.LogWinsDelta(player, winsDelta, winsAfter, "Shop", ballId)
 
 
 				--------------------------------------------------

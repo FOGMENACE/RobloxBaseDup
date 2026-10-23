@@ -23,6 +23,7 @@ local StoreConfig = require(ServerScriptService:WaitForChild("StoreConfig"))
 local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
 local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
 local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local PlayerDataService = require(
 	ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
 )
@@ -430,7 +431,10 @@ claimFunction.OnServerInvoke = function(player, index)
 		else
 			quest.Claimed = true
 			if saveDaily(player) then
+				local winsBefore = GameAnalytics.WinsBefore(player)
 				PlayerDataService.AddWins(player, payout(player, quest.Reward))
+				GameAnalytics.WinsChanged(player, winsBefore, "Quest", "Daily")
+				GameAnalytics.QuestClaimed(player, quest.Id)
 				PlayerDataService.SavePlayer(player)
 				ok, reason = true, "OK"
 			else
@@ -446,7 +450,10 @@ claimFunction.OnServerInvoke = function(player, index)
 		else
 			state.BonusClaimed = true
 			if saveDaily(player) then
+				local winsBefore = GameAnalytics.WinsBefore(player)
 				PlayerDataService.AddWins(player, QuestConfig.BonusWins)
+				GameAnalytics.WinsChanged(player, winsBefore, "Quest", "DailyBonus")
+				GameAnalytics.QuestClaimed(player, "DailyBonus")
 				BoostService.Grant(player, "XP4", QuestConfig.BonusBoostSeconds)
 				PlayerDataService.SavePlayer(player)
 				ok, reason = true, "OK"
@@ -491,7 +498,10 @@ weeklyClaimFunction.OnServerInvoke = function(player, index)
 
 	local ok, reason
 	if saveWeekly(player) then
+		local winsBefore = GameAnalytics.WinsBefore(player)
 		PlayerDataService.AddWins(player, payout(player, milestone.Reward))
+		GameAnalytics.WinsChanged(player, winsBefore, "Quest", "Weekly")
+		GameAnalytics.QuestClaimed(player, "Weekly_" .. tostring(milestone.Id))
 		if milestone.Boost then
 			BoostService.Grant(player, "XP4", milestone.Boost)
 		end
@@ -594,7 +604,9 @@ PurchaseService.RegisterProduct(StoreConfig.QuestSkip.ProductId, function(player
 
 		if not done then
 			-- nothing left to skip: pay the player a quest's worth of wins instead
+			local winsBefore = GameAnalytics.WinsBefore(player)
 			PlayerDataService.AddWins(player, payout(player, 300))
+			GameAnalytics.WinsChanged(player, winsBefore, "IAP", "QuestSkip")
 		end
 
 		pendingSkip[player] = nil

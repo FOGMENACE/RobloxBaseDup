@@ -28,6 +28,7 @@ local BoostConfig = require(ReplicatedStorage:WaitForChild("BoostConfig"))
 local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
 local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
 local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local PlayerDataService = require(
 	ServerScriptService
 		:WaitForChild("PlayerDataLoader")
@@ -277,9 +278,11 @@ local function registerCaptainProduct(productId, ownerOnly)
 
 		return ReceiptLedger.Consume(player, receiptInfo, function()
 			-- The captain: the biggest reward and the longest boost.
+			local winsBefore = GameAnalytics.WinsBefore(player)
 			if not PlayerDataService.AddWins(player, captain.BuyerWins) then
 				return false
 			end
+			GameAnalytics.WinsChanged(player, winsBefore, "IAP", "CaptainPack")
 			grantBoosts(player, captain.BuyerBoostSeconds)
 
 			-- exclusive reward: the rainbow Oil Barrel ball (idempotent for owners)
@@ -288,7 +291,9 @@ local function registerCaptainProduct(productId, ownerOnly)
 			-- Everyone else in the server: a thank-you from the captain.
 			for _, other in ipairs(Players:GetPlayers()) do
 				if other ~= player then
+					local otherBefore = GameAnalytics.WinsBefore(other)
 					PlayerDataService.AddWins(other, captain.OthersWins)
+					GameAnalytics.WinsChanged(other, otherBefore, "Social", "CaptainGift")
 					grantBoosts(other, captain.ServerBoostSeconds)
 					task.spawn(PlayerDataService.SavePlayer, other)
 				end

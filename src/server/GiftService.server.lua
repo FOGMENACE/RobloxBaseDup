@@ -23,6 +23,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local GiftConfig = require(ReplicatedStorage:WaitForChild("GiftConfig"))
 local BallDefinitions = require(ServerScriptService:WaitForChild("BallDefinitions"))
 local StarterOil = require(ServerScriptService:WaitForChild("StarterOil"))
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 local PlayerDataService = require(
 	ServerScriptService
 		:WaitForChild("PlayerDataLoader")
@@ -194,9 +195,13 @@ end
 
 -- Returns the reward that was actually granted (BallNext resolved to a
 -- real ball id), or nil if it could not be granted.
-local function grant(player, reward)
+-- `source` only labels the analytics event ("TimedGift" / "Calendar").
+local function grant(player, reward, source)
 	if reward.Type == "Wins" then
-		return PlayerDataService.AddWins(player, reward.Amount) and reward or nil
+		local winsBefore = GameAnalytics.WinsBefore(player)
+		local added = PlayerDataService.AddWins(player, reward.Amount)
+		GameAnalytics.WinsChanged(player, winsBefore, "TimedReward", source)
+		return added and reward or nil
 
 	elseif reward.Type == "Oil" then
 		StarterOil.Add(player, reward.Amount)
@@ -210,7 +215,10 @@ local function grant(player, reward)
 		if not ballId then
 			-- Owns everything: fall back to a Wins make-good.
 			local fallback = { Type = "Wins", Amount = 5000 }
-			return PlayerDataService.AddWins(player, fallback.Amount) and fallback or nil
+			local winsBefore = GameAnalytics.WinsBefore(player)
+			local added = PlayerDataService.AddWins(player, fallback.Amount)
+			GameAnalytics.WinsChanged(player, winsBefore, "TimedReward", source)
+			return added and fallback or nil
 		end
 
 		return PlayerDataService.AddOwnedBall(player, ballId)
@@ -266,7 +274,7 @@ local function claimTimed(player, state)
 	-- Set the next window first so a repeated request cannot double-claim.
 	state.NextTimed = os.time() + GiftConfig.TimedGift.IntervalSeconds
 
-	local granted = grant(player, GiftConfig.TimedGift.Reward)
+	local granted = grant(player, GiftConfig.TimedGift.Reward, "TimedGift")
 	if not granted then
 		state.NextTimed = os.time()
 		return false, "Could not grant the gift. Try again."
@@ -343,7 +351,7 @@ local function claimDaily(player, state)
 		return true, reward, slotClaimed
 	end
 
-	local granted = grant(player, reward)
+	local granted = grant(player, reward, "Calendar")
 	if not granted then
 		warn("[GiftService] Calendar claimed but grant failed:", player.Name, reward.Type)
 		return false, "Could not grant the gift. Contact support."

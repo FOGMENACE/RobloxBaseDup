@@ -34,6 +34,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 
 
 --------------------------------------------------
@@ -1560,6 +1561,8 @@ end
 --------------------------------------------------
 -- [player] = total wins actually credited during the current WinCourse run
 local creditedThisRun = {}
+-- [player] = actual Wins balance change this run (analytics: one event per run, not per tile)
+local analyticsWinsDelta = {}
 
 
 local function awardWinnings(
@@ -1650,10 +1653,15 @@ local function awardWinnings(
 		)
 	end)
 
+	local winsBefore = GameAnalytics.WinsBefore(player)
+
 	if dataOk
 		and typeof(dataService) == "table"
 		and dataService.AddWins
 		and dataService.AddWins(player, amount) then
+
+		analyticsWinsDelta[player] = (analyticsWinsDelta[player] or 0)
+			+ GameAnalytics.WinsDelta(player, winsBefore)
 
 		debugPrint(
 			"WINNINGS AWARDED:",
@@ -1887,6 +1895,11 @@ local function finalizeWinnings(player, run)
 	if bonus > 0 then
 		awardWinnings(player, bonus, false)
 	end
+
+	-- analytics: the run's real Wins change, logged once
+	local runWinsDelta = analyticsWinsDelta[player] or 0
+	analyticsWinsDelta[player] = nil
+	GameAnalytics.LogWinsDelta(player, runWinsDelta, GameAnalytics.WinsBefore(player), "Gameplay", "WinCourse")
 
 	debugPrint(
 		"WINNINGS FINALIZED:",
@@ -3277,6 +3290,8 @@ task.spawn(function()
 end)
 Players.PlayerRemoving:Connect(
 	function(player)
+
+		analyticsWinsDelta[player] = nil
 
 		local run =
 			activeRuns[player]

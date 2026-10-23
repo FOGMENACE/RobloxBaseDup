@@ -55,6 +55,8 @@ local ServerScriptService =
 		"ServerScriptService"
 	)
 
+local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
+
 
 --------------------------------------------------
 -- REFERENCES
@@ -979,6 +981,10 @@ print(
     "| CollectedOilCount:",
     collectedOilCount
 )
+
+
+	-- analytics: one event per finished run (report only)
+	GameAnalytics.RunFinished(player, currentOil)
 
 
 	--------------------------------------------------
