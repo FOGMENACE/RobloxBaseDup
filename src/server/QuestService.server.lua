@@ -90,7 +90,13 @@ end
 
 local function rollQuests(player, day)
 	local rng = Random.new(player.UserId + day * 7919)
-	local pool = table.clone(QuestConfig.Pool)
+	local rebirths = PlayerDataService.GetRebirths(player) or 0
+	local pool = {}
+	for _, entry in ipairs(QuestConfig.Pool) do
+		if rebirths >= (entry.MinRebirths or 0) then
+			table.insert(pool, entry)
+		end
+	end
 	local quests = {}
 
 	for _ = 1, math.min(QuestConfig.QUESTS_PER_DAY, #pool) do
@@ -131,7 +137,7 @@ local function publicState(state, player)
 	for index, quest in ipairs(state.Quests) do
 		local entry = QuestConfig.Find(quest.Id)
 		list[index] = {
-			Title = string.format(entry and entry.Title or quest.Id, quest.Target),
+			Title = (entry and quest.Target == 1 and entry.TitleOne) or string.format(entry and entry.Title or quest.Id, quest.Target),
 			Target = quest.Target,
 			Progress = math.min(quest.Progress, quest.Target),
 			Reward = payout(player, quest.Reward),
@@ -327,8 +333,63 @@ local function watch(player)
 		local runState = player:GetAttribute("RunState")
 		if runState == "Finishing" and lastRunState ~= "Finishing" then
 			addProgress(player, "Runs", 1)
+			if (player:GetAttribute("World") or 1) >= 2 then
+				addProgress(player, "WorldRuns", 1)
+			end
 		end
 		lastRunState = runState
+	end)
+
+	local lastRebirths = player:GetAttribute("Rebirths")
+	player:GetAttributeChangedSignal("Rebirths"):Connect(function()
+		local now = player:GetAttribute("Rebirths")
+		if typeof(now) == "number" and typeof(lastRebirths) == "number" and now > lastRebirths then
+			addProgress(player, "Rebirths", now - lastRebirths)
+		end
+		lastRebirths = now
+	end)
+
+	-- a ball upgrade / downgrade gate swaps the run ball (BallTierGates sets RunBallName)
+	player:GetAttributeChangedSignal("RunBallName"):Connect(function()
+		if player:GetAttribute("RunBallName") ~= nil then
+			addProgress(player, "Gates", 1)
+		end
+	end)
+
+	-- the free XP gift was claimed (LimitedGenerator: X6Mode becomes Active)
+	local lastX6 = player:GetAttribute("X6Mode")
+	player:GetAttributeChangedSignal("X6Mode"):Connect(function()
+		local mode = player:GetAttribute("X6Mode")
+		if mode == "Active" and lastX6 ~= "Active" then
+			addProgress(player, "Gift", 1)
+		end
+		lastX6 = mode
+	end)
+
+	-- x2 / x4 oil panels: the run counts them (OilCourseGenerator / collection)
+	local lastMult = player:GetAttribute("MultipliersHit") or 0
+	player:GetAttributeChangedSignal("MultipliersHit"):Connect(function()
+		local now = player:GetAttribute("MultipliersHit") or 0
+		if now > lastMult then
+			addProgress(player, "Multipliers", now - lastMult)
+		end
+		lastMult = now
+	end)
+
+	-- minutes on an XP generator (lobby): counted once a minute of standing time adds up
+	task.spawn(function()
+		local seconds = 0
+		while player.Parent do
+			task.wait(1)
+			local gen = player:GetAttribute("ActiveXPGenerator")
+			if typeof(gen) == "string" and gen ~= "" then
+				seconds += 1
+				if seconds >= 60 then
+					seconds -= 60
+					addProgress(player, "GenMinutes", 1)
+				end
+			end
+		end
 	end)
 
 	player:GetAttributeChangedSignal("LastWinCourseWinnings"):Connect(function()

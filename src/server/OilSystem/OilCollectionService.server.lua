@@ -1123,6 +1123,11 @@ function OilCollectionService.CollectOil(
     if isMultiplierDefinition(definition)
         or isDividerDefinition(definition) then
 
+        -- quests ("Hit x2 or x4 oil panels") count the helpful ones
+        if isMultiplierDefinition(definition) then
+            player:SetAttribute("MultipliersHit", (player:GetAttribute("MultipliersHit") or 0) + 1)
+        end
+
         local currentOil = getCurrentRunOil(player)
 
         local change = getSpecialOilChange(

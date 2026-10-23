@@ -1,8 +1,9 @@
 --------------------------------------------------
 -- QUEST CONFIG (shared, display + definitions)
 --
--- Each day a player gets QUESTS_PER_DAY quests picked from Pool by the
--- server. Rewards are decided on the server (QuestService); the client
+-- Each day a player gets QUESTS_PER_DAY different quests picked at random from
+-- Pool by the server (10 quest types x 1-3 difficulty picks, so the daily mix
+-- changes a lot from day to day). Rewards are decided on the server (QuestService); the client
 -- only shows what the server sends.
 --
 -- Pool entry: Id (the event the server tracks), Title (%d = target),
@@ -19,6 +20,13 @@ QuestConfig.Pool = {
 	{ Id = "Levels", Title = "Gain %d levels", Targets = { 15, 25, 40 }, Reward = 200 }, -- levels are 5x finer now
 	{ Id = "WinCourse", Title = "Win %d wins on the WinCourse", Targets = { 150, 400, 900 }, Reward = 250 },
 	{ Id = "Platforms", Title = "Roll through %d oil platforms", Targets = { 6, 12, 20 }, Reward = 150 },
+	{ Id = "Rebirths", Title = "Rebirth %d times", TitleOne = "Rebirth once", Targets = { 1, 2, 3 }, Reward = 300 },
+	{ Id = "GenMinutes", Title = "Earn XP on generators for %d minutes", Targets = { 3, 6, 10 }, Reward = 150 },
+	{ Id = "Gates", Title = "Roll through %d ball upgrade or downgrade gates", TitleOne = "Roll through a ball upgrade or downgrade gate", Targets = { 1, 2, 4 }, Reward = 200 },
+	{ Id = "Gift", Title = "Claim the free XP gift %d times", TitleOne = "Claim the free XP gift", Targets = { 1, 2 }, Reward = 250 },
+	{ Id = "Multipliers", Title = "Hit %d x2 or x4 oil panels", TitleOne = "Hit an x2 or x4 oil panel", Targets = { 1, 2, 3 }, Reward = 250 },
+	-- only offered once the player can reach a themed world (MinRebirths)
+	{ Id = "WorldRuns", Title = "Finish %d runs in a new world", Targets = { 2, 4, 6 }, Reward = 300, MinRebirths = 15 },
 }
 
 -- Weekly milestones (counters reset every Monday 00:00 UTC). Seven rungs,
