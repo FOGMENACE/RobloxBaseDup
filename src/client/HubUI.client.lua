@@ -136,6 +136,37 @@ local rootScale = create("UIScale", { Scale = 1 }, left)
 -- allows: scaled to fit that gap, and if the screen is too short it starts
 -- higher instead of overlapping.
 local COLUMN_HEIGHT = 326 -- content height at scale 1
+-- When XP lands while the level bar is full (a rebirth is required), the REBIRTH
+-- button wiggles in sync with the shaking meter (HudUI), so the eye is led to it.
+task.spawn(function()
+	local xpAward = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("XPAward")
+	local wiggling = false
+	xpAward.OnClientEvent:Connect(function(amount)
+		if wiggling or player:GetAttribute("RebirthMaxReached") ~= true then
+			return
+		end
+		local button
+		for _, d in ipairs(gui:GetDescendants()) do
+			if d.Name == "RebirthButton" and d:IsA("GuiObject") then
+				button = d
+				break
+			end
+		end
+		if not button or not button.Visible then
+			return
+		end
+		wiggling = true
+		local base = button.Rotation
+		for _, angle in ipairs({ 7, -7, 5, -5, 0 }) do
+			TweenService:Create(button, TweenInfo.new(0.06), { Rotation = base + angle }):Play()
+			task.wait(0.06)
+		end
+		button.Rotation = base
+		task.wait(0.5)
+		wiggling = false
+	end)
+end)
+
 local function updateRootScale()
 	local viewport = gui.AbsoluteSize
 	local rebirthScale = math.clamp(viewport.X / 900, 0.65, 1)

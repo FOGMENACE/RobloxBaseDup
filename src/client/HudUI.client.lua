@@ -843,10 +843,26 @@ end
 -- STRIKE LEVEL = levels earned over the player's whole life (GlobalLevel
 -- starts at 1, so a brand-new player shows 0 and the first level-up after the
 -- tutorial makes it 1). It never resets on rebirth. Display only.
+-- STRIKE = every reach level completed (the level each finished rebirth needed)
+-- plus the current level. Computed from Rebirths + Level, so it always matches
+-- the rebirth schedule (it is display only).
+local strikeCache = { Rebirths = -1, Sum = 0 }
+local function completedLevels(rebirths)
+	if strikeCache.Rebirths ~= rebirths then
+		local sum = 0
+		for r = 0, math.min(rebirths, 100000) - 1 do
+			sum += RebirthBonuses.RequiredLevel(r)
+		end
+		strikeCache.Rebirths, strikeCache.Sum = rebirths, sum
+	end
+	return strikeCache.Sum
+end
+
 local function refreshGlobal()
-	local value = player:GetAttribute("GlobalLevel")
-	if typeof(value) == "number" then
-		local earned = math.max(0, math.floor(value) - 1)
+	local rebirths = player:GetAttribute("Rebirths")
+	local level = player:GetAttribute("Level")
+	if typeof(rebirths) == "number" and typeof(level) == "number" then
+		local earned = completedLevels(math.max(0, math.floor(rebirths))) + math.max(0, math.floor(level) - 1)
 		local text = earned >= 10000 and string.format("%.1fK", earned / 1000) or tostring(earned)
 		if globalLabel.Text ~= text then
 			globalLabel.Text = text
@@ -938,6 +954,8 @@ for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgre
 	player:GetAttributeChangedSignal(name):Connect(refreshLevel)
 end
 player:GetAttributeChangedSignal("GlobalLevel"):Connect(refreshGlobal)
+player:GetAttributeChangedSignal("Rebirths"):Connect(refreshGlobal)
+player:GetAttributeChangedSignal("Level"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("CurrentOil"):Connect(refreshOil)
 for _, name in ipairs({ "Rebirths", "RebirthLevelRequirement", "Level" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshRebirth)

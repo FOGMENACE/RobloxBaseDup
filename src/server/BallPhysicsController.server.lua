@@ -1791,11 +1791,24 @@ local awardedXP = math.floor(
 
 							if awardedXP > 0 then
 
-								local success =
+								local success, why =
 									PlayerDataService.AddXP(
 										player,
 										awardedXP
 									)
+
+								-- At the rebirth cap no XP is added, but the player must still SEE the
+								-- XP arrive (and the meter shake) so they know a rebirth is required.
+								-- The client only displays this; nothing is granted.
+								if not success and why == "CAPPED" then
+									xpAward:FireClient(
+										player,
+										awardedXP
+									)
+
+									xpDistanceBuffer[player] -=
+										wholeXP / xpPerStud
+								end
 
 								if success then
 

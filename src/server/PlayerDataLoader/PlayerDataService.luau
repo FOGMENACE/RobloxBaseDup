@@ -735,7 +735,9 @@ function PlayerDataService.AddXP(player, amount)
     if data.XP >= xpCap then
         data.XP = xpCap
         updatePlayerValues(player, data)
-        return false
+        -- nothing was added (a rebirth is required), but the caller can still show
+        -- the XP flying to the full bar: second value "CAPPED"
+        return false, "CAPPED"
     end
 
     data.XP = math.min(data.XP + amount, xpCap)

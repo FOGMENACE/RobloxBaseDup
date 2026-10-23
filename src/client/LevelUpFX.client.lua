@@ -108,7 +108,22 @@ end
 -- LEVEL UP
 --------------------------------------------------
 
+-- Only ONE burst is on screen at a time (levels come fast now): a new level while one
+-- is showing just updates its number and keeps it a little longer instead of stacking
+-- another big card over the course.
+local activeNumber, activeUntil = nil, 0
+
+local function inRun()
+	local state = player:GetAttribute("RunState") or "Waiting"
+	return state ~= "Waiting"
+end
+
 local function levelUp(level)
+	if activeNumber and activeNumber.Parent then
+		activeNumber.Text = "LEVEL " .. tostring(level)
+		activeUntil = os.clock() + (inRun() and 0.9 or 1.6)
+		return
+	end
 	-- a CanvasGroup so the whole burst can be made see-through at once: during a
 	-- course (or the win course) it must not blind the player
 	local holder = create("CanvasGroup", {
@@ -117,14 +132,24 @@ local function levelUp(level)
 		Size = UDim2.fromOffset(600, 220),
 		BackgroundTransparency = 1,
 	}, gui)
+	-- On a course the card is small, parked near the top (above the platforms, away from
+	-- the middle of the view) and mostly see-through; it glides between the two looks
+	-- whenever the run starts or ends.
+	local holderScale = create("UIScale", { Scale = 1 }, holder)
 	local function fitOpacity()
-		local state = player:GetAttribute("RunState") or "Waiting"
-		-- on a course the burst fades smoothly to almost invisible (it used to block the view)
-		local target = (state == "Waiting") and 0 or 0.92
-		TweenService:Create(holder, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { GroupTransparency = target }):Play()
+		local running = inRun()
+		TweenService:Create(holder, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
+			GroupTransparency = running and 0.8 or 0,
+			Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.4),
+		}):Play()
+		TweenService:Create(holderScale, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { Scale = running and 0.45 or 1 }):Play()
 	end
-	holder.GroupTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.92
-	fitOpacity()
+	do
+		local running = inRun()
+		holder.GroupTransparency = running and 0.8 or 0
+		holder.Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.4)
+		holderScale.Scale = running and 0.45 or 1
+	end
 	local stateConn = player:GetAttributeChangedSignal("RunState"):Connect(fitOpacity)
 	holder.Destroying:Once(function()
 		stateConn:Disconnect()
@@ -172,6 +197,8 @@ local function levelUp(level)
 		TextSize = 50,
 	}, holder)
 	create("UIStroke", { Color = INK, Thickness = 5 }, number)
+	activeNumber = number
+	activeUntil = os.clock() + (inRun() and 1.1 or 2.1)
 
 	local sound = create("Sound", { SoundId = LEVEL_SOUND, Volume = 0.6 }, SoundService)
 	sound:Play()
@@ -182,12 +209,19 @@ local function levelUp(level)
 	TweenService:Create(scale, TweenInfo.new(0.45, Enum.EasingStyle.Back), { Scale = 1 }):Play()
 	TweenService:Create(burst, TweenInfo.new(2.6, Enum.EasingStyle.Linear), { Rotation = 140 }):Play()
 
-	spawnOrbs(12)
-	task.wait(0.2)
-	lastOrbs = 0
-	spawnOrbs(12)
+	if not inRun() then
+		spawnOrbs(12)
+		task.wait(0.2)
+		lastOrbs = 0
+		spawnOrbs(12)
+	end
 
-	task.wait(2.1)
+	-- stays while new levels keep extending it, then fades out smoothly
+	while os.clock() < activeUntil do
+		task.wait(0.1)
+	end
+	activeNumber = nil
+	TweenService:Create(holder, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
 	local out = TweenService:Create(scale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 })
 	out:Play()
 	out.Completed:Wait()
@@ -212,7 +246,9 @@ end)
 player:GetAttributeChangedSignal("XPIntoLevel"):Connect(function()
 	local into = player:GetAttribute("XPIntoLevel")
 	if typeof(into) == "number" and typeof(previousInto) == "number" and into > previousInto then
-		spawnOrbs(6)
+		if not inRun() then
+			spawnOrbs(6)
+		end
 	end
 	previousInto = into
 end)
