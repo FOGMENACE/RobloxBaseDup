@@ -1136,7 +1136,6 @@ rebuildCalendar = function()
 		local offer = reward.Type == "Offer" and ShopConfig.ExclusiveBalls[reward.BallId] or nil
 		local offerOwned = offer ~= nil and barrelOwned()
 		local status = create("TextLabel", {
-			RichText = true,
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.new(0.5, 0, 1, -6),
 			Size = UDim2.new(1, -12, 0, 22),
@@ -1144,13 +1143,20 @@ rebuildCalendar = function()
 				or (claimable and PIN_RED or (claimed and GREEN or INK)),
 			Font = FONT,
 			Text = offer and (offerOwned and "OWNED"
-					or (offer.PassId ~= 0 and ("      " .. CalExclusive.PriceText(CalExclusive.CachedPricing(offer))) or "SOON"))
+					or (offer.PassId ~= 0 and ("      " .. tostring(offer.Price)) or "SOON"))
 				or (claimable and "CLAIM!" or (claimed and "DONE" or "LOCKED")),
 			TextColor3 = CREAM,
 			TextSize = 13,
 			ZIndex = 23,
 		}, slot)
 		round(status, 8)
+		if offer and not offerOwned and offer.PassId ~= 0 then
+			local pricing = CalExclusive.CachedPricing(offer)
+			if pricing.Pay < pricing.Base then
+				status.Text = tostring(pricing.Pay)
+				CalExclusive.ShowDiscount(status, pricing, { Mode = "Center", Inset = 24, Width = 54, OldSize = 10 })
+			end
+		end
 		if offer and not offerOwned and offer.PassId ~= 0 then
 			-- the same Robux icon the Ball Shop uses, then the configured price (never a live lookup)
 			create("ImageLabel", {
@@ -1765,25 +1771,24 @@ do
 	buy.Size = UDim2.fromOffset(150, 52)
 	buy.AnchorPoint = Vector2.new(1, 1)
 	buy.Position = UDim2.new(1, -14, 1, -12)
-	buy.RichText = true
-	buy.Text = entry.PassId ~= 0 and (ROBUX .. " " .. ExclusiveOffer.PriceText(ExclusiveOffer.CachedPricing(entry))) or "SOON"
+	buy.Text = entry.PassId ~= 0 and (ROBUX .. " " .. tostring(entry.Price)) or "SOON"
+	create("UIStroke", { Color = INK, Thickness = 2 }, buy)
 	if entry.PassId ~= 0 then
 		task.spawn(function()
 			local pricing = ExclusiveOffer.GetPricing(entry)
-			if buy.Parent and buy.Text ~= "OWNED" then
-				buy.Text = ROBUX .. " " .. ExclusiveOffer.PriceText(pricing)
-				if pricing.Pay < pricing.Base then
-					buy.TextSize = 24
-				end
+			if buy.Parent and buy.Text ~= "OWNED" and pricing.Pay < pricing.Base then
+				buy.Text = ROBUX .. " " .. tostring(pricing.Pay)
+				ExclusiveOffer.ShowDiscount(buy, pricing, { Mode = "Center", Inset = 0, Width = 150, OldSize = 15 })
 			end
 		end)
 	end
-	create("UIStroke", { Color = INK, Thickness = 2 }, buy)
 
-	-- the Oil Barrel always shows its configured price (ShopConfig, 499): no live price lookup here
+	-- the Oil Barrel shows its configured price (ShopConfig, 499); only a Roblox-reported Plus discount adds the slashed old price
 
 	local function refreshOwned()
 		if player:GetAttribute("OwnsBarrelPass") == true or ExclusiveOffer.OwnsPass(entry.PassId) then
+			ExclusiveOffer.ClearDiscount(buy)
+			buy.TextXAlignment = Enum.TextXAlignment.Center
 			buy.Text = "OWNED"
 			buy.BackgroundColor3 = INK
 			buy.AutoButtonColor = false

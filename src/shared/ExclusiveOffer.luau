@@ -113,13 +113,80 @@ function ExclusiveOffer.GetPricing(entry)
 	return result
 end
 
--- RichText label text: "499" or "<s>499</s> 449"
-function ExclusiveOffer.PriceText(pricing)
-	if pricing.Pay < pricing.Base then
-		return string.format("<s>%d</s> %d", pricing.Base, pricing.Pay)
+local TextService = game:GetService("TextService")
+
+-- Plus discount look: the NEW price takes the main place, and the old price sits small beside it
+-- with a red diagonal slash through it. `label` is a TextLabel/TextButton whose text is the main
+-- price (the caller sets label.Text to the new price, with any prefix). opts:
+--   Mode   "Left" (group starts at Inset) or "Center" (group centred between Inset and Inset + Width)
+--   Inset, Width, OldSize
+function ExclusiveOffer.ShowDiscount(label, pricing, opts)
+	ExclusiveOffer.ClearDiscount(label)
+	opts = opts or {}
+	local inset = opts.Inset or 0
+	local oldSize = opts.OldSize or math.max(10, math.floor(label.TextSize * 0.62))
+	local gap = 5
+	local mainW = TextService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 100)).X
+	local oldText = tostring(pricing.Base)
+	local oldW = TextService:GetTextSize(oldText, oldSize, label.Font, Vector2.new(1000, 100)).X
+	local groupW = mainW + gap + oldW
+	local startX = inset
+	if opts.Mode == "Center" and opts.Width then
+		startX = inset + math.max(0, (opts.Width - groupW) / 2)
 	end
-	return tostring(pricing.Base)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	local pad = Instance.new("UIPadding")
+	pad.Name = "PricePad"
+	pad.PaddingLeft = UDim.new(0, startX)
+	pad.Parent = label
+
+	local old = Instance.new("TextLabel")
+	old.Name = "OldPrice"
+	old.BackgroundTransparency = 1
+	old.AnchorPoint = Vector2.new(0, 0.5)
+	old.Position = UDim2.new(0, mainW + gap, 0.5, 2) -- the label's UIPadding already shifts its children by startX
+	old.Size = UDim2.fromOffset(oldW, oldSize + 4)
+	old.Font = label.Font
+	old.Text = oldText
+	old.TextSize = oldSize
+	old.TextColor3 = Color3.fromRGB(235, 235, 240)
+	old.TextTransparency = 0.1
+	old.ZIndex = label.ZIndex + 2
+	old.Parent = label
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(24, 22, 34)
+	stroke.Thickness = 1.5
+	stroke.Parent = old
+
+	-- the slash: red and slightly diagonal, like a real sale tag
+	local slash = Instance.new("Frame")
+	slash.Name = "Slash"
+	slash.AnchorPoint = Vector2.new(0.5, 0.5)
+	slash.Position = UDim2.fromScale(0.5, 0.5)
+	slash.Size = UDim2.new(1, 10, 0, math.max(3, math.floor(oldSize / 4.5)))
+	slash.Rotation = -22
+	slash.BackgroundColor3 = Color3.fromRGB(255, 40, 55)
+	slash.BorderSizePixel = 0
+	slash.ZIndex = old.ZIndex + 1
+	slash.Parent = old
+	Instance.new("UICorner", slash).CornerRadius = UDim.new(1, 0)
+	local slashStroke = Instance.new("UIStroke")
+	slashStroke.Color = Color3.fromRGB(90, 0, 10)
+	slashStroke.Thickness = 1
+	slashStroke.Parent = slash
 end
+
+function ExclusiveOffer.ClearDiscount(label)
+	local old = label:FindFirstChild("OldPrice")
+	if old then
+		old:Destroy()
+	end
+	local pad = label:FindFirstChild("PricePad")
+	if pad then
+		pad:Destroy()
+	end
+end
+
 
 local listeners = {} -- functions called after ownership may have changed
 
@@ -265,17 +332,7 @@ function ExclusiveOffer.Create(parent, options)
 	price.Position = UDim2.fromOffset(50, 0)
 	price.Size = UDim2.new(1, -54, 1, 0)
 	price.Font = FONT
-	price.RichText = true
-	price.Text = ExclusiveOffer.PriceText(ExclusiveOffer.CachedPricing(entry))
-	task.spawn(function()
-		local pricing = ExclusiveOffer.GetPricing(entry)
-		if price.Parent then
-			price.Text = ExclusiveOffer.PriceText(pricing)
-			if pricing.Pay < pricing.Base then
-				price.TextSize = 24 -- two numbers must fit the pill
-			end
-		end
-	end)
+	price.Text = tostring(entry.Price)
 	price.TextColor3 = Color3.new(1, 1, 1)
 	price.TextSize = 32
 	price.TextXAlignment = Enum.TextXAlignment.Left
@@ -285,6 +342,26 @@ function ExclusiveOffer.Create(parent, options)
 	priceStroke.Color = INK
 	priceStroke.Thickness = 2.5
 	priceStroke.Parent = price
+
+	-- Roblox Plus: the discounted price takes the main spot, the old one is slashed beside it
+	local function showPricing(pricing)
+		if not price.Parent then
+			return
+		end
+		if pricing.Pay < pricing.Base then
+			price.Text = tostring(pricing.Pay)
+			price.TextSize = 28
+			ExclusiveOffer.ShowDiscount(price, pricing, { Mode = "Left", OldSize = 17 })
+		else
+			ExclusiveOffer.ClearDiscount(price)
+			price.TextXAlignment = Enum.TextXAlignment.Left
+			price.Text = tostring(pricing.Base)
+			price.TextSize = 32
+		end
+	end
+	task.spawn(function()
+		showPricing(ExclusiveOffer.GetPricing(entry))
+	end)
 
 	local scale = Instance.new("UIScale")
 	scale.Parent = buy

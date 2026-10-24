@@ -834,3 +834,15 @@ showStayMessage = function()
 		end
 	end)
 end
+
+-- Belt and braces: the FREE claim card is hidden whenever ANY panel (calendar, store, quests, shop...)
+-- is open, so it can never sit over a panel's X button on a small screen, whatever the layering is.
+do
+	local PanelManagerForCard = require(ReplicatedStorage:WaitForChild("PanelManager"))
+	task.spawn(function()
+		while true do
+			cardGui.Enabled = not PanelManagerForCard.AnyOpen()
+			task.wait(0.1)
+		end
+	end)
+end

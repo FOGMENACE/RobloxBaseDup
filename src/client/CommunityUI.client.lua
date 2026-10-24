@@ -103,20 +103,31 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 25,
 }, playerGui)
 
+local PANEL_W, PANEL_H = 640, 480
+local GOLD = Color3.fromRGB(255, 205, 40)
+
 local panel = create("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(440, 470),
-	BackgroundColor3 = Color3.fromRGB(46, 36, 96),
+	Size = UDim2.fromOffset(PANEL_W, PANEL_H),
+	BackgroundColor3 = Color3.new(1, 1, 1), -- the purple comes from the gradient below
 	Visible = false,
 }, gui)
 create("UICorner", { CornerRadius = UDim.new(0, 22) }, panel)
-create("UIStroke", { Color = INK, Thickness = 5 }, panel)
 create("UIGradient", {
 	Color = ColorSequence.new(Color3.fromRGB(86, 62, 170), Color3.fromRGB(34, 28, 78)),
 	Rotation = 90,
 }, panel)
+create("UIStroke", { Color = INK, Thickness = 5 }, panel)
 local scale = create("UIScale", { Scale = 1 }, panel)
+
+-- fits any screen: as large as possible, never off screen
+local function fit()
+	local viewport = gui.AbsoluteSize
+	scale.Scale = math.clamp(math.min((viewport.X - 24) / PANEL_W, (viewport.Y - 24) / PANEL_H), 0.4, 1.15)
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+fit()
 
 local function label(props, parent)
 	props.BackgroundTransparency = 1
@@ -124,116 +135,243 @@ local function label(props, parent)
 	local strokeThickness = props.StrokeThickness or 3
 	props.StrokeThickness = nil
 	local l = create("TextLabel", props, parent or panel)
-	create("UIStroke", { Color = INK, Thickness = strokeThickness }, l)
+	if strokeThickness > 0 then
+		create("UIStroke", { Color = INK, Thickness = strokeThickness }, l)
+	end
 	return l
 end
 
+-- gold title bar with a red X, like the reference
+local bar = create("Frame", {
+	Position = UDim2.fromOffset(10, 10),
+	Size = UDim2.new(1, -20, 0, 62),
+	BackgroundColor3 = GOLD,
+	ZIndex = 2,
+}, panel)
+create("UICorner", { CornerRadius = UDim.new(0, 16) }, bar)
+create("UIStroke", { Color = INK, Thickness = 3 }, bar)
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 232, 90), Color3.fromRGB(240, 170, 10)),
+	Rotation = 90,
+}, bar)
 label({
-	Position = UDim2.fromOffset(10, 8),
-	Size = UDim2.new(1, -60, 0, 40),
+	Position = UDim2.fromOffset(14, 4),
+	Size = UDim2.new(1, -90, 1, -8),
 	Text = "COMMUNITY REWARDS",
-	TextColor3 = Color3.fromRGB(255, 226, 90),
-	TextSize = 30,
-})
-
+	TextColor3 = CREAM,
+	TextSize = 36,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	StrokeThickness = 4,
+	ZIndex = 3,
+}, bar)
 local close = create("TextButton", {
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -12, 0, 12),
-	Size = UDim2.fromOffset(34, 34),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -10, 0.5, 0),
+	Size = UDim2.fromOffset(44, 44),
 	BackgroundColor3 = RED,
 	Font = FONT,
 	Text = "X",
 	TextColor3 = CREAM,
-	TextSize = 18,
-}, panel)
-create("UICorner", { CornerRadius = UDim.new(0, 10) }, close)
+	TextSize = 24,
+	ZIndex = 4,
+}, bar)
+create("UICorner", { CornerRadius = UDim.new(0, 12) }, close)
 create("UIStroke", { Color = INK, Thickness = 3 }, close)
 
 local trophy = create("ImageLabel", {
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 56),
-	Size = UDim2.fromOffset(120, 120),
+	Position = UDim2.fromOffset(34, 82),
+	Size = UDim2.fromOffset(150, 140),
 	BackgroundTransparency = 1,
 	Image = UiAssets.TrophyImage,
 	ScaleType = Enum.ScaleType.Fit,
 }, panel)
 
-label({
-	Position = UDim2.fromOffset(10, 180),
-	Size = UDim2.new(1, -20, 0, 26),
-	Text = "LIMITED TIME",
-	TextColor3 = Color3.fromRGB(255, 120, 150),
-	TextSize = 20,
+local limited = label({
+	Position = UDim2.fromOffset(200, 80),
+	Size = UDim2.fromOffset(420, 44),
+	Text = "~ LIMITED TIME! ~",
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 38,
+	StrokeThickness = 3,
 })
-label({
-	Position = UDim2.fromOffset(10, 204),
-	Size = UDim2.new(1, -20, 0, 54),
-	Text = "+500 WINS!",
-	TextColor3 = Color3.fromRGB(120, 255, 150),
-	TextSize = 46,
-	StrokeThickness = 4,
+create("UIGradient", {
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 80, 200)),
+		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(150, 70, 255)),
+		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(60, 220, 200)),
+		ColorSequenceKeypoint.new(0.85, Color3.fromRGB(120, 240, 90)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 170, 70)),
+	}),
+}, limited)
+local winsText = label({
+	Position = UDim2.fromOffset(200, 124),
+	Size = UDim2.fromOffset(420, 84),
+	Text = "+500 Wins!",
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 78,
+	StrokeThickness = 5,
 })
+create("UIGradient", {
+	Color = ColorSequence.new(Color3.fromRGB(255, 244, 150), Color3.fromRGB(255, 196, 40)),
+	Rotation = 90,
+}, winsText)
 
--- the two steps
-local function step(y, number, text, buttonText)
-	local row = create("Frame", {
-		Position = UDim2.fromOffset(24, y),
-		Size = UDim2.new(1, -48, 0, 46),
+-- one step card: a title and a little picture of WHERE to press, with red arrows
+local function stepCard(x, title)
+	local card = create("TextButton", {
+		Position = UDim2.fromOffset(x, 226),
+		Size = UDim2.fromOffset(292, 156),
 		BackgroundColor3 = Color3.fromRGB(30, 24, 66),
+		Text = "",
+		AutoButtonColor = false,
 	}, panel)
-	create("UICorner", { CornerRadius = UDim.new(0, 12) }, row)
-
+	create("UICorner", { CornerRadius = UDim.new(0, 18) }, card)
+	create("UIStroke", { Color = INK, Thickness = 3 }, card)
 	label({
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -150, 1, 0),
-		Text = number .. "  " .. text,
-		TextColor3 = CREAM,
-		TextSize = 19,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		StrokeThickness = 2,
-	}, row)
-
-	local button = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.fromOffset(108, 32),
-		BackgroundColor3 = Color3.fromRGB(86, 168, 240),
-		Font = FONT,
-		Text = buttonText,
-		TextColor3 = CREAM,
-		TextSize = 16,
-	}, row)
-	create("UICorner", { CornerRadius = UDim.new(0, 10) }, button)
-	create("UIStroke", { Color = INK, Thickness = 2.5 }, button)
-	return button
+		Position = UDim2.fromOffset(8, 4),
+		Size = UDim2.new(1, -16, 0, 40),
+		Text = title,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 30,
+		StrokeThickness = 3,
+	}, card)
+	local mock = create("Frame", {
+		Position = UDim2.fromOffset(6, 46),
+		Size = UDim2.new(1, -12, 1, -52),
+		BackgroundColor3 = Color3.fromRGB(34, 36, 44),
+		ClipsDescendants = true,
+	}, card)
+	create("UICorner", { CornerRadius = UDim.new(0, 10) }, mock)
+	-- "DONE" cover, shown once the step is complete
+	local done = create("Frame", {
+		Name = "Done",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(40, 150, 70),
+		BackgroundTransparency = 0.12,
+		Visible = false,
+		ZIndex = 20,
+	}, mock)
+	create("UICorner", { CornerRadius = UDim.new(0, 10) }, done)
+	label({
+		Size = UDim2.fromScale(1, 1),
+		Text = "DONE!",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 44,
+		ZIndex = 21,
+	}, done)
+	return card, mock
 end
 
-local likeButton = step(268, "1", "Like the game!", "LIKE")
-local joinButton = step(322, "2", "Join the community!", "JOIN")
+local function redArrow(parent, x, y, rotation, size)
+	return label({
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(size or 70, size or 70),
+		Text = "➡",
+		TextColor3 = Color3.fromRGB(240, 30, 30),
+		TextSize = size or 70,
+		Rotation = rotation,
+		StrokeThickness = 2,
+		ZIndex = 10,
+	}, parent)
+end
+
+-- card 1: the like bar of a game page
+local likeButton, likeMock = stepCard(20, "1. Like the game!")
+for _, spec in ipairs({
+	{ x = 52, icon = "🔔", text = "Notify" },
+	{ x = 140, icon = "👍", text = "17" },
+	{ x = 226, icon = "👎", text = "8" },
+}) do
+	label({
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromOffset(spec.x, 6),
+		Size = UDim2.fromOffset(60, 44),
+		Text = spec.icon,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 36,
+		StrokeThickness = 0,
+	}, likeMock)
+	label({
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromOffset(spec.x, 50),
+		Size = UDim2.fromOffset(60, 20),
+		Text = spec.text,
+		TextColor3 = Color3.fromRGB(235, 235, 240),
+		TextSize = 16,
+		StrokeThickness = 0,
+	}, likeMock)
+end
+for i = 0, 3 do -- the like ratio bar under the thumbs
+	create("Frame", {
+		Position = UDim2.fromOffset(112 + i * 18, 42),
+		Size = UDim2.fromOffset(15, 3),
+		BackgroundColor3 = i < 3 and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120),
+		BorderSizePixel = 0,
+	}, likeMock)
+end
+redArrow(likeMock, 110, 86, -42, 62)
+
+-- card 2: the group page's Join Community button
+local joinButton, joinMock = stepCard(328, "2. Join the community!")
+local fakeJoin = create("Frame", {
+	Position = UDim2.fromOffset(20, 30),
+	Size = UDim2.fromOffset(180, 40),
+	BackgroundColor3 = Color3.fromRGB(51, 95, 255),
+}, joinMock)
+create("UICorner", { CornerRadius = UDim.new(0, 8) }, fakeJoin)
+label({
+	Size = UDim2.fromScale(1, 1),
+	Text = "Join Community",
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 20,
+	StrokeThickness = 0,
+}, fakeJoin)
+local fakeMore = create("Frame", {
+	Position = UDim2.fromOffset(208, 30),
+	Size = UDim2.fromOffset(42, 40),
+	BackgroundColor3 = Color3.fromRGB(70, 72, 84),
+}, joinMock)
+create("UICorner", { CornerRadius = UDim.new(0, 8) }, fakeMore)
+label({
+	Size = UDim2.fromScale(1, 1),
+	Text = "...",
+	TextColor3 = Color3.fromRGB(230, 230, 235),
+	TextSize = 22,
+	StrokeThickness = 0,
+}, fakeMore)
+redArrow(joinMock, 60, 92, -35, 60)
+redArrow(joinMock, 240, 12, 140, 44)
 
 local claimButton = create("TextButton", {
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 382),
-	Size = UDim2.fromOffset(260, 52),
+	Position = UDim2.new(0.5, 0, 0, 392),
+	Size = UDim2.fromOffset(300, 64),
 	BackgroundColor3 = GREEN,
 	Font = FONT,
-	Text = "CLAIM",
-	TextColor3 = CREAM,
-	TextSize = 28,
+	Text = "CLAIM!",
+	TextColor3 = Color3.new(1, 1, 1),
+	TextSize = 46,
 }, panel)
-create("UICorner", { CornerRadius = UDim.new(0, 14) }, claimButton)
-create("UIStroke", { Color = INK, Thickness = 3 }, claimButton)
+create("UICorner", { CornerRadius = UDim.new(0, 16) }, claimButton)
+create("UIStroke", { Color = INK, Thickness = 3.5 }, claimButton)
 Shine.Attach(claimButton, { Offset = 0 })
-
 local message = label({
 	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 438),
-	Size = UDim2.new(1, -24, 0, 26),
+	Position = UDim2.new(0.5, 0, 0, 458),
+	Size = UDim2.new(1, -24, 0, 18),
 	Text = "",
 	TextColor3 = RED,
 	TextSize = 16,
 	StrokeThickness = 2,
 })
+
+local function setDone(card, isDone)
+	local cover = card:FindFirstChild("Done", true)
+	if cover then
+		cover.Visible = isDone == true
+	end
+end
 
 --------------------------------------------------
 -- LOGIC
@@ -252,10 +390,8 @@ local function refresh()
 	end
 
 	state = result
-	likeButton.Text = result.Liked and "DONE" or "LIKE"
-	likeButton.BackgroundColor3 = result.Liked and GREEN or Color3.fromRGB(86, 168, 240)
-	joinButton.Text = result.Group and "DONE" or "JOIN"
-	joinButton.BackgroundColor3 = result.Group and GREEN or Color3.fromRGB(86, 168, 240)
+	setDone(likeButton, result.Liked)
+	setDone(joinButton, result.Group)
 
 	if result.Claimed then
 		claimButton.Text = "CLAIMED"
@@ -263,7 +399,7 @@ local function refresh()
 		message.Text = "You already claimed this reward. Thank you!"
 		message.TextColor3 = Color3.fromRGB(190, 255, 200)
 	else
-		claimButton.Text = "CLAIM"
+		claimButton.Text = "CLAIM!"
 		claimButton.BackgroundColor3 = GREEN
 		message.Text = ""
 	end
@@ -301,7 +437,7 @@ likeButton.Activated:Connect(function()
 			task.wait(1.5) -- let the server save the flag first
 			refresh()
 		else
-			message.Text = "Tap LIKE and press Yes to favorite the game."
+			message.Text = "Tap card 1 and press Yes to favorite the game, then give it a thumbs up on its page."
 			message.TextColor3 = RED
 		end
 	end)
@@ -311,7 +447,7 @@ likeButton.Activated:Connect(function()
 	end)
 	if not ok then
 		connection:Disconnect()
-		message.Text = "Could not open the like prompt here."
+		message.Text = "Could not open the favorite prompt here."
 		message.TextColor3 = RED
 	end
 end)
@@ -371,7 +507,7 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	local unit = panel.AbsoluteSize.X / 440
+	local unit = panel.AbsoluteSize.X / PANEL_W
 	local c = (target.AbsolutePosition - panel.AbsolutePosition + target.AbsoluteSize / 2) / unit
 	local t = (os.clock() % 1.5) / 1.5
 	local away = 30 * (1 - math.min(t / 0.5, 1)) -- glides in from the bottom-right
@@ -405,10 +541,10 @@ claimButton.Activated:Connect(function()
 		task.wait(1)
 		refresh()
 	elseif ok and reason == "REQUIREMENTS" then
-		message.Text = "Like game and join community to claim!"
+		message.Text = "Finish both steps first, then claim!"
 		message.TextColor3 = RED
 		refresh()
-		message.Text = "Like game and join community to claim!"
+		message.Text = "Finish both steps first, then claim!"
 	elseif ok and reason == "CLAIMED" then
 		refresh()
 	else
