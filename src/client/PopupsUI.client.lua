@@ -856,7 +856,7 @@ do
 	end
 	task.spawn(function()
 		while true do
-			cardGui.Enabled = not (PanelManagerForCard.AnyOpen() or overlayOpen())
+			cardGui.Enabled = not (PanelManagerForCard.AnyOpen() or overlayOpen() or leaveFrame.Visible)
 			task.wait(0.1)
 		end
 	end)
