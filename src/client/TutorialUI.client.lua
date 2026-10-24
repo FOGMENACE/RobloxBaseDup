@@ -191,6 +191,7 @@ end
 -- An ANNOUNCEMENT, not floating text: a solid dark panel with a gold border, a
 -- "TUTORIAL - STEP n/8" tab on its top edge, an icon, one short line of text and
 -- progress dots. It sits below the Roblox top bar and slides in on every new step.
+local lastShopScroll = 0
 local PANEL_Y = game:GetService("UserInputService").TouchEnabled and 0.13 or 0.16
 local panel = create("Frame", {
 	Name = "TutorialAnnouncement",
@@ -493,7 +494,16 @@ local function textFor(step)
 		return "Roll through the tiles to collect WINS!"
 	elseif step == 3 then
 		if player:GetAttribute("ActiveXPGenerator") == "GenX1" then
-			return "Keep rolling here until your level bar is FULL!"
+			-- the first rebirth needs several level-ups, not just one full bar: say so
+			local level = tonumber(player:GetAttribute("Level")) or 1
+			local needed = tonumber(player:GetAttribute("RebirthLevelRequirement")) or 6
+			local left = math.max(0, needed - level)
+			if left <= 1 then
+				return "ALMOST THERE! Stay on the generator, one more level!"
+			elseif level >= 3 then
+				return "ALMOST THERE! Stay on the generator, " .. left .. " more levels!"
+			end
+			return "Stay on the generator and keep LEVELING UP!"
 		end
 		return "Roll onto the X1 generator to earn XP!"
 	elseif step == 4 then
@@ -763,9 +773,26 @@ RunService.RenderStepped:Connect(function()
 	local lobby = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
 	local extra = (step == 4 and PanelManager.IsOpen("Rebirth")) and findGui("FreeTag") or nil
 	if (step == 7 or step == 8) and shopOpen() then
-		-- keep the shop's X clickable under the spotlight so the player can always leave it
+		-- Do not trap clicks while the shop is open (the player must always be able to press its
+		-- X), and scroll the list so the highlighted ball card is really on screen: it used to sit
+		-- far above the visible list, which stretched the spotlight over the whole screen.
+		for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight }) do
+			frame.Active = false
+		end
 		local shopGui = playerGui:FindFirstChild("BallShopUI")
-		extra = shopGui and shopGui:FindFirstChild("ShopCloseButton", true) or nil
+		local card = shopGui and shopGui:FindFirstChild(TUTORIAL_BALL, true)
+		local scroller = card and card:FindFirstAncestorOfClass("ScrollingFrame")
+		if scroller and os.clock() - lastShopScroll > 0.6 then
+			local top = card.AbsolutePosition.Y - scroller.AbsolutePosition.Y
+			if top < 0 or top + card.AbsoluteSize.Y > scroller.AbsoluteSize.Y then
+				lastShopScroll = os.clock()
+				scroller.CanvasPosition = Vector2.new(0, math.max(0, scroller.CanvasPosition.Y + top - 8))
+			end
+		end
+	else
+		for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight }) do
+			frame.Active = true
+		end
 	end
 	setSpotlight(active and lobby and spotlightTarget(step) or nil, extra)
 

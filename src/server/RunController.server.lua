@@ -591,20 +591,34 @@ end
 local function centerBallInLane(player, ball)
 	local worldOffset = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Offset(player)
 	local centerX = startWall.Position.X + worldOffset.X
+
+	-- The server must own the ball BEFORE it is moved: the owning client keeps simulating it for a
+	-- few frames after the run starts and would otherwise put it back at the side, which is what
+	-- other players saw (a runner crossing the wall far to the left of the course).
+	pcall(function()
+		ball:SetNetworkOwner(nil)
+	end)
+
+	local function snap()
+		local dx = centerX - ball.Position.X
+		if math.abs(dx) > 0.25 then
+			ball.CFrame += Vector3.new(dx, 0, 0)
+			local v = ball.AssemblyLinearVelocity
+			ball.AssemblyLinearVelocity = Vector3.new(0, v.Y, v.Z)
+		end
+	end
+	snap()
+
+	-- re-pin for a moment in case a late client packet moved it again
 	task.spawn(function()
 		local elapsed = 0
-		while elapsed < 0.7 and ball.Parent and player.Parent do
-			local dt = RunService.Heartbeat:Wait()
-			elapsed += dt
+		while elapsed < 0.25 and ball.Parent and player.Parent do
+			elapsed += RunService.Heartbeat:Wait()
 			local state = player:GetAttribute("RunState")
 			if state ~= "Starting" and state ~= "Running" then
 				return
 			end
-			local dx = centerX - ball.Position.X
-			if math.abs(dx) < 0.25 then
-				return
-			end
-			ball.CFrame += Vector3.new(dx * math.min(1, dt * 9), 0, 0)
+			snap()
 		end
 	end)
 end
