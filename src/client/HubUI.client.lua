@@ -1256,6 +1256,33 @@ PanelManager.Register("Calendar", calendarPanel, function()
 	updateCalendarScale()
 end)
 
+-- A tap anywhere outside the calendar closes it, so the panel can never get stuck open if another
+-- element covers its X on some screen. It sits just below the panel, above the rest of the hub.
+local calendarBackdrop = create("TextButton", {
+	Name = "CalendarBackdrop",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	Visible = false,
+	ZIndex = 19,
+}, gui)
+calendarPanel:GetPropertyChangedSignal("Visible"):Connect(function()
+	calendarBackdrop.Visible = calendarPanel.Visible
+end)
+calendarBackdrop.Activated:Connect(function()
+	PanelManager.Close("Calendar")
+end)
+
+-- Starting a run closes every open panel (the player is rolling now; the panels used to be left
+-- open over the course).
+player:GetAttributeChangedSignal("RunState"):Connect(function()
+	local state = player:GetAttribute("RunState")
+	if state == "Starting" or state == "Running" then
+		PanelManager.CloseAll()
+	end
+end)
+
 local function setCalendarOpen(open)
 	if open then
 		PanelManager.Open("Calendar")

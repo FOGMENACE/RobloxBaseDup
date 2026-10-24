@@ -192,7 +192,7 @@ communityClaim.OnServerInvoke = function(player)
 		reason = "SAVE_FAILED"
 	elseif claimed then
 		reason = "CLAIMED"
-	elseif not (isMember(player) and hasFavorited(player)) then
+	elseif not isMember(player) then -- the like cannot be verified, only the group
 		reason = "REQUIREMENTS"
 	else
 		-- atomic across servers: only the call that flips false -> true pays out

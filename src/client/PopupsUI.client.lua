@@ -839,9 +839,24 @@ end
 -- is open, so it can never sit over a panel's X button on a small screen, whatever the layering is.
 do
 	local PanelManagerForCard = require(ReplicatedStorage:WaitForChild("PanelManager"))
+	-- menus that are not PanelManager panels but are also big (Ball Shop, Settings, Worlds)
+	local OVERLAYS = { "BallShopUI", "SettingsUI", "WorldsUI" }
+	local function overlayOpen()
+		for _, name in ipairs(OVERLAYS) do
+			local g = playerGui:FindFirstChild(name)
+			if g and g:IsA("ScreenGui") and g.Enabled then
+				for _, child in ipairs(g:GetChildren()) do
+					if child:IsA("GuiObject") and child.Visible and child.AbsoluteSize.X > 300 and child.AbsoluteSize.Y > 200 then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end
 	task.spawn(function()
 		while true do
-			cardGui.Enabled = not PanelManagerForCard.AnyOpen()
+			cardGui.Enabled = not (PanelManagerForCard.AnyOpen() or overlayOpen())
 			task.wait(0.1)
 		end
 	end)

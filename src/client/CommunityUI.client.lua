@@ -103,7 +103,7 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 25,
 }, playerGui)
 
-local PANEL_W, PANEL_H = 640, 480
+local PANEL_W, PANEL_H = 640, 506
 local GOLD = Color3.fromRGB(255, 205, 40)
 
 local panel = create("Frame", {
@@ -359,10 +359,11 @@ Shine.Attach(claimButton, { Offset = 0 })
 local message = label({
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 458),
-	Size = UDim2.new(1, -24, 0, 18),
+	Size = UDim2.new(1, -40, 0, 40),
 	Text = "",
-	TextColor3 = RED,
-	TextSize = 16,
+	TextColor3 = Color3.fromRGB(255, 140, 140),
+	TextWrapped = true,
+	TextSize = 15,
 	StrokeThickness = 2,
 })
 
@@ -384,13 +385,12 @@ local function refresh()
 		return remotes.CommunityRewardState:InvokeServer()
 	end)
 	if not ok or typeof(result) ~= "table" then
-		message.Text = "Could not reach the server. Try again!"
+		message.Text = "We could not reach the server. Please check your connection and try again."
 		message.TextColor3 = RED
 		return
 	end
 
 	state = result
-	setDone(likeButton, result.Liked)
 	setDone(joinButton, result.Group)
 
 	if result.Claimed then
@@ -422,51 +422,12 @@ close.Activated:Connect(function()
 	setOpen(false)
 end)
 
-likeButton.Activated:Connect(function()
-	if state and state.Liked then
-		return
-	end
-
-	local connection
-	connection = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)
-		connection:Disconnect()
-		-- The event passes an Enum.AvatarPromptResult (always truthy): only an
-		-- explicit Success counts, so pressing No / closing the prompt does not.
-		if result == Enum.AvatarPromptResult.Success then
-			remotes.PromptDone:FireServer("Favorite")
-			task.wait(1.5) -- let the server save the flag first
-			refresh()
-		else
-			message.Text = "Tap card 1 and press Yes to favorite the game, then give it a thumbs up on its page."
-			message.TextColor3 = RED
-		end
-	end)
-
-	local ok = pcall(function()
-		AvatarEditorService:PromptSetFavorite(game.PlaceId, Enum.AvatarItemType.Asset, true)
-	end)
-	if not ok then
-		connection:Disconnect()
-		message.Text = "Could not open the favorite prompt here."
-		message.TextColor3 = RED
-	end
-end)
-
-joinButton.Activated:Connect(function()
-	if state and state.Group then
-		return
-	end
-	pcall(function()
-		GroupService:PromptJoinAsync(GROUP_ID)
-	end)
-	task.wait(1)
-	refresh()
-end)
-
+-- The two step cards are pictures only (how to like the game / join the group): no prompts here.
+-- Roblox cannot prompt or verify a thumbs-up, and the group is verified by the server when claiming.
 local claiming = false
 
 -- Click hint: a mouse cursor that glides to the next button the player still
--- has to press (LIKE, then JOIN, then CLAIM) and clicks it, with a ripple.
+-- has to press (CLAIM, once the group is joined) and clicks it, with a ripple.
 -- Display only; hidden once the reward is claimed.
 local cursor = create("ImageLabel", {
 	Name = "ClickHint",
@@ -493,11 +454,8 @@ RunService.RenderStepped:Connect(function()
 	end
 	local target = nil
 	if state then
-		if not state.Liked then
-			target = likeButton
-		elseif not state.Group then
-			target = joinButton
-		elseif not state.Claimed then
+		-- the steps are pictures only: the hint just points at CLAIM once the group is joined
+		if state.Group and not state.Claimed then
 			target = claimButton
 		end
 	end
@@ -541,14 +499,14 @@ claimButton.Activated:Connect(function()
 		task.wait(1)
 		refresh()
 	elseif ok and reason == "REQUIREMENTS" then
-		message.Text = "Finish both steps first, then claim!"
+		message.Text = "Please complete both steps (like the game and join the community), then press CLAIM again."
 		message.TextColor3 = RED
 		refresh()
-		message.Text = "Finish both steps first, then claim!"
+		message.Text = "Please complete both steps (like the game and join the community), then press CLAIM again."
 	elseif ok and reason == "CLAIMED" then
 		refresh()
 	else
-		message.Text = "Something went wrong. Try again!"
+		message.Text = "We could not process your claim right now. Please make sure both steps are complete, then try again."
 		message.TextColor3 = RED
 	end
 
