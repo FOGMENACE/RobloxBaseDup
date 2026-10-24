@@ -79,8 +79,50 @@ end
 
 -- Wins paid for a reward, scaled up by rebirths (+25% each, capped).
 local function payout(player, base)
-	local rebirths = math.min(PlayerDataService.GetRebirths(player) or 0, 20)
-	return math.floor(base * (1 + 0.25 * rebirths))
+	local rebirths = math.min(PlayerDataService.GetRebirths(player) or 0, 10)
+	return math.floor(base * (1 + 0.15 * rebirths))
+end
+
+-- Targets that grow with the player, so quests stay a real task at every rebirth. Wins per win-course
+-- run (and levels per rebirth) explode with rebirths: a flat "win 150 wins" was done by one run for
+-- anyone past the first rebirths. The easy pick asks for about 3-4 average runs / 1.5 rebirth cycles
+-- and the harder picks scale from that. Count-based quests (runs, platforms, minutes...) stay as they
+-- are, they are time.
+local RebirthBonusesQ = require(ReplicatedStorage:WaitForChild("RebirthBonuses"))
+-- average wins of one good win-course run per rebirth count (from the economy simulation)
+local WINS_PER_RUN = { { 0, 6 }, { 1, 28 }, { 2, 176 }, { 3, 459 }, { 5, 1815 }, { 10, 12030 }, { 20, 98760 }, { 52, 823888 } }
+
+local function winsPerRun(rebirths)
+	local last = WINS_PER_RUN[#WINS_PER_RUN]
+	if rebirths >= last[1] then
+		return last[2] * (rebirths / last[1]) ^ 2
+	end
+	for i = 2, #WINS_PER_RUN do
+		local a, b = WINS_PER_RUN[i - 1], WINS_PER_RUN[i]
+		if rebirths <= b[1] then
+			local t = (rebirths - a[1]) / (b[1] - a[1])
+			return math.exp(math.log(a[2]) + (math.log(b[2]) - math.log(a[2])) * t) -- smooth between points
+		end
+	end
+	return last[2]
+end
+
+local function scaledTarget(id, target, rebirths, firstTarget)
+	local ratio = target / math.max(firstTarget, 1) -- 1 (easy), 2-3 (medium), up to ~7 (hard)
+	local scaled = target
+	if id == "WinCourse" then
+		scaled = math.max(10, 3.5 * winsPerRun(rebirths) * ratio)
+	elseif id == "Levels" then
+		local cycle = math.max(1, (RebirthBonusesQ.RequiredLevel(rebirths) or 6) - 1)
+		scaled = math.max(5, 1.5 * cycle * ratio)
+	end
+	scaled = math.ceil(scaled)
+	if scaled >= 1000 then
+		-- keep it readable: two significant figures
+		local step = 10 ^ (math.floor(math.log10(scaled)) - 1)
+		scaled = math.floor(scaled / step + 0.5) * step
+	end
+	return scaled
 end
 
 local function rewardFor(entry, tier, target)
@@ -103,11 +145,12 @@ local function rollQuests(player, day)
 	for _ = 1, math.min(QuestConfig.QUESTS_PER_DAY, #pool) do
 		local entry = table.remove(pool, rng:NextInteger(1, #pool))
 		local tier = rng:NextInteger(1, #entry.Targets)
-		local target = entry.Targets[tier]
+		local baseTarget = entry.Targets[tier]
+		local target = scaledTarget(entry.Id, baseTarget, rebirths, entry.Targets[1])
 		table.insert(quests, {
 			Id = entry.Id,
 			Target = target,
-			Reward = rewardFor(entry, tier, target),
+			Reward = rewardFor(entry, tier, baseTarget),
 			Progress = 0,
 			Claimed = false,
 		})

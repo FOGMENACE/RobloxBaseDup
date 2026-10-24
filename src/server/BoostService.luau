@@ -90,6 +90,8 @@ local FRIEND_BONUS_PER = 0.10
 local FRIEND_BONUS_MAX = 5
 
 local friendCounts = {} -- [player] = number
+local pairCache = {} -- [player] = { [otherUserId] = { IsFriend, At } }: each pair is asked once per 10 minutes
+local PAIR_TTL = 600
 
 local function refreshFriends()
 	local all = Players:GetPlayers()
@@ -99,9 +101,23 @@ local function refreshFriends()
 			local count = 0
 			for _, other in ipairs(all) do
 				if other ~= player then
-					local ok, isFriend = pcall(function()
-						return player:IsFriendsWith(other.UserId)
-					end)
+					local known = pairCache[player]
+					if not known then
+						known = {}
+						pairCache[player] = known
+					end
+					local entry = known[other.UserId]
+					local ok, isFriend
+					if entry and os.clock() - entry.At < PAIR_TTL then
+						ok, isFriend = true, entry.IsFriend
+					else
+						ok, isFriend = pcall(function()
+							return player:IsFriendsWith(other.UserId)
+						end)
+						if ok then
+							known[other.UserId] = { IsFriend = isFriend == true, At = os.clock() }
+						end
+					end
 					if ok and isFriend then
 						count += 1
 					end
@@ -121,6 +137,7 @@ Players.PlayerAdded:Connect(function()
 end)
 Players.PlayerRemoving:Connect(function(player)
 	friendCounts[player] = nil
+	pairCache[player] = nil
 	task.delay(1, refreshFriends)
 end)
 task.defer(refreshFriends)

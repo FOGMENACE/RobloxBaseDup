@@ -17,6 +17,11 @@ local player = Players.LocalPlayer
 local LANE = 44 -- studs between lanes
 local RUNNING = { Starting = true, Running = true, Finishing = true }
 
+-- OFF: runners in your world stay visible ON the course (balls never collide with each other).
+-- ON would hide them and draw a copy in a side lane 44 studs away, which looked like players
+-- rolling outside the course and made their real ball disappear when they hit the start wall.
+local SIDE_LANES = false
+
 local ghosts = {} -- [otherPlayer] = { Real = ball, Ghost = model }
 
 local hiddenState = setmetatable({}, { __mode = "k" }) -- [ball] = { Hidden, At }
@@ -99,7 +104,7 @@ RunService.RenderStepped:Connect(function()
 			if ball and not sameWorld then
 				setHidden(ball, true) -- other worlds: never visible
 				dropGhost(other)
-			elseif ball and RUNNING[other:GetAttribute("RunState")] then
+			elseif SIDE_LANES and ball and RUNNING[other:GetAttribute("RunState")] then
 				table.insert(runners, other)
 			else
 				dropGhost(other)

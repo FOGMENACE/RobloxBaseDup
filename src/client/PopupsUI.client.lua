@@ -83,13 +83,19 @@ end
 -- FREE x6 CARD
 --------------------------------------------------
 
+local cardGui = create("ScreenGui", {
+	Name = "FreeClaimCardUI",
+	ResetOnSpawn = false,
+	DisplayOrder = 5, -- below HubUI (6): hub panels and their X buttons always cover the card
+}, playerGui)
+
 local x6Holder = create("Frame", {
 	AnchorPoint = Vector2.new(1, 0),
 	Position = UDim2.new(1, -16, 0, 70),
 	Size = UDim2.fromOffset(150, 74),
 	BackgroundTransparency = 1,
 	Visible = false,
-}, gui)
+}, cardGui)
 local x6Scale = create("UIScale", { Scale = 0 }, x6Holder)
 
 -- soft white glow behind the card

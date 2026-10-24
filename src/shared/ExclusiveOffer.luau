@@ -57,6 +57,70 @@ function ExclusiveOffer.OwnsPass(passId, force)
 	return ownership[passId] == true
 end
 
+--------------------------------------------------
+-- PRICING (display only)
+--
+-- The Oil Barrel is ALWAYS shown at its configured price (ShopConfig, 499). Only when Roblox
+-- itself reports a Roblox Plus discount for THIS player (PriceDiscountDetails with Type
+-- "RobloxPlusSubscription") is the cheaper price shown next to the struck-through full price.
+-- Roblox charges the real price either way; this never changes what is granted or charged.
+--------------------------------------------------
+
+local pricingCache = {} -- [passId] = { Base, Pay, Percent }
+
+local function fetchInfo(passId)
+	local ok, info = pcall(function()
+		return MarketplaceService:GetProductInfoAsync(passId, Enum.InfoType.GamePass)
+	end)
+	if not ok then
+		ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(passId, Enum.InfoType.GamePass)
+		end)
+	end
+	return ok and typeof(info) == "table" and info or nil
+end
+
+-- the last known pricing (never yields); the configured price until the lookup finishes
+function ExclusiveOffer.CachedPricing(entry)
+	return pricingCache[entry.PassId] or { Base = entry.Price, Pay = entry.Price, Percent = 0 }
+end
+
+-- looks the price up once per session (yields the first time)
+function ExclusiveOffer.GetPricing(entry)
+	local cached = pricingCache[entry.PassId]
+	if cached then
+		return cached
+	end
+	local result = { Base = entry.Price, Pay = entry.Price, Percent = 0 }
+	local info = entry.PassId ~= 0 and fetchInfo(entry.PassId) or nil
+	if info and typeof(info.PriceDiscountDetails) == "table" then
+		for _, detail in ipairs(info.PriceDiscountDetails) do
+			if typeof(detail) == "table" and detail.Type == "RobloxPlusSubscription"
+				and typeof(detail.Percent) == "number" and detail.Percent > 0 then
+				local pay = entry.Price
+				if info.UserBasePriceInRobux == entry.Price and typeof(info.PriceInRobux) == "number" then
+					pay = info.PriceInRobux
+				else
+					pay = math.floor(entry.Price * (1 - detail.Percent / 100))
+				end
+				if pay < entry.Price then
+					result = { Base = entry.Price, Pay = pay, Percent = detail.Percent }
+				end
+			end
+		end
+	end
+	pricingCache[entry.PassId] = result
+	return result
+end
+
+-- RichText label text: "499" or "<s>499</s> 449"
+function ExclusiveOffer.PriceText(pricing)
+	if pricing.Pay < pricing.Base then
+		return string.format("<s>%d</s> %d", pricing.Base, pricing.Pay)
+	end
+	return tostring(pricing.Base)
+end
+
 local listeners = {} -- functions called after ownership may have changed
 
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(who, passId, purchased)
@@ -201,7 +265,17 @@ function ExclusiveOffer.Create(parent, options)
 	price.Position = UDim2.fromOffset(50, 0)
 	price.Size = UDim2.new(1, -54, 1, 0)
 	price.Font = FONT
-	price.Text = tostring(entry.Price)
+	price.RichText = true
+	price.Text = ExclusiveOffer.PriceText(ExclusiveOffer.CachedPricing(entry))
+	task.spawn(function()
+		local pricing = ExclusiveOffer.GetPricing(entry)
+		if price.Parent then
+			price.Text = ExclusiveOffer.PriceText(pricing)
+			if pricing.Pay < pricing.Base then
+				price.TextSize = 24 -- two numbers must fit the pill
+			end
+		end
+	end)
 	price.TextColor3 = Color3.new(1, 1, 1)
 	price.TextSize = 32
 	price.TextXAlignment = Enum.TextXAlignment.Left

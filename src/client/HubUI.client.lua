@@ -972,6 +972,7 @@ local calendarDays = GiftConfig.DailyCalendar.Days
 -- button opens Roblox's own purchase prompt, and the SERVER (ExclusiveBallService)
 -- verifies the pass and grants the ball.
 local CAL_ROBUX = utf8.char(0xE002)
+local CalExclusive = require(ReplicatedStorage:WaitForChild("ExclusiveOffer")) -- same cached module (pricing helper)
 local barrelBallOwned = false -- the saved ball is owned (pass, Captain pack or an earlier free day 7)
 
 
@@ -1135,6 +1136,7 @@ rebuildCalendar = function()
 		local offer = reward.Type == "Offer" and ShopConfig.ExclusiveBalls[reward.BallId] or nil
 		local offerOwned = offer ~= nil and barrelOwned()
 		local status = create("TextLabel", {
+			RichText = true,
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.new(0.5, 0, 1, -6),
 			Size = UDim2.new(1, -12, 0, 22),
@@ -1142,7 +1144,7 @@ rebuildCalendar = function()
 				or (claimable and PIN_RED or (claimed and GREEN or INK)),
 			Font = FONT,
 			Text = offer and (offerOwned and "OWNED"
-					or (offer.PassId ~= 0 and ("      " .. tostring(offer.Price)) or "SOON"))
+					or (offer.PassId ~= 0 and ("      " .. CalExclusive.PriceText(CalExclusive.CachedPricing(offer))) or "SOON"))
 				or (claimable and "CLAIM!" or (claimed and "DONE" or "LOCKED")),
 			TextColor3 = CREAM,
 			TextSize = 13,
@@ -1214,6 +1216,10 @@ local function refreshBarrelOffer()
 	end
 	task.spawn(function()
 		local changed = false
+		local payBefore = CalExclusive.CachedPricing(entry).Pay
+		if CalExclusive.GetPricing(entry).Pay ~= payBefore then
+			changed = true
+		end
 		local okState, state = pcall(function()
 			return remotes:WaitForChild("BallShopState"):InvokeServer()
 		end)
@@ -1458,6 +1464,76 @@ local function sectionTitle(order, text)
 	return label
 end
 
+-- ROBLOX PLUS banner: first thing in the store. Roblox gives Plus members a discount on passes and
+-- items; the real prices come from Roblox (GetProductInfo), this only advertises it. Tapping it
+-- opens Roblox's own Plus subscribe prompt (never automatic), or confirms the discount is active.
+do
+	local plusBanner = create("TextButton", {
+		Name = "PlusBanner",
+		LayoutOrder = -100,
+		Size = UDim2.new(1, 0, 0, 56),
+		BackgroundColor3 = Color3.fromRGB(86, 52, 190),
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 22,
+	}, shopList)
+	round(plusBanner, 14)
+	outline(plusBanner, INK, 3)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(140, 96, 255), Color3.fromRGB(70, 40, 170)),
+		Rotation = 90,
+	}, plusBanner)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 4),
+		Size = UDim2.new(1, -28, 0, 28),
+		Font = FONT,
+		Text = "ROBLOX PLUS USERS DISCOUNT",
+		TextColor3 = Color3.fromRGB(255, 226, 120),
+		TextSize = 22,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 23,
+	}, plusBanner)
+	local plusSub = create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 31),
+		Size = UDim2.new(1, -28, 0, 20),
+		Font = Enum.Font.GothamMedium,
+		Text = "",
+		TextColor3 = CREAM,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 23,
+	}, plusBanner)
+	local function hasPlus()
+		local ok, value = pcall(function()
+			return player.HasRobloxSubscription
+		end)
+		return ok and value == true
+	end
+	local function refreshPlus()
+		plusSub.Text = hasPlus() and "Roblox Plus is active: your discount is applied to the prices below!"
+			or "Roblox Plus members save on passes & items. Tap to find out more!"
+	end
+	refreshPlus()
+	pcall(function()
+		player:GetPropertyChangedSignal("HasRobloxSubscription"):Connect(refreshPlus)
+	end)
+	plusBanner.Activated:Connect(function()
+		if hasPlus() then
+			showToast("Roblox Plus is active. Your discount is applied!", true)
+			return
+		end
+		local ok = pcall(function()
+			MarketplaceService:PromptRobloxSubscriptionPurchase(player)
+		end)
+		if not ok then
+			showToast("Roblox Plus is not available right now.", false)
+		end
+	end)
+end
+
 -- one tile: gradient background, outline, shine sweep
 local function tile(order, height, top, bottom)
 	local row = create("Frame", {
@@ -1689,17 +1765,22 @@ do
 	buy.Size = UDim2.fromOffset(150, 52)
 	buy.AnchorPoint = Vector2.new(1, 1)
 	buy.Position = UDim2.new(1, -14, 1, -12)
-	buy.Text = entry.PassId ~= 0 and (ROBUX .. " " .. entry.Price) or "SOON"
+	buy.RichText = true
+	buy.Text = entry.PassId ~= 0 and (ROBUX .. " " .. ExclusiveOffer.PriceText(ExclusiveOffer.CachedPricing(entry))) or "SOON"
+	if entry.PassId ~= 0 then
+		task.spawn(function()
+			local pricing = ExclusiveOffer.GetPricing(entry)
+			if buy.Parent and buy.Text ~= "OWNED" then
+				buy.Text = ROBUX .. " " .. ExclusiveOffer.PriceText(pricing)
+				if pricing.Pay < pricing.Base then
+					buy.TextSize = 24
+				end
+			end
+		end)
+	end
 	create("UIStroke", { Color = INK, Thickness = 2 }, buy)
 
-	task.spawn(function()
-		local ok, info = pcall(function()
-			return MarketplaceService:GetProductInfo(entry.PassId, Enum.InfoType.GamePass)
-		end)
-		if buy.Parent and ok and typeof(info) == "table" and info.PriceInRobux then
-			buy.Text = ROBUX .. " " .. info.PriceInRobux
-		end
-	end)
+	-- the Oil Barrel always shows its configured price (ShopConfig, 499): no live price lookup here
 
 	local function refreshOwned()
 		if player:GetAttribute("OwnsBarrelPass") == true or ExclusiveOffer.OwnsPass(entry.PassId) then
