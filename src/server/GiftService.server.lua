@@ -33,7 +33,14 @@ local PlayerDataService = require(
 local calendarStore = DataStoreService:GetDataStore("DailyCalendar_v1")
 
 local DAY_SECONDS = 24 * 60 * 60
-local SLOT_COUNT = #GiftConfig.DailyCalendar.Days
+-- Only the leading free days are claimable; trailing "Offer" slots are display only.
+local SLOT_COUNT = 0
+for _, day in ipairs(GiftConfig.DailyCalendar.Days) do
+	if day.Type == "Offer" then
+		break
+	end
+	SLOT_COUNT += 1
+end
 
 --------------------------------------------------
 -- REMOTES
@@ -153,7 +160,11 @@ local function nextSlot(calendar)
 	end
 
 	if calendar.LastDay == day - 1 and calendar.Streak > 0 then
-		return (calendar.Streak % SLOT_COUNT) + 1
+		-- after the last free day (or a saved streak from the old 7-slot cycle) restart at 1
+		if calendar.Streak >= SLOT_COUNT then
+			return 1
+		end
+		return calendar.Streak + 1
 	end
 
 	return 1
@@ -164,7 +175,7 @@ local function liveStreak(calendar)
 	local day = today()
 
 	if calendar.LastDay == day or calendar.LastDay == day - 1 then
-		return calendar.Streak
+		return math.min(calendar.Streak, SLOT_COUNT)
 	end
 
 	return 0
@@ -320,6 +331,10 @@ local function claimDaily(player, state)
 			record.Streak = slot
 
 			local reward = GiftConfig.DailyCalendar.Days[slot]
+			if reward.Type == "Offer" then
+				slotClaimed = nil
+				return nil -- an offer is never claimable
+			end
 			if reward.Type == "Oil" then
 				record.PendingOil += reward.Amount
 			end

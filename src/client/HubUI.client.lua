@@ -966,8 +966,21 @@ create("UIListLayout", {
 
 local calendarDays = GiftConfig.DailyCalendar.Days
 
+-- Day 7 is the Oil Barrel's Robux offer, never a reward. Display only: the buy
+-- button opens Roblox's own purchase prompt, and the SERVER (ExclusiveBallService)
+-- verifies the pass and grants the ball.
+local CAL_ROBUX = utf8.char(0xE002)
+local barrelBallOwned = false -- the saved ball is owned (pass, Captain pack or an earlier free day 7)
+local barrelPrice = nil -- the live price from Roblox, falls back to the configured one
+
+local function barrelOwned()
+	return player:GetAttribute("OwnsBarrelPass") == true or barrelBallOwned
+end
+
 local function slotText(reward)
-	if reward.Type == "Wins" then
+	if reward.Type == "Offer" then
+		return "RAINBOW\nOIL BARREL"
+	elseif reward.Type == "Wins" then
 		return "+" .. formatNumber(reward.Amount) .. "\n🏆"
 	elseif reward.Type == "Oil" then
 		return formatNumber(reward.Amount) .. " OIL\nSTART"
@@ -982,7 +995,7 @@ local function slotText(reward)
 end
 
 local function slotIcon(holder, reward)
-	if reward.Type == "Wins" or reward.Type == "Ball" then
+	if reward.Type == "Wins" or reward.Type == "Ball" or reward.Type == "Offer" then
 		applyRewardPreview(holder, reward)
 		return
 	end
@@ -1060,7 +1073,7 @@ rebuildCalendar = function()
 			Position = UDim2.fromOffset(0, 4),
 			Size = UDim2.new(1, 0, 0, 20),
 			Font = FONT,
-			Text = reward.Special and "JACKPOT!" or ("DAY " .. index),
+			Text = reward.Type == "Offer" and "EXCLUSIVE" or (reward.Special and "JACKPOT!" or ("DAY " .. index)),
 			TextColor3 = reward.Special and PIN_RED or INK,
 			TextSize = 14,
 			ZIndex = 23,
@@ -1073,7 +1086,7 @@ rebuildCalendar = function()
 			ZIndex = 23,
 		}, slot)
 		slotIcon(iconHolder, reward)
-		if reward.Type == "Ball" then
+		if reward.Type == "Ball" or reward.Type == "Offer" then
 			-- a 3D barrel preview did not render reliably here (its mesh loads late):
 			-- the jackpot slot shows a big swaying barrel icon instead, never empty
 			for _, child in ipairs(iconHolder:GetChildren()) do
@@ -1117,52 +1130,30 @@ rebuildCalendar = function()
 			ZIndex = 23,
 		}, slot)
 
+		local offer = reward.Type == "Offer" and ShopConfig.ExclusiveBalls[reward.BallId] or nil
+		local offerOwned = offer ~= nil and barrelOwned()
 		local status = create("TextLabel", {
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.new(0.5, 0, 1, -6),
 			Size = UDim2.new(1, -12, 0, 22),
-			BackgroundColor3 = claimable and PIN_RED or (claimed and GREEN or INK),
+			BackgroundColor3 = offer and (offerOwned and INK or Color3.fromRGB(0, 190, 112))
+				or (claimable and PIN_RED or (claimed and GREEN or INK)),
 			Font = FONT,
-			Text = claimable and "CLAIM!" or (claimed and "DONE" or "LOCKED"),
+			Text = offer and (offerOwned and "OWNED"
+					or (offer.PassId ~= 0 and (CAL_ROBUX .. " " .. tostring(barrelPrice or offer.Price)) or "SOON"))
+				or (claimable and "CLAIM!" or (claimed and "DONE" or "LOCKED")),
 			TextColor3 = CREAM,
 			TextSize = 13,
 			ZIndex = 23,
 		}, slot)
 		round(status, 8)
 
-		-- Exclusive ball reward (day 7): also offer it for Robux right here.
-		local exclusive = reward.Type == "Ball" and ShopConfig.ExclusiveBalls[reward.BallId]
-		if exclusive then
-			local OfferModule = require(ReplicatedStorage:WaitForChild("ExclusiveOffer"))
-			local buy = create("TextButton", {
-				AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 0, 0),
-				Size = UDim2.fromOffset(100, 30),
-				BackgroundColor3 = Color3.fromRGB(0, 190, 112),
-				Font = FONT,
-				Text = " " .. exclusive.Price, -- literal robux glyph prefix
-				TextColor3 = Color3.new(1, 1, 1),
-				TextSize = 20,
-				AutoButtonColor = false,
-				ZIndex = 26,
-			}, slot)
-			round(buy, 12)
-			outline(buy, INK, 3)
-			TweenService:Create(
-				buy,
-				TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-				{ Position = UDim2.new(0.5, 0, 0, -7) }
-			):Play()
-
-			buy.Activated:Connect(function()
-				if exclusive.PassId ~= 0 then
-					MarketplaceService:PromptGamePassPurchase(player, exclusive.PassId)
-				end
-			end)
-
-			task.spawn(function()
-				if OfferModule.OwnsPass(exclusive.PassId) and buy.Parent then
-					buy:Destroy()
+		-- The Oil Barrel offer slot: tapping it only opens Roblox's own purchase prompt
+		-- (a deliberate tap, never automatic); it is never claimed and grants nothing here.
+		if offer then
+			slot.Activated:Connect(function()
+				if offer.PassId ~= 0 and not barrelOwned() then
+					MarketplaceService:PromptGamePassPurchase(player, offer.PassId)
 				end
 			end)
 		end
@@ -1194,10 +1185,58 @@ rebuildCalendar = function()
 			calendarHint.Text = "Claimed today. Come back tomorrow to keep your streak!"
 		end
 	end
+
+	-- the Oil Barrel slot is a paid offer, not part of the free days
+	if calendar ~= nil and not barrelOwned() then
+		calendarHint.Text = calendarHint.Text .. "  The Oil Barrel is a one-time Robux offer."
+	end
 end
+
+-- Day 7 offer: live price from Roblox, and "OWNED" once the pass or the ball is owned.
+-- Both only change what is DRAWN; the server verifies the pass and grants the ball.
+local function refreshBarrelOffer()
+	local entry = ShopConfig.ExclusiveBalls.OilBarrel
+	if not entry then
+		return
+	end
+	task.spawn(function()
+		local changed = false
+		if barrelPrice == nil and entry.PassId ~= 0 then
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(entry.PassId, Enum.InfoType.GamePass)
+			end)
+			if ok and typeof(info) == "table" and typeof(info.PriceInRobux) == "number" then
+				barrelPrice = info.PriceInRobux
+				changed = true
+			end
+		end
+		local okState, state = pcall(function()
+			return remotes:WaitForChild("BallShopState"):InvokeServer()
+		end)
+		if okState and typeof(state) == "table" and typeof(state.Balls) == "table" then
+			for _, ball in ipairs(state.Balls) do
+				if ball.BallId == entry.BallId then
+					local owned = ball.Owned == true
+					if owned ~= barrelBallOwned then
+						barrelBallOwned = owned
+						changed = true
+					end
+				end
+			end
+		end
+		if changed then
+			rebuildCalendar()
+		end
+	end)
+end
+player:GetAttributeChangedSignal("OwnsBarrelPass"):Connect(function()
+	rebuildCalendar()
+	refreshBarrelOffer()
+end)
 
 PanelManager.Register("Calendar", calendarPanel, function()
 	pullGiftState()
+	refreshBarrelOffer()
 	updateCalendarScale()
 end)
 

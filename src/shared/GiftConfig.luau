@@ -33,8 +33,10 @@ GiftConfig.TimedGift = {
 -- Missing a day restarts the streak at day 1. After the last slot
 -- the cycle starts again. Days are UTC calendar days.
 --
--- Day 7 is the "special" slot: swap it for { Type = "Ball", ... }
--- (e.g. a special ball that is also sold as a Game Pass) when ready.
+-- The 7th slot is NOT a reward: { Type = "Offer" } shows the exclusive
+-- ball's Robux offer (price and pass come from ShopConfig.ExclusiveBalls).
+-- It can never be claimed; the free streak is the days before it, and the
+-- day after the last free day starts again at day 1. Offer slots must be last.
 GiftConfig.DailyCalendar = {
 	Days = {
 		{ Type = "Oil", Amount = 500 },
@@ -43,7 +45,7 @@ GiftConfig.DailyCalendar = {
 		{ Type = "BallNext" },
 		{ Type = "Wins", Amount = 8000 },
 		{ Type = "Oil", Amount = 5000 },
-		{ Type = "Ball", BallId = "OilBarrel", Special = true }, -- exclusive rainbow Oil Barrel
+		{ Type = "Offer", BallId = "OilBarrel", Special = true }, -- Robux offer, never free
 	},
 }
 
