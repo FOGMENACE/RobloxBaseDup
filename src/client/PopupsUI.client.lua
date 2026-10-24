@@ -620,7 +620,17 @@ leaveClaimButton.Activated:Connect(function()
 	claiming = false
 end)
 
+local showStayMessage -- defined below (needs the toast label)
+
 GuiService.MenuOpened:Connect(function()
+	local step = player:GetAttribute("TutorialStep")
+	if typeof(step) == "number" and step < 12 then
+		-- still in the tutorial: no "claim and stay" card on top of it, a friendly nudge instead
+		if showStayMessage then
+			showStayMessage()
+		end
+		return
+	end
 	local nextAt = player:GetAttribute("LeaveRewardNextAt")
 	if typeof(nextAt) == "number" and os.time() >= nextAt and not leaveFrame.Visible and player:GetAttribute("SettingPopups") ~= false then
 		setLeaveOpen(true)
@@ -802,3 +812,19 @@ remotes:WaitForChild("CaptainAnnounce").OnClientEvent:Connect(function(name, win
 		end)
 	end)
 end)
+-- Tutorial retention nudge (opening the Roblox menu before the tutorial is finished): a short
+-- toast instead of the leave-reward card, which would sit on top of the tutorial.
+local stayToastToken = 0
+showStayMessage = function()
+	stayToastToken += 1
+	local token = stayToastToken
+	confirmToast.Text = "Almost there! Finish the tutorial to unlock rewards"
+	confirmToast.Size = UDim2.fromOffset(520, 52)
+	ding()
+	TweenService:Create(confirmToast, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 0, 24) }):Play()
+	task.delay(4, function()
+		if token == stayToastToken then
+			TweenService:Create(confirmToast, TweenInfo.new(0.3), { Position = UDim2.new(0.5, 0, 0, -170) }):Play()
+		end
+	end)
+end
