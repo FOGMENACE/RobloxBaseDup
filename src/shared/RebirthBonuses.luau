@@ -13,7 +13,7 @@
 
 local RebirthBonuses = {}
 
-RebirthBonuses.XP_PER_REBIRTH = 10
+RebirthBonuses.XP_PER_REBIRTH = 5 -- was 10: early rebirths levelled in seconds
 RebirthBonuses.OIL_PER_REBIRTH = 1
 RebirthBonuses.WINS_PER_REBIRTH = 1
 RebirthBonuses.WINS_START_REBIRTH = 2

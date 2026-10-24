@@ -699,7 +699,7 @@ end
 
 local function rollSpecialCaps()
 	helperCap = rollCap({ [0] = 30, 45, 25 })
-	hurtCap = rollCap({ [0] = 25, 45, 30 })
+	hurtCap = rollCap({ [0] = 15, 45, 40 })
 	helperUsed, hurtUsed = 0, 0
 end
 
@@ -876,8 +876,8 @@ local function buildPolarityPlan(platformCount)
 
 	-- Balanced so an average course nets positive oil: high-rebirth players used to
 	-- get ~45% green with larger red tiers and ended on 0 oil far too often.
-	local doubleGreenRows = math.floor(rowCount * (0.20 - 0.04 * difficulty))
-	local doubleRedRows = math.floor(rowCount * (0.10 + 0.04 * difficulty))
+	local doubleGreenRows = math.floor(rowCount * (0.15 - 0.04 * difficulty))
+	local doubleRedRows = math.floor(rowCount * (0.15 + 0.05 * difficulty))
 
 	local mixedRows = rowCount - doubleGreenRows - doubleRedRows
 

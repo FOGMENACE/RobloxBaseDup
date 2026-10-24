@@ -106,7 +106,7 @@ local BallDefinitions = {
 			60,
 
 		WinsCost =
-			160,
+			600,
 
 		RequiredRebirths =
 			2,
@@ -132,7 +132,7 @@ local BallDefinitions = {
 			65,
 
 		WinsCost =
-			470,
+			2500,
 
 		RequiredRebirths =
 			3,
@@ -158,7 +158,7 @@ local BallDefinitions = {
 			70,
 
 		WinsCost =
-			935,
+			5000,
 
 		RequiredRebirths =
 			3,
@@ -184,7 +184,7 @@ local BallDefinitions = {
 			75,
 
 		WinsCost =
-			1200,
+			8000,
 
 		RequiredRebirths =
 			3,
@@ -210,7 +210,7 @@ local BallDefinitions = {
 			80,
 
 		WinsCost =
-			2400,
+			15000,
 
 		RequiredRebirths =
 			4,
@@ -236,7 +236,7 @@ local BallDefinitions = {
 			85,
 
 		WinsCost =
-			4500,
+			28000,
 
 		RequiredRebirths =
 			4,
@@ -262,7 +262,7 @@ local BallDefinitions = {
 			90,
 
 		WinsCost =
-			7000,
+			45000,
 
 		RequiredRebirths =
 			5,
@@ -288,7 +288,7 @@ local BallDefinitions = {
 			95,
 
 		WinsCost =
-			10500,
+			70000,
 
 		RequiredRebirths =
 			5,
@@ -314,7 +314,7 @@ local BallDefinitions = {
 			100,
 
 		WinsCost =
-			15000,
+			110000,
 
 		RequiredRebirths =
 			6,
@@ -340,7 +340,7 @@ local BallDefinitions = {
 			105,
 
 		WinsCost =
-			22000,
+			160000,
 
 		RequiredRebirths =
 			6,
@@ -366,7 +366,7 @@ local BallDefinitions = {
 			110,
 
 		WinsCost =
-			32000,
+			240000,
 
 		RequiredRebirths =
 			7,
@@ -392,7 +392,7 @@ local BallDefinitions = {
 			115,
 
 		WinsCost =
-			46000,
+			350000,
 
 		RequiredRebirths =
 			8,
@@ -418,7 +418,7 @@ local BallDefinitions = {
 			120,
 
 		WinsCost =
-			65000,
+			500000,
 
 		RequiredRebirths =
 			9,
@@ -444,7 +444,7 @@ local BallDefinitions = {
 			125,
 
 		WinsCost =
-			90000,
+			700000,
 
 		RequiredRebirths =
 			10,
@@ -470,7 +470,7 @@ local BallDefinitions = {
 			130,
 
 		WinsCost =
-			125000,
+			1000000,
 
 		RequiredRebirths =
 			11,
@@ -496,7 +496,7 @@ local BallDefinitions = {
 			135,
 
 		WinsCost =
-			175000,
+			1400000,
 
 		RequiredRebirths =
 			12,
@@ -522,7 +522,7 @@ local BallDefinitions = {
 			140,
 
 		WinsCost =
-			250000,
+			2000000,
 
 		RequiredRebirths =
 			13,
