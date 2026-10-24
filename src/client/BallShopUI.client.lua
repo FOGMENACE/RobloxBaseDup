@@ -175,6 +175,7 @@ local winsLabel = create("TextLabel", {
 }, winsPill)
 
 local closeButton = create("TextButton", {
+	Name = "ShopCloseButton",
 	AnchorPoint = Vector2.new(1, 0),
 	Position = UDim2.new(1, -12, 0, 12),
 	Size = UDim2.fromOffset(36, 36),

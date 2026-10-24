@@ -581,7 +581,7 @@ local function applyRewardPreview(holder, reward)
 		return
 	end
 
-	if reward.Type == "Ball" then
+	if reward.Type == "Ball" or reward.Type == "Offer" then
 		local models = ReplicatedStorage:FindFirstChild("BallModels")
 		local template = models and models:FindFirstChild(reward.BallId)
 		if not template then
@@ -619,11 +619,11 @@ local function applyRewardPreview(holder, reward)
 
 			local radius = math.max(model.Size.X, model.Size.Y, model.Size.Z)
 			local camera = create("Camera", {
-				CFrame = CFrame.lookAt(
+				CFrame = reward.BallId == "OilBarrel" and CFrame.lookAt(Vector3.new(4.6, 3.4, 6.2), Vector3.new(0, -0.1, 0)) or CFrame.lookAt(
 					Vector3.new(0, hasDesign and radius * 0.5 or 0, radius * (reward.BallId == "OilBarrel" and 2.7 or (hasDesign and 3.3 or 2.2))),
 					Vector3.zero
 				),
-				FieldOfView = 35,
+				FieldOfView = reward.BallId == "OilBarrel" and 34 or 35,
 			}, viewport)
 			viewport.CurrentCamera = camera
 
@@ -634,7 +634,9 @@ local function applyRewardPreview(holder, reward)
 					connection:Disconnect()
 					return
 				end
-				model.CFrame = model.CFrame * CFrame.Angles(0, dt * 1.2, 0)
+				if reward.BallId ~= "OilBarrel" then
+					model.CFrame = model.CFrame * CFrame.Angles(0, dt * 1.2, 0)
+				end
 				BallAccessories.Pose(model, os.clock())
 			end)
 		end
@@ -971,7 +973,7 @@ local calendarDays = GiftConfig.DailyCalendar.Days
 -- verifies the pass and grants the ball.
 local CAL_ROBUX = utf8.char(0xE002)
 local barrelBallOwned = false -- the saved ball is owned (pass, Captain pack or an earlier free day 7)
-local barrelPrice = nil -- the live price from Roblox, falls back to the configured one
+
 
 local function barrelOwned()
 	return player:GetAttribute("OwnsBarrelPass") == true or barrelBallOwned
@@ -1086,7 +1088,7 @@ rebuildCalendar = function()
 			ZIndex = 23,
 		}, slot)
 		slotIcon(iconHolder, reward)
-		if reward.Type == "Ball" or reward.Type == "Offer" then
+		if (reward.Type == "Ball" or reward.Type == "Offer") and not iconHolder:FindFirstChild("Preview") then
 			-- a 3D barrel preview did not render reliably here (its mesh loads late):
 			-- the jackpot slot shows a big swaying barrel icon instead, never empty
 			for _, child in ipairs(iconHolder:GetChildren()) do
@@ -1140,13 +1142,24 @@ rebuildCalendar = function()
 				or (claimable and PIN_RED or (claimed and GREEN or INK)),
 			Font = FONT,
 			Text = offer and (offerOwned and "OWNED"
-					or (offer.PassId ~= 0 and (CAL_ROBUX .. " " .. tostring(barrelPrice or offer.Price)) or "SOON"))
+					or (offer.PassId ~= 0 and ("      " .. tostring(offer.Price)) or "SOON"))
 				or (claimable and "CLAIM!" or (claimed and "DONE" or "LOCKED")),
 			TextColor3 = CREAM,
 			TextSize = 13,
 			ZIndex = 23,
 		}, slot)
 		round(status, 8)
+		if offer and not offerOwned and offer.PassId ~= 0 then
+			-- the same Robux icon the Ball Shop uses, then the configured price (never a live lookup)
+			create("ImageLabel", {
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 6, 0.5, 0),
+				Size = UDim2.fromOffset(16, 16),
+				BackgroundTransparency = 1,
+				Image = "rbxasset://textures/ui/common/robux.png",
+				ZIndex = 24,
+			}, status)
+		end
 
 		-- The Oil Barrel offer slot: tapping it only opens Roblox's own purchase prompt
 		-- (a deliberate tap, never automatic); it is never claimed and grants nothing here.
@@ -1201,15 +1214,6 @@ local function refreshBarrelOffer()
 	end
 	task.spawn(function()
 		local changed = false
-		if barrelPrice == nil and entry.PassId ~= 0 then
-			local ok, info = pcall(function()
-				return MarketplaceService:GetProductInfo(entry.PassId, Enum.InfoType.GamePass)
-			end)
-			if ok and typeof(info) == "table" and typeof(info.PriceInRobux) == "number" then
-				barrelPrice = info.PriceInRobux
-				changed = true
-			end
-		end
 		local okState, state = pcall(function()
 			return remotes:WaitForChild("BallShopState"):InvokeServer()
 		end)

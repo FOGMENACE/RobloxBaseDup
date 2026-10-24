@@ -98,7 +98,7 @@ function LoadingScreen.Build(status)
 		Size = UDim2.new(0.9, 0, 0, 80),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.FredokaOne,
-		Text = "+1 OIL BOWLING",
+		Text = "STRIKE OIL!",
 		TextColor3 = Color3.fromRGB(255, 214, 70),
 		TextScaled = true,
 	}, gui)

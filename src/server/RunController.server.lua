@@ -579,6 +579,36 @@ end
 -- START RUN
 --------------------------------------------------
 
+--------------------------------------------------
+-- CENTER BALL IN THE LANE AT RUN START
+--
+-- The start opening is ~23 studs wide but the panels sit in the middle, and the ball
+-- keeps whatever X it crossed the line at. Other players then saw runners rolling far to
+-- the left of the course. Glide the ball to the lane centre during the first moments of
+-- the run (server-side, so every client sees the same thing).
+--------------------------------------------------
+
+local function centerBallInLane(player, ball)
+	local worldOffset = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig")).Offset(player)
+	local centerX = startWall.Position.X + worldOffset.X
+	task.spawn(function()
+		local elapsed = 0
+		while elapsed < 0.7 and ball.Parent and player.Parent do
+			local dt = RunService.Heartbeat:Wait()
+			elapsed += dt
+			local state = player:GetAttribute("RunState")
+			if state ~= "Starting" and state ~= "Running" then
+				return
+			end
+			local dx = centerX - ball.Position.X
+			if math.abs(dx) < 0.25 then
+				return
+			end
+			ball.CFrame += Vector3.new(dx * math.min(1, dt * 9), 0, 0)
+		end
+	end)
+end
+
 local function startRun(
 	player,
 	ball
@@ -656,6 +686,7 @@ local function startRun(
 
 	end
 
+	centerBallInLane(player, ball)
 
 	--------------------------------------------------
 	-- RESET RUN OIL

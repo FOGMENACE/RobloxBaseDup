@@ -662,7 +662,7 @@ end
 local function showIntro(onContinue)
 	showCard({
 		Tab = "TUTORIAL",
-		Heading = "WELCOME TO +1 OIL BOWLING!",
+		Heading = "WELCOME TO STRIKE OIL!",
 		Body = "Let's learn the basics, which will only take a few steps! Follow the hints and arrows at the top of your screen.",
 		Goals = { { "🛢️", "Roll the oil course" }, { "⚡", "Earn XP on the generator" }, { "♻️", "Rebirth for big bonuses" }, { "🎳", "Buy your first new ball" } },
 		Button = "CONTINUE",
@@ -762,6 +762,11 @@ RunService.RenderStepped:Connect(function()
 	-- spotlight for button steps (only in the lobby)
 	local lobby = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
 	local extra = (step == 4 and PanelManager.IsOpen("Rebirth")) and findGui("FreeTag") or nil
+	if (step == 7 or step == 8) and shopOpen() then
+		-- keep the shop's X clickable under the spotlight so the player can always leave it
+		local shopGui = playerGui:FindFirstChild("BallShopUI")
+		extra = shopGui and shopGui:FindFirstChild("ShopCloseButton", true) or nil
+	end
 	setSpotlight(active and lobby and spotlightTarget(step) or nil, extra)
 
 	local target = active and worldTarget(step) or nil
@@ -796,5 +801,25 @@ end)
 player:GetAttributeChangedSignal("RunState"):Connect(function()
 	if shownStep ~= nil and shownStep < DONE and shownStep >= 1 then
 		banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	end
+end)
+
+-- While the Ball Shop is open, dock the instruction panel at the BOTTOM of the screen: on
+-- laptops and short windows it used to sit over the shop's X, so players could not leave it.
+task.spawn(function()
+	local docked = false
+	while true do
+		task.wait(0.1)
+		local wantDock = panel.Visible and shopOpen()
+		if wantDock ~= docked then
+			docked = wantDock
+			if docked then
+				panel.AnchorPoint = Vector2.new(0.5, 1)
+				panel.Position = UDim2.new(0.5, 0, 1, -10)
+			else
+				panel.AnchorPoint = Vector2.new(0.5, 0)
+				panel.Position = UDim2.new(0.5, 0, PANEL_Y, 0)
+			end
+		end
 	end
 end)
