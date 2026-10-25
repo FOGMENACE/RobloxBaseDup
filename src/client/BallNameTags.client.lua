@@ -110,6 +110,7 @@ local function add(ball)
 	local entry = {
 		Anchor = anchor,
 		Label = label,
+		Gui = gui,
 		Player = player,
 		Height = ball.Size.Y / 2 + 2.6,
 		Smoothed = ball.Position.Y,
@@ -144,6 +145,13 @@ RunService.RenderStepped:Connect(function(deltaTime)
 
 	for ball, entry in pairs(tags) do
 		if ball.Parent then
+			-- no nametag while this player is on a course (oil course, countdown, win course): it comes
+			-- back when they are in the lobby again
+			if entry.Gui then
+				local state = entry.Player and entry.Player:GetAttribute("RunState")
+				entry.Gui.Enabled = state == nil or state == "" or state == "Waiting"
+			end
+
 			local position = ball.Position
 			local velocity = ball.AssemblyLinearVelocity
 
