@@ -94,7 +94,7 @@ WorldConfig.Skins = {
 	[3] = { WinsMult = 8 },
 	[4] = { WinsMult = 20 },
 }
-WorldConfig.BarrelSkinWins = { [2] = 8000000, [3] = 20000000, [4] = 50000000 } -- just above the top ball skin in each world
+WorldConfig.BarrelSkinWins = { [2] = 14000000, [3] = 36000000, [4] = 90000000 } -- just above the top ball skin in each world (Single Knot x3 / x8 / x20)
 
 -- Robux price of every evolved ball, derived from the ORIGINAL lobby shop's price
 -- (ShopConfig.RobuxPrices) plus an extra that grows from the slowest to the
