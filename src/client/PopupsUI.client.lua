@@ -242,7 +242,7 @@ local genHolder = create("Frame", {
 	Size = UDim2.fromOffset(170, 196),
 	BackgroundTransparency = 1,
 	Visible = false,
-}, gui)
+}, cardGui)
 local genScale = create("UIScale", {}, genHolder)
 -- Size follows the screen: a big, eye-catching gift on computers (it used to
 -- shrink with the phone change), a compact badge up by the x2 buttons on
