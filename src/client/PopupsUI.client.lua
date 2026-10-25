@@ -255,7 +255,18 @@ local function fitGift()
 		genHolder.AnchorPoint = Vector2.new(1, 0)
 		genHolder.Position = UDim2.new(1, -150, 0, 120)
 	else
-		TOUCH_SIZE = math.clamp(height / 600, 1.05, 1.45)
+		local width = gui.AbsoluteSize.X
+		if width < 1400 or height < 760 then
+			-- laptops / small windows: a smaller card tucked into the top-right corner, just left of
+			-- the x2 buttons (the big centred layout put it in the middle of the screen)
+			TOUCH_SIZE = math.clamp(math.min(width / 1400, height / 760), 0.5, 1)
+			genHolder.AnchorPoint = Vector2.new(1, 0)
+			genHolder.Position = UDim2.new(1, -(math.floor(width * 0.115) + 12), 0, 70)
+		else
+			TOUCH_SIZE = math.clamp(height / 600, 1.05, 1.45)
+			genHolder.AnchorPoint = Vector2.new(1, 0.5)
+			genHolder.Position = UDim2.new(1, -228, 0, 180)
+		end
 	end
 end
 fitGift()
