@@ -1159,14 +1159,16 @@ rebuildCalendar = function()
 		end
 		if offer and not offerOwned and offer.PassId ~= 0 then
 			-- the same Robux icon the Ball Shop uses, then the configured price (never a live lookup)
+			-- a sibling of the price pill (not its child): the pill gets left padding when a discount is
+			-- shown, and a child icon was pushed along with the text, landing on the old price
 			create("ImageLabel", {
 				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 6, 0.5, 0),
+				Position = UDim2.new(0, 12, 1, -17), -- the pill's left end: slot bottom - 6 margin - 22/2
 				Size = UDim2.fromOffset(16, 16),
 				BackgroundTransparency = 1,
 				Image = "rbxasset://textures/ui/common/robux.png",
 				ZIndex = 24,
-			}, status)
+			}, slot)
 		end
 
 		-- The Oil Barrel offer slot: tapping it only opens Roblox's own purchase prompt
