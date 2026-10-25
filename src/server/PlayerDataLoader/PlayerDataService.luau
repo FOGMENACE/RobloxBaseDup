@@ -462,7 +462,10 @@ local function updatePlayerValues(player, data)
     player:SetAttribute("RebirthLevelRequirement",
         data.RebirthLevelRequirement)
     player:SetAttribute("RebirthMaxReached", progress.MaxReached)
-    player:SetAttribute("CurrentOil", data.CurrentOil)
+    -- the lifetime oil total has its OWN attribute: "CurrentOil" is the oil collected on the current run
+    -- (OilCollectionService / RunController), and sharing it let any XP or wins update overwrite a run in progress
+    -- with the whole total (e.g. 160k appearing on the first platform of a run)
+    player:SetAttribute("OilTotal", data.CurrentOil)
     player:SetAttribute("EquippedBall", data.EquippedBall)
 
     player:SetAttribute("XPForCurrentLevel",

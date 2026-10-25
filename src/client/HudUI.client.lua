@@ -874,7 +874,7 @@ end
 local lastOil = nil
 
 local function refreshOil()
-	local oil = player:GetAttribute("CurrentOil")
+	local oil = player:GetAttribute("OilTotal")
 	if typeof(oil) ~= "number" then
 		return
 	end
@@ -887,7 +887,7 @@ local function refreshOil()
 		local previous = lastOil
 		lastOil = oil
 		task.delay(wait, function()
-			oilLabel.Text = formatNumber(player:GetAttribute("CurrentOil") or oil)
+			oilLabel.Text = formatNumber(player:GetAttribute("OilTotal") or oil)
 			if oil > previous then
 				bump(oilScale, 1.12)
 			end
@@ -956,7 +956,7 @@ end
 player:GetAttributeChangedSignal("GlobalLevel"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("Rebirths"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("Level"):Connect(refreshGlobal)
-player:GetAttributeChangedSignal("CurrentOil"):Connect(refreshOil)
+player:GetAttributeChangedSignal("OilTotal"):Connect(refreshOil)
 for _, name in ipairs({ "Rebirths", "RebirthLevelRequirement", "Level" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshRebirth)
 end
