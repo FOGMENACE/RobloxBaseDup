@@ -404,20 +404,27 @@ local function findGui(name)
 	return playerGui:FindFirstChild(name, true)
 end
 
+-- the calendar slot to spotlight: the one that can be CLAIMED today (it is not always day 1, e.g. a
+-- player whose calendar already has a streak); the first slot only if none is claimable
 local function calendarDayOne()
 	local panel = findGui("CalendarPanel")
 	if not panel then
 		return nil
 	end
-	local best
+	local best, claimable
 	for _, child in ipairs(panel:GetDescendants()) do
 		if child:IsA("TextButton") and child.Size.X.Offset == 94 and child.Size.Y.Offset == 154 then
 			if not best or child.LayoutOrder < best.LayoutOrder then
 				best = child
 			end
+			for _, label in ipairs(child:GetChildren()) do
+				if label:IsA("TextLabel") and label.Text == "CLAIM!" then
+					claimable = child
+				end
+			end
 		end
 	end
-	return best
+	return claimable or best
 end
 
 -- returns the GuiObject to spotlight for this step (nil = none right now)
@@ -532,9 +539,9 @@ local function textFor(step)
 		return "Roll again with your new ball!"
 	elseif step == 11 then
 		if PanelManager.IsOpen("Calendar") then
-			return "EARN DAILY! Claim Day 1, then close the calendar."
+			return "EARN DAILY! Claim today's gift, then close the calendar."
 		end
-		return "EARN DAILY! Tap the calendar and claim your Day 1 gift!"
+		return "EARN DAILY! Tap the calendar and claim your daily gift!"
 	end
 
 	return ""

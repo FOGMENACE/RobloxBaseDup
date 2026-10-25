@@ -417,3 +417,39 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 print("[GiftService] READY | Timed:", GiftConfig.TimedGift.IntervalSeconds, "s | Calendar slots:", SLOT_COUNT)
+
+--------------------------------------------------
+-- ADMIN RESET (server-to-server only)
+--
+-- AdminService fires this BindableEvent after an admin "reset": the calendar starts again from day 1
+-- with nothing claimed. It used to be left untouched, so a reset player's calendar still said
+-- "already claimed" and the tutorial's claim step could never be completed. A BindableEvent can only
+-- be fired by server code; clients cannot reach it.
+--------------------------------------------------
+local calendarReset = Instance.new("BindableEvent")
+calendarReset.Name = "CalendarReset"
+calendarReset.Parent = game:GetService("ServerScriptService")
+
+calendarReset.Event:Connect(function(userId)
+	if typeof(userId) ~= "number" or userId <= 0 or userId % 1 ~= 0 then
+		return
+	end
+
+	local ok, err = pcall(function()
+		calendarStore:UpdateAsync("Calendar_" .. tostring(userId), function()
+			return { LastDay = 0, Streak = 0, PendingOil = 0 }
+		end)
+	end)
+	if not ok then
+		warn("[GiftService] Calendar reset failed:", userId, err)
+		return
+	end
+
+	local online = Players:GetPlayerByUserId(userId)
+	local state = online and states[online]
+	if online and state then
+		state.Calendar = { LastDay = 0, Streak = 0, PendingOil = 0 }
+		StarterOil.Restore(online, 0)
+		publishClaimedFlag(online, state)
+	end
+end)

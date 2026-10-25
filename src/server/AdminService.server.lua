@@ -769,6 +769,12 @@ commands.confirm = function(admin, args)
 	if tutorialReset then
 		tutorialReset:Fire(id)
 	end
+	-- the daily calendar starts again from day 1 (it used to keep the old claim, which trapped the
+	-- tutorial's claim step)
+	local calendarReset = game:GetService("ServerScriptService"):FindFirstChild("CalendarReset")
+	if calendarReset then
+		calendarReset:Fire(id)
+	end
 
 	-- Read the result back so the admin sees what is really stored now.
 	local after = online and PlayerDataService.GetData(online) or PlayerDataService.AdminRead(id)

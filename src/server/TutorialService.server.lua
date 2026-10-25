@@ -73,6 +73,7 @@ local function setStep(player, state, step)
 	end
 
 	state.Step = step
+	state.StepAt = os.clock()
 	player:SetAttribute("TutorialStep", step)
 	save(player, step)
 end
@@ -205,7 +206,11 @@ local function tick(player, state)
 		end
 
 	elseif step == 11 then
-		if player:GetAttribute("CalendarClaimedToday") == true then
+		-- Done once today's gift is claimed. If the calendar cannot be claimed for any reason (it did not
+		-- load, or the record is out of step), the tutorial must never trap the player: after two
+		-- minutes on this step it simply finishes. It grants nothing, so there is nothing to abuse.
+		if player:GetAttribute("CalendarClaimedToday") == true
+			or os.clock() - (state.StepAt or os.clock()) > 120 then
 			setStep(player, state, DONE)
 		end
 	end
