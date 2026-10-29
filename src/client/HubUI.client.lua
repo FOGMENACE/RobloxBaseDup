@@ -202,11 +202,11 @@ end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateRootScale)
 updateRootScale()
 
--- Phones: the wins trophy sits on the same horizontal line as the x2 WINS tile on the right
+-- All devices: the wins trophy sits on the same horizontal line as the x2 WINS tile on the right
 -- side of the screen. The column slides down to that line; if its bottom would then reach
 -- the oil / trophy multipliers panel in the bottom-left corner, it is scaled down to fit.
 -- (Measured from the real on-screen objects, so it follows any screen shape.)
-if UserInputService.TouchEnabled then
+do
 	local function winsPillObject()
 		return left:FindFirstChild("Wins")
 	end
