@@ -27,6 +27,7 @@
 
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 
 local PlayerDataService = require(
@@ -68,6 +69,13 @@ local function save(player, step)
 end
 
 local function setStep(player, state, step)
+	-- a replay (TUTORIAL button) only drives the guide; it never touches the saved step
+	if state.Replay then
+		state.Step = step
+		player:SetAttribute("TutorialReplayStep", step)
+		return
+	end
+
 	if state.Step == step then
 		return
 	end
@@ -146,6 +154,16 @@ local function loadPlayer(player)
 	setStep(player, state, step)
 end
 
+-- [player] = replay state (same shape as `states`, with Replay = true)
+local replays = {}
+
+local function stopReplay(player)
+	replays[player] = nil
+	if player.Parent then
+		player:SetAttribute("TutorialReplayStep", nil)
+	end
+end
+
 local function tick(player, state)
 	if not state.Loaded or state.Step >= DONE then
 		return
@@ -171,7 +189,8 @@ local function tick(player, state)
 		end
 
 	elseif step == 4 then
-		if PlayerDataService.GetRebirths(player) >= 1 then
+		-- (a replay waits for a NEW rebirth, not the ones the player already has)
+		if PlayerDataService.GetRebirths(player) >= (state.RebirthBase or 0) + 1 then
 			setStep(player, state, 5)
 		end
 
@@ -191,7 +210,8 @@ local function tick(player, state)
 		end
 
 	elseif step == 8 then
-		if player:GetAttribute("EquippedBall") == TUTORIAL_BALL then
+		-- (a replay does not make anyone re-equip the tutorial ball)
+		if state.Replay or player:GetAttribute("EquippedBall") == TUTORIAL_BALL then
 			setStep(player, state, 9)
 		end
 
@@ -204,6 +224,10 @@ local function tick(player, state)
 		if not rolling then
 			setStep(player, state, 11)
 		end
+
+	elseif step == 11 and state.Replay then
+		-- the replay ends here (the calendar part is only for the first time)
+		stopReplay(player)
 
 	elseif step == 11 then
 		-- Done once today's gift is claimed. If the calendar cannot be claimed for any reason (it did not
@@ -239,6 +263,78 @@ task.spawn(function()
 	end
 end)
 
+
+-- TUTORIAL button (Settings): replays the guide from the player's own progress. Only
+-- allowed after the real tutorial, from the lobby; pressing again stops it. It never
+-- changes the saved tutorial step, grants nothing and is rate limited.
+local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+if not remotesFolder then
+	remotesFolder = Instance.new("Folder")
+	remotesFolder.Name = "Remotes"
+	remotesFolder.Parent = ReplicatedStorage
+end
+local replayRemote = remotesFolder:FindFirstChild("TutorialReplay")
+if not replayRemote then
+	replayRemote = Instance.new("RemoteEvent")
+	replayRemote.Name = "TutorialReplay"
+	replayRemote.Parent = remotesFolder
+end
+
+local lastReplayRequest = {}
+
+replayRemote.OnServerEvent:Connect(function(player)
+	local now = os.clock()
+	if now - (lastReplayRequest[player] or 0) < 1.5 then
+		return
+	end
+	lastReplayRequest[player] = now
+
+	local state = states[player]
+	if not state or not state.Loaded or state.Step < DONE then
+		return -- the real tutorial is still running (or not loaded)
+	end
+
+	if replays[player] then
+		stopReplay(player)
+		return
+	end
+
+	if isRolling(player) then
+		return
+	end
+
+	local rebirths = PlayerDataService.GetRebirths(player)
+	local start
+	if rebirths <= 0 then
+		start = 1
+	elseif player:GetAttribute("RebirthMaxReached") == true then
+		start = 4
+	else
+		start = 3
+	end
+
+	local replay = { Step = start, Loaded = true, Replay = true, RebirthBase = rebirths }
+	replays[player] = replay
+	player:SetAttribute("TutorialReplayStep", start)
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		for player, replay in pairs(replays) do
+			if player.Parent then
+				tick(player, replay)
+			else
+				replays[player] = nil
+			end
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	replays[player] = nil
+	lastReplayRequest[player] = nil
+end)
 print("[TutorialService] READY")
 
 -- Used by the admin `reset` command: the player (online or offline) starts

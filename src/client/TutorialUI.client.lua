@@ -708,7 +708,7 @@ local function updateBanner(step)
 	if step == 1 and not introDone and not introActive and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
 		showIntro(function()
 			shownStep = nil
-			updateBanner(player:GetAttribute("TutorialStep"))
+			updateBanner(player:GetAttribute("TutorialReplayStep") or player:GetAttribute("TutorialStep"))
 		end)
 	end
 	shownStep = step
@@ -758,7 +758,8 @@ local function updateBanner(step)
 end
 
 RunService.RenderStepped:Connect(function()
-	local step = player:GetAttribute("TutorialStep")
+	-- a replay (TUTORIAL button) drives the guide with its own step; the saved step stays 12
+	local step = player:GetAttribute("TutorialReplayStep") or player:GetAttribute("TutorialStep")
 	updateBanner(step)
 
 	local active = typeof(step) == "number" and step >= 1 and step < DONE and not introActive

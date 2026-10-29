@@ -82,6 +82,43 @@ create("UICorner", { CornerRadius = UDim.new(1, 0) }, gear)
 create("UIStroke", { Color = GOLD, Thickness = 2.5 }, gear)
 local gearScale = create("UIScale", {}, gear)
 
+-- TUTORIAL: replays the guide from the player's own progress (TutorialService validates
+-- everything on the server; this only asks). Pressing it again stops the replay.
+local tutorialButton = create("TextButton", {
+	Name = "TutorialButton",
+	Size = UDim2.fromOffset(104, 44),
+	BackgroundColor3 = Color3.fromRGB(48, 38, 120),
+	Text = "TUTORIAL",
+	Font = FONT,
+	TextSize = 16,
+	TextColor3 = CREAM,
+	AutoButtonColor = false,
+	Visible = false,
+}, gui)
+create("UICorner", { CornerRadius = UDim.new(1, 0) }, tutorialButton)
+create("UIStroke", { Color = GOLD, Thickness = 2.5 }, tutorialButton)
+
+local function refreshTutorialButton()
+	local finished = (player:GetAttribute("TutorialStep") or 0) >= 12
+	tutorialButton.Visible = finished
+	tutorialButton.Text = player:GetAttribute("TutorialReplayStep") ~= nil and "STOP GUIDE" or "TUTORIAL"
+end
+player:GetAttributeChangedSignal("TutorialStep"):Connect(refreshTutorialButton)
+player:GetAttributeChangedSignal("TutorialReplayStep"):Connect(refreshTutorialButton)
+refreshTutorialButton()
+
+local lastTutorialPress = 0
+tutorialButton.Activated:Connect(function()
+	if os.clock() - lastTutorialPress < 1.5 then
+		return
+	end
+	lastTutorialPress = os.clock()
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("TutorialReplay")
+	if remote then
+		remote:FireServer()
+	end
+end)
+
 local panel = create("Frame", {
 	Position = UDim2.fromOffset(112, 60),
 	Size = UDim2.fromOffset(250, 56 + #ROWS * 46),
@@ -206,6 +243,10 @@ local function fit()
 	-- 34 px down in a 58 px bar - not at the bar's middle
 	local cy = math.max(barHeight / 2, barHeight - 24)
 	gear.Position = UDim2.fromOffset(x, cy)
+	tutorialButton.AnchorPoint = Vector2.new(0, 0.5)
+	tutorialButton.Size = UDim2.fromOffset(math.floor(size * 2.4), size)
+	tutorialButton.TextSize = math.clamp(math.floor(size * 0.38), 11, 17)
+	tutorialButton.Position = UDim2.fromOffset(x + size + 8, cy)
 	panelScale.Scale = s
 	panel.Position = UDim2.fromOffset(x, cy + size / 2 + 6)
 end

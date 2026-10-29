@@ -246,19 +246,19 @@ local CAMERA_SMOOTHNESS =
 --------------------------------------------------
 
 local COURSE_DISTANCE =
-	21
+	20
 
 local COURSE_HEIGHT =
-	16
+	12
 
 local COURSE_LOOK_AHEAD =
-	18
+	34
 
 local COURSE_LOOK_HEIGHT =
 	1
 
 local COURSE_FOV =
-	70
+	76
 
 -- Small / touch screens see less around the ball, so the camera pulls back a
 -- little and widens on them (1 on a big monitor, up to ~1.15 on a phone).
@@ -918,9 +918,9 @@ local function updateCourseCamera(
 	-- (aimed almost AT the ball so it sits in the middle of the frame, which
 	-- is also where the dash streaks converge)
 	local viewDistance = (isWin and 19 or COURSE_DISTANCE) * roomy()
-	local viewHeight = (isWin and 11 or COURSE_HEIGHT) * roomy()
+	local viewHeight = (isWin and 9 or COURSE_HEIGHT) * roomy()
 	local viewAhead = isWin and 2 or COURSE_LOOK_AHEAD
-	local baseFov = (isWin and 64 or COURSE_FOV) + roomyFov()
+	local baseFov = (isWin and 70 or COURSE_FOV) + roomyFov()
 
 	-- SETTLE: when the ball slows to a stop (out of oil) the camera eases in a
 	-- little closer and lower and the view narrows, so the end of the run
@@ -998,7 +998,7 @@ local function updateCourseCamera(
 			0,
 			1
 		)
-		* (isWin and 9 or 14)
+		* (isWin and 16 or 22)
 
 	local targetFov =
 		baseFov + speedPush

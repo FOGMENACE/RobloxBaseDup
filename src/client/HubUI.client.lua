@@ -135,7 +135,7 @@ local rootScale = create("UIScale", { Scale = 1 }, left)
 -- width / 900 up to 1, 10 px from the bottom). It is as big as the screen
 -- allows: scaled to fit that gap, and if the screen is too short it starts
 -- higher instead of overlapping.
-local COLUMN_HEIGHT = 326 -- content height at scale 1
+local COLUMN_HEIGHT = 338 -- content height at scale 1
 -- When XP lands while the level bar is full (a rebirth is required), the REBIRTH
 -- button wiggles in sync with the shaking meter (HudUI), so the eye is led to it.
 task.spawn(function()
@@ -199,7 +199,7 @@ updateRootScale()
 
 local winsPill = create("Frame", {
 	Name = "Wins",
-	Size = UDim2.fromOffset(176, 46),
+	Size = UDim2.fromOffset(176, 58),
 	BackgroundColor3 = LANE,
 	BackgroundTransparency = 0,
 }, left)
@@ -210,18 +210,18 @@ local winsScale = create("UIScale", { Scale = 1 }, winsPill)
 local winsIcon = create("ImageLabel", {
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(6, 5),
-	Size = UDim2.fromOffset(36, 36),
+	Size = UDim2.fromOffset(48, 48),
 	Image = TROPHY_IMAGE,
 }, winsPill)
 
 local winsLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(46, 0),
-	Size = UDim2.new(1, -52, 1, 0),
+	Position = UDim2.fromOffset(58, 0),
+	Size = UDim2.new(1, -64, 1, 0),
 	Font = FONT,
 	Text = "0",
 	TextColor3 = CREAM,
-	TextSize = 24,
+	TextSize = 30,
 	TextXAlignment = Enum.TextXAlignment.Left,
 }, winsPill)
 create("UIStroke", { Color = INK, Thickness = 2 }, winsLabel)
@@ -364,7 +364,7 @@ end)
 local grid = create("Frame", {
 	Name = "Buttons",
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, 58),
+	Position = UDim2.fromOffset(0, 70),
 	Size = UDim2.fromOffset(176, 268),
 }, left)
 

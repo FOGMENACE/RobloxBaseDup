@@ -15,8 +15,8 @@ local RunService = game:GetService("RunService")
 
 local playerBalls = workspace:WaitForChild("PlayerBalls")
 
--- Name tags are switched off for now. Set this to true to bring them back.
-local SHOW_NAMETAGS = false
+-- Name tags on/off switch.
+local SHOW_NAMETAGS = true
 
 -- rebirth zone colours live in a shared module (the chat purchase lines use them too)
 local RebirthColors = require(game:GetService("ReplicatedStorage"):WaitForChild("RebirthColors"))

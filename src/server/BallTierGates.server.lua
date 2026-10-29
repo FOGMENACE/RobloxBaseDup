@@ -197,6 +197,10 @@ local function convertPlatform(platform, isUp)
 	platform:SetAttribute("Positive", isUp)
 	platform:SetAttribute("OilAmount", 0)
 	platform:SetAttribute("Display", isUp and "UPGRADE" or "DOWNGRADE")
+	-- no longer a special oil platform (it may have been a /2 or X2 underneath)
+	platform:SetAttribute("IsDivider", false)
+	platform:SetAttribute("IsMultiplier", false)
+	platform:SetAttribute("IsSpecial", false)
 
 	for _, part in ipairs(platformParts(platform)) do
 		part.Color = isUp and UP_PLATFORM_COLOR or DOWN_PLATFORM_COLOR

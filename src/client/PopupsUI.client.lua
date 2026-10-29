@@ -869,7 +869,9 @@ do
 		while true do
 			local runState = player:GetAttribute("RunState")
 			local onCourse = runState ~= nil and runState ~= "" and runState ~= "Waiting"
-			cardGui.Enabled = not (onCourse or PanelManagerForCard.AnyOpen() or overlayOpen() or leaveFrame.Visible)
+			-- the free x6 / generator gifts stay away until the tutorial is finished
+			local inTutorial = (player:GetAttribute("TutorialStep") or 0) < 12
+			cardGui.Enabled = not (inTutorial or onCourse or PanelManagerForCard.AnyOpen() or overlayOpen() or leaveFrame.Visible)
 			task.wait(0.1)
 		end
 	end)

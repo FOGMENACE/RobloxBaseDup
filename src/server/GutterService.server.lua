@@ -139,6 +139,9 @@ local function convert(player, platform, row, totalRows)
 	platform:SetAttribute("OilAmount", 0)
 	platform:SetAttribute("Positive", false)
 	platform:SetAttribute("Display", "GUTTER")
+	platform:SetAttribute("IsDivider", false)
+	platform:SetAttribute("IsMultiplier", false)
+	platform:SetAttribute("IsSpecial", false)
 
 	for _, part in ipairs(platformParts(platform)) do
 		part.Color = GUTTER_COLOR

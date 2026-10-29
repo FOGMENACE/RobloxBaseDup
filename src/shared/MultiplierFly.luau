@@ -27,6 +27,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
+local Haptics = require(ReplicatedStorage:WaitForChild("Haptics"))
 
 local TICK_SOUND = "rbxassetid://9120386436"
 local WHOOSH_SOUND = "rbxassetid://9125402735"
@@ -258,6 +259,8 @@ function MultiplierFly.Fly(options)
 			ticks += 1
 			nextTick = t + math.max(0.015, tickBase * (1 - t * 0.85) / duration)
 			playSound(TICK_SOUND, 0.28, 0.85 + math.min(ticks, 30) * 0.045)
+			-- a soft buzz per tick that builds as the count climbs
+			Haptics.Pulse(0.25 + 0.5 * alpha, 0.045)
 			-- every tick punches the number a little
 			chipScale.Scale = (1.1 + 0.1 * alpha + 0.05) * f
 		end
@@ -279,6 +282,7 @@ function MultiplierFly.Fly(options)
 	chipScale.Scale = 1.45 * f
 	TweenService:Create(chipScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1.15 * f }):Play()
 	playSound(WHOOSH_SOUND, 0.45, 1.1 + math.min(multiplier, 40) * 0.01)
+	Haptics.Thump()
 	ring(gui, center + Vector2.new(50 * f, 0), Color3.fromRGB(255, 240, 130), 420)
 	burst(gui, center + Vector2.new(50 * f, 0), Color3.fromRGB(255, 226, 90), 22, 220)
 	task.wait(0.28)

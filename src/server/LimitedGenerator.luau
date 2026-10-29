@@ -199,6 +199,12 @@ claimRemote.OnServerEvent:Connect(function(player)
 		return
 	end
 
+	-- the free gifts are not part of the tutorial: no claims until it is finished
+	if (player:GetAttribute("TutorialStep") or 0) < 12 then
+		resultRemote:FireClient(player, false, "Finish the tutorial first.")
+		return
+	end
+
 	if modeOf(state) ~= "Ready" then
 		resultRemote:FireClient(player, false, "Not ready yet.")
 		publish(player, state)
