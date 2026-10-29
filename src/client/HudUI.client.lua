@@ -707,29 +707,31 @@ fitRebirth()
 -- LEVEL UP
 --------------------------------------------------
 
--- LEVEL-UP MELODY. Every level-up plays the NEXT note of a short tune built from the game's
--- own ping (the same sound as wins, oil platforms and the win celebration), so a streak of
+-- LEVEL-UP MELODY. Every level-up plays the NEXT note of a short, cheerful tune, so a streak of
 -- level-ups sings:  duh duh DING  duh duh duh DING DING DING DING!
---   "duh" = a soft, low-mid note;  "ding" = a bright high note with a sparkle layered on top.
--- Every note is a step of a major pentatonic scale, so any run of them sounds good. Level-ups
--- further apart than STREAK_GAP seconds start the tune again from the top. The ping is low at
--- normal speed, so every note is lifted into a clear range (a pitch of 1.35 and up).
+-- The notes are a warm MARIMBA hit (a single C3 note, the same sound family as the arcade /
+-- bowling-alley feel of the game). The sample is low, so every note is played at 2x speed or
+-- more (C4 and up) - it never sits down in the bass under the music. "duh" = soft mid notes,
+-- "ding" = louder, brighter higher notes. All notes are the C major pentatonic scale, so any
+-- run of them sounds good. A pause longer than STREAK_GAP starts the tune again.
 -- The volume follows the MUSIC's dimming (SoundService attribute "MusicDuck", set by
 -- MusicController: window unfocused / player idle), and the SFX setting still mutes it.
-local LEVEL_PING = "rbxasset://sounds/electronicpingshort.wav"
+local LEVEL_NOTE = "rbxassetid://104421055647409" -- "marimba-hit-c3_C_major" (Creator Store)
+-- speeds are 2^(semitones / 12) on the C3 sample: 2.0 = C4, 3.0 = G4, 4.0 = C5 ...
+local C4, D4, E4, G4, A4, C5, D5, E5 = 2.0, 2.245, 2.52, 3.0, 3.364, 4.0, 4.49, 5.04
 local MELODY = {
-	{ "duh", 1.35 }, { "duh", 1.52 }, { "ding", 1.90 },
-	{ "duh", 1.35 }, { "duh", 1.52 }, { "duh", 1.70 }, { "ding", 2.14 },
-	{ "ding", 2.40 }, { "ding", 2.85 }, { "ding", 2.85, true }, -- the last one rings as a chord
+	{ "duh", C4 }, { "duh", D4 }, { "ding", G4 },
+	{ "duh", C4 }, { "duh", D4 }, { "duh", E4 }, { "ding", A4 },
+	{ "ding", C5 }, { "ding", D5 }, { "ding", E5, true }, -- the last one rings as a chord
 }
 local STREAK_GAP = 3.2 -- seconds between level-ups that still count as one run
 local MIN_GAP = 0.3 -- never more often than this (a burst of level-ups plays one note, not a clatter)
-local DUH_VOLUME = 0.36
-local DING_VOLUME = 0.5
+local DUH_VOLUME = 0.55
+local DING_VOLUME = 0.85
 
 local noteSounds = {}
-for index = 1, 4 do -- a few voices so overlapping notes never cut each other off
-	noteSounds[index] = create("Sound", { SoundId = LEVEL_PING, Volume = 0 }, gui)
+for index = 1, 6 do -- several voices so overlapping notes never cut each other off
+	noteSounds[index] = create("Sound", { SoundId = LEVEL_NOTE, Volume = 0 }, gui)
 end
 local nextVoice = 1
 local lastChime, melodyIndex = 0, 0
@@ -767,10 +769,9 @@ local function playLevelChime()
 		voice(speed, DUH_VOLUME)
 	else
 		voice(speed, DING_VOLUME)
-		voice(math.min(speed * 2, 4.2), DING_VOLUME * 0.3, 0.03) -- the sparkle: the same note an octave up, quiet (capped so it never turns shrill)
-		if chord then
-			voice(speed * 0.84, DING_VOLUME * 0.7, 0.05) -- the finishing chord notes
-			voice(speed * 0.67, DING_VOLUME * 0.6, 0.09)
+		if chord then -- the finishing chord: C5 + G4 + E4 under the top note
+			voice(C5, DING_VOLUME * 0.8, 0.04)
+			voice(G4, DING_VOLUME * 0.7, 0.08)
 		end
 	end
 end
