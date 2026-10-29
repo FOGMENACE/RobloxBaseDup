@@ -978,11 +978,15 @@ if UserInputService.TouchEnabled then
 	end)
 end
 
--- On-screen joystick: a floating stick that appears where the left-hand thumb
--- lands (left 45% of the screen, outside any button/panel). It is the only
--- stick: Roblox's thumbstick is off (TouchControls), and it is lobby-only.
+-- On-screen joystick: a small FIXED stick (dark disc + light knob) that sits right of
+-- the bottom-left rebirth panel and matches the jump button. A drag can start anywhere
+-- in the left 45% of the screen (outside buttons/panels); the knob shows its direction.
+-- It is the only stick: Roblox's thumbstick is off (TouchControls), and it is lobby-only.
 if UserInputService.TouchEnabled then
-	local STICK_RADIUS = 60
+	local STICK_RADIUS = 48 -- finger travel for full speed
+	local BASE_SIZE = 96
+	local KNOB_SIZE = 44
+	local KNOB_TRAVEL = (BASE_SIZE - KNOB_SIZE) / 2
 	local sGui = Instance.new("ScreenGui")
 	sGui.Name = "BallJoystick"
 	sGui.ResetOnSpawn = false
@@ -990,39 +994,37 @@ if UserInputService.TouchEnabled then
 	sGui.IgnoreGuiInset = true
 	sGui.Parent = player:WaitForChild("PlayerGui")
 
-	local function circle(size, transparency)
+	local function disc(size, color, transparency, parent)
 		local f = Instance.new("Frame")
 		f.AnchorPoint = Vector2.new(0.5, 0.5)
 		f.Size = UDim2.fromOffset(size, size)
-		f.BackgroundColor3 = Color3.new(1, 1, 1)
+		f.BackgroundColor3 = color
 		f.BackgroundTransparency = transparency
 		f.BorderSizePixel = 0
-		f.Parent = sGui
+		f.Parent = parent
 		Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
 		local s = Instance.new("UIStroke")
 		s.Color = Color3.new(1, 1, 1)
-		s.Transparency = 0.8 -- faint at rest; brightened while held
-		s.Thickness = 3
+		s.Transparency = 0.55
+		s.Thickness = 2
 		s.Parent = f
 		return f
 	end
 
-	-- Light and see-through so it never darkens the game: the base is just a thin
-	-- ring (no fill), the knob a faint white disc.
-	local base = circle(STICK_RADIUS * 2, 1)
-	local knob = circle(54, 0.88)
+	local base = disc(BASE_SIZE, Color3.fromRGB(20, 18, 32), 0.55, sGui)
+	local knob = disc(KNOB_SIZE, Color3.fromRGB(235, 235, 240), 0.2, base)
+	knob.Position = UDim2.fromScale(0.5, 0.5)
 	local baseStroke = base:FindFirstChildOfClass("UIStroke")
-	local knobStroke = knob:FindFirstChildOfClass("UIStroke")
+
 	-- resting spot sits right of the bottom-left rebirth panel so it never covers it
 	local restPos = UDim2.new(0, 110, 1, -110)
 	local function placeRest()
 		local cam = workspace.CurrentCamera
 		local size = cam and cam.ViewportSize or Vector2.new(800, 400)
-		restPos = UDim2.fromOffset(math.clamp(size.X * 0.27, 160, 300), size.Y - 90)
+		restPos = UDim2.fromOffset(math.clamp(size.X * 0.27, 150, 290), size.Y - 80)
 	end
 	placeRest()
 	base.Position = restPos
-	knob.Position = restPos
 
 	local activeTouch = nil
 	local origin = Vector2.zero
@@ -1030,11 +1032,9 @@ if UserInputService.TouchEnabled then
 	local function release()
 		activeTouch = nil
 		stickX, stickZ = 0, 0
-		base.Position = restPos
-		knob.Position = restPos
-		knob.BackgroundTransparency = 0.88
-		baseStroke.Transparency = 0.8
-		knobStroke.Transparency = 0.8
+		knob.Position = UDim2.fromScale(0.5, 0.5)
+		base.BackgroundTransparency = 0.55
+		baseStroke.Transparency = 0.55
 	end
 
 	local function drag(pos)
@@ -1043,7 +1043,9 @@ if UserInputService.TouchEnabled then
 		if mag > STICK_RADIUS then
 			delta = delta * (STICK_RADIUS / mag)
 		end
-		knob.Position = UDim2.fromOffset(origin.X + delta.X, origin.Y + delta.Y)
+		-- the knob moves inside the small base (scaled finger travel)
+		local shown = delta * (KNOB_TRAVEL / STICK_RADIUS)
+		knob.Position = UDim2.new(0.5, shown.X, 0.5, shown.Y)
 		local nx, nz = delta.X / STICK_RADIUS, -delta.Y / STICK_RADIUS
 		if math.sqrt(nx * nx + nz * nz) < 0.15 then
 			nx, nz = 0, 0 -- dead zone
@@ -1063,10 +1065,8 @@ if UserInputService.TouchEnabled then
 		end
 		activeTouch = input
 		origin = Vector2.new(input.Position.X, input.Position.Y)
-		base.Position = UDim2.fromOffset(origin.X, origin.Y)
-		knob.BackgroundTransparency = 0.55
-		baseStroke.Transparency = 0.35
-		knobStroke.Transparency = 0.35
+		base.BackgroundTransparency = 0.4
+		baseStroke.Transparency = 0.25
 		drag(origin)
 	end)
 
@@ -1094,7 +1094,6 @@ if UserInputService.TouchEnabled then
 		if not activeTouch then
 			placeRest()
 			base.Position = restPos
-			knob.Position = restPos
 		end
 	end)
 
@@ -1196,23 +1195,54 @@ if UserInputService.TouchEnabled then
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
 
+	-- same look as the joystick: a small dark see-through disc with a thin light ring
+	-- and an up arrow
 	local button = Instance.new("TextButton")
 	button.Name = "JumpButton"
 	button.AnchorPoint = Vector2.new(1, 1)
-	button.Position = UDim2.new(1, -24, 1, -24)
+	button.Position = UDim2.new(1, -28, 1, -28)
 	button.Size = UDim2.fromOffset(76, 76)
-	-- light and mostly see-through (was a dark disc that covered the lane)
-	button.BackgroundColor3 = Color3.fromRGB(255, 247, 232)
-	button.BackgroundTransparency = 0.45
-	button.Text = "JUMP"
-	button.TextColor3 = Color3.fromRGB(24, 22, 34)
-	button.Font = Enum.Font.GothamBold
-	button.TextSize = 18
+	button.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
+	button.BackgroundTransparency = 0.55
+	button.AutoButtonColor = false
+	button.Text = ""
 	button.Parent = gui
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = button
+
+	local ring = Instance.new("UIStroke")
+	ring.Color = Color3.new(1, 1, 1)
+	ring.Transparency = 0.55
+	ring.Thickness = 2
+	ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	ring.Parent = button
+
+	local arrow = Instance.new("TextLabel")
+	arrow.BackgroundTransparency = 1
+	arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+	arrow.Position = UDim2.fromScale(0.5, 0.47)
+	arrow.Size = UDim2.fromScale(0.62, 0.62)
+	arrow.Font = Enum.Font.GothamBold
+	arrow.Text = "⬆"
+	arrow.TextScaled = true
+	arrow.TextColor3 = Color3.fromRGB(235, 235, 240)
+	arrow.Parent = button
+
+	-- press feedback, like the stick
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			button.BackgroundTransparency = 0.4
+			ring.Transparency = 0.25
+		end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			button.BackgroundTransparency = 0.55
+			ring.Transparency = 0.55
+		end
+	end)
 
 	button.Activated:Connect(function()
 		requestJump(false)
