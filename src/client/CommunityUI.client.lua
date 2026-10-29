@@ -74,17 +74,17 @@ task.spawn(function()
 		ZIndex = 0,
 	}, billboard)
 
-	local hues = 0
-	RunService.RenderStepped:Connect(function(dt)
+	-- Smooth and calm (the old fast wobble looked choppy): the title floats gently, tilts
+	-- slowly, and a bright shine sweeps across the gold every few seconds.
+	local SWEEP_SECONDS = 2.8
+	RunService.RenderStepped:Connect(function()
 		local t = os.clock()
-		hues += dt * 0.35
-
-		gradient.Offset = Vector2.new((hues % 2) - 1, 0)
-		text.Rotation = math.sin(t * 22) * 2.2
-		text.Position = UDim2.fromScale(0.5 + math.sin(t * 31) * 0.008, 0.5 + math.cos(t * 27) * 0.02)
-		glow.ImageTransparency = 0.45 + math.sin(t * 3) * 0.15
-		billboard.StudsOffset = home + Vector3.new(0, math.sin(t * 2) * 0.4, 0)
-
+		local sweep = (t % SWEEP_SECONDS) / SWEEP_SECONDS -- 0..1
+		gradient.Offset = Vector2.new(-1.2 + sweep * 2.4, 0)
+		text.Rotation = math.sin(t * 1.4) * 1.5
+		text.Position = UDim2.fromScale(0.5, 0.5)
+		glow.ImageTransparency = 0.5 + math.sin(t * 1.8) * 0.12
+		billboard.StudsOffset = home + Vector3.new(0, math.sin(t * 1.6) * 0.3, 0)
 	end)
 end)
 

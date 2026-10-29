@@ -12,7 +12,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -23,7 +22,6 @@ local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
 local INK = Color3.fromRGB(24, 22, 34)
 local FONT = Enum.Font.FredokaOne
 local RNG = Random.new()
-local LEVEL_SOUND = "rbxassetid://9125402735"
 
 local function create(className, props, parent)
 	local inst = Instance.new(className)
@@ -200,11 +198,8 @@ local function levelUp(level)
 	activeNumber = number
 	activeUntil = os.clock() + (inRun() and 1.1 or 2.1)
 
-	local sound = create("Sound", { SoundId = LEVEL_SOUND, Volume = 0.6 }, SoundService)
-	sound:Play()
-	task.delay(5, function()
-		sound:Destroy()
-	end)
+	-- no sound here: HudUI plays the single (soft, rate-limited) level-up chime, so a
+	-- level-up is not two sounds at once any more
 
 	TweenService:Create(scale, TweenInfo.new(0.45, Enum.EasingStyle.Back), { Scale = 1 }):Play()
 	TweenService:Create(burst, TweenInfo.new(2.6, Enum.EasingStyle.Linear), { Rotation = 140 }):Play()

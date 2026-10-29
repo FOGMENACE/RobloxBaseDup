@@ -16,6 +16,7 @@
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local SoftPop = require(game:GetService("ReplicatedStorage"):WaitForChild("SoftPop"))
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -324,6 +325,7 @@ local function flyDroplet(amount)
 	tween.Completed:Once(function()
 		drop:Destroy()
 		bump(scale, 1.08)
+		SoftPop.Play(0.5)
 	end)
 	tween:Play()
 end

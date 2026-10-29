@@ -28,6 +28,7 @@ local TweenService = game:GetService("TweenService")
 
 local UiAssets = require(ReplicatedStorage:WaitForChild("UiAssets"))
 local Haptics = require(ReplicatedStorage:WaitForChild("Haptics"))
+local SoftPop = require(ReplicatedStorage:WaitForChild("SoftPop"))
 
 local TICK_SOUND = "rbxassetid://9120386436"
 local WHOOSH_SOUND = "rbxassetid://9125402735"
@@ -304,6 +305,7 @@ function MultiplierFly.Fly(options)
 		end
 	end)
 	drag.Completed:Wait()
+	SoftPop.Play(0.9)
 	chip:Destroy()
 	ring(gui, target, Color3.fromRGB(255, 240, 130), 300)
 	burst(gui, target, Color3.fromRGB(255, 226, 90), 16, 160)

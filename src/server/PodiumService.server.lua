@@ -50,25 +50,66 @@ local BLOCK = Enum.PartType.Block
 local BALL = Enum.PartType.Ball
 local upright = CFrame.Angles(0, 0, math.pi / 2) -- cylinders stand along Y
 
+-- Polished gold look: a deep navy base with gold trim, a shiny gold step, a cream
+-- marble column with gold bands, and on top the game's own trophy - a giant golden
+-- bowling pin with a white stripe, glowing and giving off soft gold sparkles.
+local GOLD = Color3.fromRGB(255, 196, 58)
+local GOLD_LIGHT = Color3.fromRGB(255, 226, 120)
+local NAVY = Color3.fromRGB(34, 28, 74)
+local MARBLE = Color3.fromRGB(246, 240, 228)
+
+local function shiny(p, reflectance)
+	p.Reflectance = reflectance or 0.18
+	return p
+end
+
 -- Two-step round base
-local base = part("Base", CYL, Vector3.new(1.2, 9, 9), CFrame.new(CENTER + Vector3.new(0, 0.6, 0)) * upright, Color3.fromRGB(70, 60, 120))
+local base = part("Base", CYL, Vector3.new(1.2, 9, 9), CFrame.new(CENTER + Vector3.new(0, 0.6, 0)) * upright, NAVY, Enum.Material.SmoothPlastic)
 base.CanCollide = true
-local step = part("Step", CYL, Vector3.new(1.2, 6.4, 6.4), CFrame.new(CENTER + Vector3.new(0, 1.8, 0)) * upright, Color3.fromRGB(240, 178, 82))
+shiny(part("BaseTrim", CYL, Vector3.new(0.22, 9.25, 9.25), CFrame.new(CENTER + Vector3.new(0, 1.2, 0)) * upright, GOLD, Enum.Material.Foil))
+local step = shiny(part("Step", CYL, Vector3.new(1.2, 6.4, 6.4), CFrame.new(CENTER + Vector3.new(0, 1.8, 0)) * upright, GOLD, Enum.Material.Foil), 0.22)
 step.CanCollide = true
+part("StepTop", CYL, Vector3.new(0.12, 5.6, 5.6), CFrame.new(CENTER + Vector3.new(0, 2.45, 0)) * upright, MARBLE, Enum.Material.Marble)
 
--- Speaker's stand
-part("Stand", BLOCK, Vector3.new(3.2, 4.2, 2.2), CFrame.new(CENTER + Vector3.new(0, 4.5, 0)) * CFrame.Angles(0, YAW, 0), Color3.fromRGB(150, 70, 60), Enum.Material.WoodPlanks)
-part("StandTop", BLOCK, Vector3.new(3.8, 0.4, 2.8), CFrame.new(CENTER + Vector3.new(0, 6.8, 0)) * CFrame.Angles(0, YAW, 0), Color3.fromRGB(255, 247, 232))
+-- Marble column with gold bands
+part("Column", CYL, Vector3.new(4.2, 2.6, 2.6), CFrame.new(CENTER + Vector3.new(0, 4.6, 0)) * upright, MARBLE, Enum.Material.Marble)
+shiny(part("ColumnBandLow", CYL, Vector3.new(0.35, 3.0, 3.0), CFrame.new(CENTER + Vector3.new(0, 2.7, 0)) * upright, GOLD, Enum.Material.Foil))
+shiny(part("ColumnBandHigh", CYL, Vector3.new(0.35, 3.2, 3.2), CFrame.new(CENTER + Vector3.new(0, 6.6, 0)) * upright, GOLD, Enum.Material.Foil))
 
--- Golden microphone
-local gold = Color3.fromRGB(255, 200, 50)
-part("MicNeck", CYL, Vector3.new(2.4, 0.5, 0.5), CFrame.new(CENTER + Vector3.new(0, 8.2, 0)) * upright, gold, Enum.Material.Metal)
-part("MicHead", BALL, Vector3.new(2, 2, 2), CFrame.new(CENTER + Vector3.new(0, 10.1, 0)), gold, Enum.Material.Metal)
-local micGlow = Instance.new("PointLight")
-micGlow.Color = Color3.fromRGB(255, 220, 120)
-micGlow.Brightness = 1.5
-micGlow.Range = 12
-micGlow.Parent = model.MicHead
+-- The golden pin trophy
+local pinBase = Vector3.new(0, 6.8, 0)
+shiny(part("PinBody", BALL, Vector3.new(2.3, 2.3, 2.3), CFrame.new(CENTER + pinBase + Vector3.new(0, 1.35, 0)), GOLD, Enum.Material.Foil), 0.25)
+shiny(part("PinWaist", CYL, Vector3.new(1.6, 1.25, 1.25), CFrame.new(CENTER + pinBase + Vector3.new(0, 2.7, 0)) * upright, GOLD, Enum.Material.Foil), 0.25)
+part("PinStripe", CYL, Vector3.new(0.32, 1.38, 1.38), CFrame.new(CENTER + pinBase + Vector3.new(0, 2.95, 0)) * upright, MARBLE, Enum.Material.SmoothPlastic)
+local pinHead = shiny(part("PinHead", BALL, Vector3.new(1.5, 1.5, 1.5), CFrame.new(CENTER + pinBase + Vector3.new(0, 3.85, 0)), GOLD, Enum.Material.Foil), 0.25)
+
+local pinGlow = Instance.new("PointLight")
+pinGlow.Color = GOLD_LIGHT
+pinGlow.Brightness = 1.8
+pinGlow.Range = 14
+pinGlow.Parent = pinHead
+
+-- soft gold sparkles drifting up around the pin (the "shine")
+local sparkleHolder = part("SparkleHolder", BLOCK, Vector3.new(2.4, 0.2, 2.4), CFrame.new(CENTER + pinBase + Vector3.new(0, 1, 0)), GOLD)
+sparkleHolder.Transparency = 1
+local sparkles = Instance.new("ParticleEmitter")
+sparkles.Color = ColorSequence.new(GOLD_LIGHT, Color3.fromRGB(255, 250, 220))
+sparkles.LightEmission = 1
+sparkles.LightInfluence = 0
+sparkles.Size = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.2, 0.28),
+	NumberSequenceKeypoint.new(1, 0),
+})
+sparkles.Transparency = NumberSequence.new(0.15)
+sparkles.Lifetime = NumberRange.new(1.4, 2.2)
+sparkles.Rate = 9
+sparkles.Speed = NumberRange.new(1.2, 2.4)
+sparkles.SpreadAngle = Vector2.new(25, 25)
+sparkles.EmissionDirection = Enum.NormalId.Top
+sparkles.Rotation = NumberRange.new(0, 360)
+sparkles.RotSpeed = NumberRange.new(-60, 60)
+sparkles.Parent = sparkleHolder
 
 -- Billboard anchor (client animates the contents)
 local anchor = part("TitleAnchor", BLOCK, Vector3.new(1, 1, 1), CFrame.new(CENTER + Vector3.new(0, 14, 0)), Color3.new(1, 1, 1))
@@ -103,14 +144,16 @@ stroke.Parent = text
 
 local gradient = Instance.new("UIGradient")
 gradient.Name = "Rainbow"
+-- gold with one bright shine band (the client slides it across the text); the name
+-- "Rainbow" is kept because CommunityUI looks it up
 gradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
-	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 190, 40)),
-	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(90, 230, 90)),
-	ColorSequenceKeypoint.new(0.6, Color3.fromRGB(60, 200, 255)),
-	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(160, 90, 255)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 60, 60)),
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 190, 40)),
+	ColorSequenceKeypoint.new(0.42, Color3.fromRGB(255, 214, 80)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 252, 225)),
+	ColorSequenceKeypoint.new(0.58, Color3.fromRGB(255, 214, 80)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 190, 40)),
 })
+gradient.Rotation = 20
 gradient.Parent = text
 
 -- The colored circle in front of the podium (toward the room, -Z)

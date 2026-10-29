@@ -52,10 +52,12 @@ end
 -- unlocks there (each one pays more XP, so the next climb is longer).
 -- Pass owners are several times faster (a x240 pass about 2x early, all six
 -- passes a lot more), which is the thing they pay for.
+-- Rebirths 1-5 were raised (5,9,14,19,25 -> 7,12,17,22,27): the 2nd rebirth took ~45 s and
+-- half a world went by in minutes; they now take ~2-3 min each. From rebirth 6 on it is unchanged.
 -- smooth curve (old-scale levels): 2 + 3r + 0.33r^2, so every rebirth is only a little
 -- harder than the last (no 36 -> 81 jumps): 2, 5, 9, 14, 19, 25 ... 650 at rebirth 40
 local REQUIRED_LEVELS = {
-	2, 5, 9, 14, 19, 25, 32, 39, 47, 56, 65, 75, 86, 97, 109, 121, 134, 148, 163, 178, 194, 211, 228, 246, 264, 283, 303, 324, 345, 367, 389, 412, 436, 460, 485, 511, 538, 565, 593, 621, 650,
+	2, 7, 12, 17, 22, 27, 32, 39, 47, 56, 65, 75, 86, 97, 109, 121, 134, 148, 163, 178, 194, 211, 228, 246, 264, 283, 303, 324, 345, 367, 389, 412, 436, 460, 485, 511, 538, 565, 593, 621, 650,
 }
 -- LEVELS ARE 5x FINER: each old level is now 5 levels, so the level-up sound
 -- comes often, while the XP to the next rebirth stays a real (but fair) climb. PlayerDataService uses the same scale.

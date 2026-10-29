@@ -19,6 +19,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoftPop = require(ReplicatedStorage:WaitForChild("SoftPop"))
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -146,7 +147,7 @@ local badge = create("Frame", {
 	Size = UDim2.fromOffset(88, 70),
 	BackgroundColor3 = Color3.new(1, 1, 1), -- the gradient supplies the colour
 }, hud)
-round(badge, 14)
+round(badge, 20)
 outline(badge, 4)
 create("UIGradient", {
 	Rotation = 90,
@@ -209,7 +210,7 @@ local levelPanel = create("Frame", {
 	Size = UDim2.fromOffset(300, 70),
 	BackgroundColor3 = CREAM,
 }, hud)
-round(levelPanel, 14)
+round(levelPanel, 24)
 outline(levelPanel, 4)
 local levelScale = create("UIScale", { Scale = 1 }, levelPanel)
 
@@ -235,8 +236,28 @@ outline(barTrack, 2)
 local barFill = create("Frame", {
 	Size = UDim2.fromScale(0, 1),
 	BackgroundColor3 = GREEN,
+	ClipsDescendants = true,
 }, barTrack)
 round(barFill, 12)
+-- soft top-lit gradient and a slow light sweep, so the bar feels alive (not a flat box)
+create("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(196, 214, 196)),
+}, barFill)
+local barShine = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(-0.3, 0.5),
+	Size = UDim2.new(0.22, 0, 2, 0),
+	Rotation = 20,
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.72,
+	BorderSizePixel = 0,
+}, barFill)
+TweenService:Create(
+	barShine,
+	TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 2.2),
+	{ Position = UDim2.fromScale(1.3, 0.5) }
+):Play()
 
 local barLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
@@ -256,7 +277,7 @@ local oilChip = create("Frame", {
 	Size = UDim2.fromOffset(130, 50),
 	BackgroundColor3 = CREAM,
 }, hud)
-round(oilChip, 14)
+round(oilChip, 20)
 outline(oilChip, 4)
 local oilScale = create("UIScale", { Scale = 1 }, oilChip)
 
@@ -497,7 +518,7 @@ refreshBonusPill()
 -- SOFT SHADOWS under the main bottom panels (depth, "premium" feel)
 --------------------------------------------------
 
-for _, entry in ipairs({ { "GlobalBadge", 14 }, { "LevelPanel", 20 }, { "OilChip", 20 } }) do
+for _, entry in ipairs({ { "GlobalBadge", 20 }, { "LevelPanel", 24 }, { "OilChip", 20 } }) do
 	local panel = hud:FindFirstChild(entry[1])
 	if panel then
 		local shadow = create("Frame", {
@@ -709,13 +730,29 @@ end
 -- LEVEL UP
 --------------------------------------------------
 
+-- Levels come often, so the level-up sound is one short, clean UI "level up" (was a loud victory
+-- fanfare on every level). It plays at most about once a second, and quick level-ups in a
+-- row climb a little in pitch, so a streak feels rewarding instead of repetitive.
 local levelUpSound = create("Sound", {
-	SoundId = "rbxasset://sounds/victory.wav",
-	Volume = 0.5,
+	SoundId = "rbxassetid://112485797063762", -- "UI - Level Up" (Creator Store); alternatives auditioned: 134821092416328, 105193542038988, 6079105785
+	Volume = 0.38,
 }, gui)
+local lastChime, chimeStreak = 0, 0
+
+local function playLevelChime()
+	local now = os.clock()
+	if now - lastChime < 0.9 then
+		return
+	end
+	chimeStreak = (now - lastChime < 4) and math.min(chimeStreak + 1, 6) or 0
+	lastChime = now
+	levelUpSound.PlaybackSpeed = 1 + chimeStreak * 0.04
+	levelUpSound.TimePosition = 0
+	levelUpSound:Play()
+end
 
 local function levelUpBurst(newLevel)
-	levelUpSound:Play()
+	playLevelChime()
 
 	local banner = create("TextLabel", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1045,6 +1082,7 @@ task.spawn(function()
 		tween.Completed:Once(function()
 			label:Destroy()
 			bump(levelScale, 1.05)
+			SoftPop.Play(0.3)
 		end)
 		tween:Play()
 	end
