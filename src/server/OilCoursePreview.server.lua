@@ -94,8 +94,8 @@ local START_POSITION =
 -- PREVIEW COLOR
 --------------------------------------------------
 
--- Preview colours (see previewColors below). The first row always shows one green and one red
--- platform, like the real course (OilCourseGenerator).
+-- Preview colours (see previewColors below), for the lobby preview only. Its first row always
+-- shows one green and one red platform; the real course (OilCourseGenerator) is unchanged.
 local PREVIEW_GREEN = Color3.fromRGB(40, 222, 72)
 local PREVIEW_RED = Color3.fromRGB(236, 42, 52)
 local previewRng = Random.new()
