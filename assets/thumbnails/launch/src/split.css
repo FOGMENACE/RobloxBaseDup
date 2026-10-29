@@ -1,0 +1,33 @@
+/* "before -> after" split layout (thumb4 and the progression set). Each page sets
+   --left-img / --left-pos / --left-size and --right-img / --right-pos / --right-size. */
+
+.left { position: absolute; left: 0; top: 0; width: 52vw; height: 100vh; overflow: hidden;
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 0 100%); }
+.left .img { position: absolute; inset: 0; background: var(--left-img) var(--left-pos) / var(--left-size) no-repeat;
+  filter: saturate(0.35) brightness(0.8) contrast(1.05); }
+.left .tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(40,60,120,0.35), rgba(10,20,60,0.55)); }
+
+.right { position: absolute; right: 0; top: 0; width: 58vw; height: 100vh; overflow: hidden;
+  clip-path: polygon(17% 0, 100% 0, 100% 100%, 0 100%); }
+.right .img { position: absolute; inset: 0; background: var(--right-img) var(--right-pos) / var(--right-size) no-repeat;
+  filter: saturate(1.45) contrast(1.12) brightness(1.08); }
+.right .glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 58% 52%, rgba(255,226,110,0.55), rgba(255,170,30,0) 58%); mix-blend-mode: screen; }
+.right .rays { position: absolute; inset: -30%; background: repeating-conic-gradient(from 0deg at 60% 52%, rgba(255,230,140,0.16) 0deg 8deg, rgba(255,230,140,0) 8deg 18deg); mix-blend-mode: screen; }
+
+.seam { position: absolute; left: 44.5vw; top: -5vh; width: 1.4vw; height: 110vh; transform: rotate(7.2deg);
+  background: linear-gradient(180deg, #fff6c8, #ffd23a 50%, #fff6c8); box-shadow: 0 0 4vh 1.6vh rgba(255,214,70,0.85); }
+
+.tag { position: absolute; padding: 1.2vh 3.2vw; border-radius: 2.6vh; border: 0.9vh solid #1b1236;
+  font-family: 'Lilita One', 'Arial Black', sans-serif; font-size: 10vh; color: #fff; white-space: nowrap;
+  -webkit-text-stroke: 0.06em #1b1236; paint-order: stroke fill;
+  box-shadow: 0 1.1vh 0 #1b1236, 0 2vh 4vh rgba(0,0,0,0.5); }
+.tag.before { left: 4vw; top: 6vh; background: linear-gradient(180deg, #8a93a8, #4c5468); transform: rotate(-5deg); }
+.tag.after { right: 4vw; top: 6vh; background: linear-gradient(180deg, #ffe066, #ff8a00); transform: rotate(5deg); }
+
+.n1 { font-size: 14vh; left: 6vw; bottom: 9vh; transform: rotate(-4deg); white-space: nowrap; }
+.n2 { font-size: 17vh; right: 3vw; bottom: 7vh; transform: rotate(-5deg); white-space: nowrap; }
+.unit { font-size: 0.45em; }
+
+.arrow { position: absolute; left: 40vw; top: 38vh; font-size: 26vh; font-family: 'Lilita One', 'Arial Black', sans-serif;
+  color: #ffd23a; -webkit-text-stroke: 0.07em #1b1236; paint-order: stroke fill;
+  filter: drop-shadow(0 0.04em 0 #1b1236) drop-shadow(0 0 3vh rgba(255,214,70,0.9)); }

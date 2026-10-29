@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="split.css">
+<style>
+  :root {
+    --left-img: url('gates.png'); --left-pos: 26% 60%; --left-size: auto 125%;
+    --right-img: url('bowler.png'); --right-pos: 88% 72%; --right-size: auto 135%;
+  }
+  .topshade { position: absolute; right: 0; top: 0; width: 58vw; height: 40vh; background: linear-gradient(180deg, rgba(30,12,70,0.85), rgba(30,12,70,0)); clip-path: polygon(17% 0, 100% 0, 100% 100%, 10% 100%); }
+  /* a gold trophy drawn in CSS (no outside art) */
+  .trophy { position: absolute; right: 9vw; top: 25vh; width: 22vh; height: 30vh; transform: rotate(8deg);
+    filter: drop-shadow(0 0 3vh rgba(255,214,70,0.9)) drop-shadow(0 1vh 0 #1b1236); }
+  .trophy .cup { position: absolute; left: 3vh; top: 0; width: 16vh; height: 15vh; border-radius: 1vh 1vh 8vh 8vh;
+    background: linear-gradient(90deg, #ffb21e, #fff3a8 40%, #ffd23a 60%, #e08a00); border: 0.8vh solid #1b1236; }
+  .trophy .h1, .trophy .h2 { position: absolute; top: 2vh; width: 5vh; height: 8vh; border: 1.4vh solid #ffc93a; border-radius: 50%; }
+  .trophy .h1 { left: -0.5vh; border-right-color: transparent; }
+  .trophy .h2 { right: -0.5vh; border-left-color: transparent; }
+  .trophy .stem { position: absolute; left: 9vh; top: 15vh; width: 4vh; height: 7vh; background: linear-gradient(90deg, #e08a00, #ffe066, #e08a00); border-left: 0.6vh solid #1b1236; border-right: 0.6vh solid #1b1236; }
+  .trophy .base { position: absolute; left: 4vh; top: 22vh; width: 14vh; height: 5vh; border-radius: 1vh; background: linear-gradient(180deg, #ffe066, #c97a00); border: 0.7vh solid #1b1236; }
+</style></head>
+<body><div class="stage">
+  <div class="left"><div class="img"></div><div class="tint"></div></div>
+  <div class="right"><div class="img"></div><div class="rays"></div><div class="glow"></div></div>
+  <div class="topshade"></div>
+  <div class="vignette"></div>
+  <div class="seam"></div>
+  <div class="tag before">NOOB</div>
+  <div class="tag after">PRO</div>
+  <div class="trophy"><div class="h1"></div><div class="h2"></div><div class="cup"></div><div class="stem"></div><div class="base"></div></div>
+  <div class="title n1"><span class="red">0</span><span class="unit"> WINS</span></div>
+  <div class="title n2"><span class="gold">1,000,000</span><span class="unit"> WINS</span></div>
+  <div class="arrow">&#x279C;</div>
+  <div class="spark" style="right:6vw; top:20vh; transform:scale(1.3)"></div>
+  <div class="spark" style="right:32vw; top:30vh"></div>
+</div></body></html>

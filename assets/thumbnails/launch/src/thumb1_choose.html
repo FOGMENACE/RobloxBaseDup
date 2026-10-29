@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+  .bg { background-image: url('gates.png'); filter: saturate(1.25) contrast(1.08); transform: scale(1.06); }
+  .q { font-size: 15vh; left: 50%; top: 4vh; transform: translateX(-50%) rotate(-3deg); white-space: nowrap; }
+  .arrow { position: absolute; top: 36vh; font-size: 20vh; font-family: 'Lilita One', 'Arial Black', sans-serif;
+    -webkit-text-stroke: 0.08em #1b1236; paint-order: stroke fill; filter: drop-shadow(0 0.05em 0 #1b1236); }
+  .a1 { left: 13vw; color: #ff4b5c; transform: rotate(-12deg); }
+  .a2 { right: 13vw; color: #3cff6a; transform: rotate(12deg) scaleX(-1); }
+  .x { font-size: 13vh; right: 4vw; bottom: 7vh; transform: rotate(-8deg); }
+  .logo { font-size: 9.5vh; left: 3vw; bottom: 5vh; transform: rotate(-4deg); }
+</style></head>
+<body><div class="stage">
+  <div class="bg"></div>
+  <div class="vignette"></div>
+  <div class="streak" style="left:-2vw; top:72vh; width:30vw; transform:rotate(-12deg)"></div>
+  <div class="streak" style="left:-3vw; top:80vh; width:24vw; transform:rotate(-8deg)"></div>
+  <div class="title q"><span class="gold">PICK THE RIGHT ONE!</span></div>
+  <div class="arrow a1">&#x2193;</div>
+  <div class="arrow a2">&#x2193;</div>
+  <div class="title x"><span class="green">+OIL</span></div>
+  <div class="title logo"><span class="gold">STRIKE OIL!</span></div>
+  <div class="spark" style="left:44vw; top:24vh"></div>
+  <div class="spark" style="left:83vw; top:30vh; transform:scale(0.7)"></div>
+</div></body></html>

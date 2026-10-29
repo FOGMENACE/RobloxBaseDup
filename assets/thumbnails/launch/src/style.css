@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=Fredoka:wght@700&display=block');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1240; }
+
+.stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+.bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+
+/* chunky, readable title text with a dark outline and drop shadow */
+.title {
+  position: absolute;
+  font-family: 'Lilita One', 'Arial Black', Impact, sans-serif;
+  color: #fff;
+  -webkit-text-stroke: 0.09em #1b1236;
+  paint-order: stroke fill;
+  letter-spacing: 0.01em;
+  line-height: 0.92;
+  filter: drop-shadow(0 0.06em 0 #1b1236) drop-shadow(0 0.12em 0.18em rgba(0,0,0,0.55));
+}
+.gold {
+  background: linear-gradient(180deg, #fffbe0 0%, #ffe066 38%, #ffb21e 70%, #ff8a00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.green {
+  background: linear-gradient(180deg, #f3ffe0 0%, #9dff6b 40%, #2fd14a 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.red {
+  background: linear-gradient(180deg, #ffe6e6 0%, #ff7070 40%, #e1192b 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* soft vignette + colour wash to make the subject pop */
+.vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(20,8,50,0.62) 100%); }
+
+/* speed streaks */
+.streak { position: absolute; height: 0.9vh; border-radius: 1vh;
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.95));
+  filter: drop-shadow(0 0 1vh rgba(255,255,255,0.9)); }
+
+/* sticker badge */
+.badge {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  font-family: 'Lilita One', 'Arial Black', sans-serif; color: #fff;
+  border: 0.9vh solid #1b1236; border-radius: 3vh;
+  box-shadow: 0 1.2vh 0 #1b1236, 0 2vh 4vh rgba(0,0,0,0.45);
+  -webkit-text-stroke: 0.06em #1b1236; paint-order: stroke fill;
+}
+
+/* sparkle star */
+.spark { position: absolute; width: 6vh; height: 6vh;
+  background: radial-gradient(circle, #fff 0 12%, rgba(255,240,170,0.9) 13% 22%, rgba(255,220,90,0) 60%);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); }

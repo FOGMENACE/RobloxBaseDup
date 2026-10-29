@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="split.css">
+<style>
+  :root {
+    --left-img: url('split.png'); --left-pos: 30% 55%; --left-size: auto 120%;
+    --right-img: url('gates.png'); --right-pos: 62% 45%; --right-size: auto 122%;
+  }
+  .right .glow { background: radial-gradient(ellipse at 55% 50%, rgba(80,255,120,0.4), rgba(80,255,120,0) 58%); }
+  .mult { font-size: 36vh; right: 6vw; top: 26vh; transform: rotate(-8deg); white-space: nowrap; }
+  .mult1 { font-size: 24vh; left: 7vw; bottom: 16vh; transform: rotate(-4deg); }
+  .left .tint { background: linear-gradient(180deg, rgba(30,40,90,0.55), rgba(10,15,50,0.7)); }
+  .sub { position: absolute; left: 50%; bottom: 4vh; transform: translateX(-50%) rotate(-2deg);
+    font-family: 'Lilita One', 'Arial Black', sans-serif; font-size: 7.5vh; color: #fff; white-space: nowrap;
+    padding: 1vh 3vw; border-radius: 2vh; border: 0.8vh solid #1b1236; background: linear-gradient(180deg, #b46bff, #6a2cff);
+    -webkit-text-stroke: 0.06em #1b1236; paint-order: stroke fill; box-shadow: 0 1vh 0 #1b1236; }
+</style></head>
+<body><div class="stage">
+  <div class="left"><div class="img"></div><div class="tint"></div></div>
+  <div class="right"><div class="img"></div><div class="rays"></div><div class="glow"></div></div>
+  <div class="vignette"></div>
+  <div class="seam"></div>
+  <div class="tag before">REBIRTH 0</div>
+  <div class="tag after">REBIRTH 49</div>
+  <div class="title mult1"><span class="red">x1</span></div>
+  <div class="title mult"><span class="gold">x50</span></div>
+  <div class="sub">EVERY REBIRTH = MORE OIL</div>
+  <div class="arrow">&#x279C;</div>
+  <div class="spark" style="right:10vw; top:22vh; transform:scale(1.4)"></div>
+  <div class="spark" style="right:36vw; top:62vh"></div>
+</div></body></html>

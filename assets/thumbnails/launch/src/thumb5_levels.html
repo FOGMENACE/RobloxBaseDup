@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="split.css">
+<style>
+  :root {
+    --left-img: url('split.png'); --left-pos: 32% 70%; --left-size: auto 125%;
+    --right-img: url('bowler.png'); --right-pos: 45% 60%; --right-size: auto 150%;
+  }
+  .right .glow { background: radial-gradient(ellipse at 55% 55%, rgba(140,220,255,0.45), rgba(120,60,255,0) 60%); }
+  .levelbar { position: absolute; right: 5vw; bottom: 30vh; width: 40vw; height: 5.5vh; border-radius: 3vh;
+    border: 0.8vh solid #1b1236; background: #2c2448; overflow: hidden; transform: rotate(-5deg);
+    box-shadow: 0 0.8vh 0 #1b1236; }
+  .levelbar .fill { position: absolute; inset: 0; width: 92%; background: linear-gradient(180deg, #a6ff7a, #2fd14a); }
+  .levelbar.low { left: 6vw; right: auto; bottom: 32vh; width: 28vw; transform: rotate(-4deg); }
+  .levelbar.low .fill { width: 6%; background: linear-gradient(180deg, #c9cfdb, #7c8498); }
+</style></head>
+<body><div class="stage">
+  <div class="left"><div class="img"></div><div class="tint"></div></div>
+  <div class="right"><div class="img"></div><div class="rays"></div><div class="glow"></div></div>
+  <div class="vignette"></div>
+  <div class="seam"></div>
+  <div class="tag before">NOOB</div>
+  <div class="tag after">PRO</div>
+  <div class="levelbar low"><div class="fill"></div></div>
+  <div class="levelbar"><div class="fill"></div></div>
+  <div class="title n1"><span class="red">LVL 1</span></div>
+  <div class="title n2"><span class="gold">LVL 5,000</span></div>
+  <div class="arrow">&#x279C;</div>
+  <div class="spark" style="right:8vw; top:30vh; transform:scale(1.4)"></div>
+  <div class="spark" style="right:40vw; top:24vh"></div>
+</div></body></html>
