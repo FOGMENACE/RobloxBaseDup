@@ -978,15 +978,25 @@ if UserInputService.TouchEnabled then
 	end)
 end
 
--- On-screen joystick: a small FIXED stick (dark disc + light knob) that sits right of
--- the bottom-left rebirth panel and matches the jump button. A drag can start anywhere
--- in the left 45% of the screen (outside buttons/panels); the knob shows its direction.
--- It is the only stick: Roblox's thumbstick is off (TouchControls), and it is lobby-only.
+-- On-screen joystick: a small FIXED stick in the bottom-left corner (like the jump button
+-- in the bottom-right), in the game's own style: cream disc, dark outline, cream knob.
+-- On touch screens that corner is free (the rebirth badge sits beside QUESTS), and the
+-- stick is sized to the screen. A drag can start anywhere in the left 45% of the screen
+-- (outside buttons/panels); the knob shows its direction. It is the only stick: Roblox's
+-- thumbstick is off (TouchControls), and it is lobby-only.
+local CONTROL_CREAM = Color3.fromRGB(255, 247, 232)
+local CONTROL_INK = Color3.fromRGB(24, 22, 34)
+local CONTROL_MARGIN = 14
+
+-- one size for both touch controls: about a fifth of the screen height
+local function controlSize()
+	local cam = workspace.CurrentCamera
+	local size = cam and cam.ViewportSize or Vector2.new(800, 400)
+	return math.floor(math.clamp(size.Y * 0.21, 66, 104))
+end
+
 if UserInputService.TouchEnabled then
 	local STICK_RADIUS = 48 -- finger travel for full speed
-	local BASE_SIZE = 96
-	local KNOB_SIZE = 44
-	local KNOB_TRAVEL = (BASE_SIZE - KNOB_SIZE) / 2
 	local sGui = Instance.new("ScreenGui")
 	sGui.Name = "BallJoystick"
 	sGui.ResetOnSpawn = false
@@ -994,34 +1004,38 @@ if UserInputService.TouchEnabled then
 	sGui.IgnoreGuiInset = true
 	sGui.Parent = player:WaitForChild("PlayerGui")
 
-	local function disc(size, color, transparency, parent)
+	local function disc(color, transparency, parent)
 		local f = Instance.new("Frame")
 		f.AnchorPoint = Vector2.new(0.5, 0.5)
-		f.Size = UDim2.fromOffset(size, size)
 		f.BackgroundColor3 = color
 		f.BackgroundTransparency = transparency
 		f.BorderSizePixel = 0
 		f.Parent = parent
 		Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
 		local s = Instance.new("UIStroke")
-		s.Color = Color3.new(1, 1, 1)
-		s.Transparency = 0.55
-		s.Thickness = 2
+		s.Color = CONTROL_INK
+		s.Transparency = 0.15
+		s.Thickness = 3
+		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		s.Parent = f
 		return f
 	end
 
-	local base = disc(BASE_SIZE, Color3.fromRGB(20, 18, 32), 0.55, sGui)
-	local knob = disc(KNOB_SIZE, Color3.fromRGB(235, 235, 240), 0.2, base)
+	local base = disc(CONTROL_CREAM, 0.5, sGui)
+	local knob = disc(CONTROL_CREAM, 0.05, base)
 	knob.Position = UDim2.fromScale(0.5, 0.5)
-	local baseStroke = base:FindFirstChildOfClass("UIStroke")
+	local knobTravel = 20
 
-	-- resting spot sits right of the bottom-left rebirth panel so it never covers it
-	local restPos = UDim2.new(0, 110, 1, -110)
+	-- bottom-left corner, sized to the screen
+	local restPos = UDim2.fromOffset(0, 0)
 	local function placeRest()
 		local cam = workspace.CurrentCamera
 		local size = cam and cam.ViewportSize or Vector2.new(800, 400)
-		restPos = UDim2.fromOffset(math.clamp(size.X * 0.27, 150, 290), size.Y - 80)
+		local d = controlSize()
+		base.Size = UDim2.fromOffset(d, d)
+		knob.Size = UDim2.fromOffset(math.floor(d * 0.46), math.floor(d * 0.46))
+		knobTravel = (d - d * 0.46) / 2
+		restPos = UDim2.fromOffset(CONTROL_MARGIN + d / 2, size.Y - CONTROL_MARGIN - d / 2)
 	end
 	placeRest()
 	base.Position = restPos
@@ -1033,8 +1047,7 @@ if UserInputService.TouchEnabled then
 		activeTouch = nil
 		stickX, stickZ = 0, 0
 		knob.Position = UDim2.fromScale(0.5, 0.5)
-		base.BackgroundTransparency = 0.55
-		baseStroke.Transparency = 0.55
+		base.BackgroundTransparency = 0.5
 	end
 
 	local function drag(pos)
@@ -1044,7 +1057,7 @@ if UserInputService.TouchEnabled then
 			delta = delta * (STICK_RADIUS / mag)
 		end
 		-- the knob moves inside the small base (scaled finger travel)
-		local shown = delta * (KNOB_TRAVEL / STICK_RADIUS)
+		local shown = delta * (knobTravel / STICK_RADIUS)
 		knob.Position = UDim2.new(0.5, shown.X, 0.5, shown.Y)
 		local nx, nz = delta.X / STICK_RADIUS, -delta.Y / STICK_RADIUS
 		if math.sqrt(nx * nx + nz * nz) < 0.15 then
@@ -1065,8 +1078,7 @@ if UserInputService.TouchEnabled then
 		end
 		activeTouch = input
 		origin = Vector2.new(input.Position.X, input.Position.Y)
-		base.BackgroundTransparency = 0.4
-		baseStroke.Transparency = 0.25
+		base.BackgroundTransparency = 0.3
 		drag(origin)
 	end)
 
@@ -1195,52 +1207,69 @@ if UserInputService.TouchEnabled then
 	gui.DisplayOrder = 5
 	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- same look as the joystick: a small dark see-through disc with a thin light ring
-	-- and an up arrow
+	-- same look and size as the joystick (cream disc, dark outline), bottom-right corner,
+	-- with a drawn up arrow (a glyph could turn into an emoji on some phones)
+	gui.IgnoreGuiInset = true
 	local button = Instance.new("TextButton")
 	button.Name = "JumpButton"
 	button.AnchorPoint = Vector2.new(1, 1)
-	button.Position = UDim2.new(1, -28, 1, -28)
-	button.Size = UDim2.fromOffset(76, 76)
-	button.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
-	button.BackgroundTransparency = 0.55
+	button.BackgroundColor3 = CONTROL_CREAM
+	button.BackgroundTransparency = 0.5
 	button.AutoButtonColor = false
 	button.Text = ""
 	button.Parent = gui
+
+	local function fitJump()
+		local d = controlSize()
+		button.Size = UDim2.fromOffset(d, d)
+		button.Position = UDim2.new(1, -CONTROL_MARGIN, 1, -CONTROL_MARGIN)
+	end
+	fitJump()
+	local cam = workspace.CurrentCamera
+	if cam then
+		cam:GetPropertyChangedSignal("ViewportSize"):Connect(fitJump)
+	end
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = button
 
 	local ring = Instance.new("UIStroke")
-	ring.Color = Color3.new(1, 1, 1)
-	ring.Transparency = 0.55
-	ring.Thickness = 2
+	ring.Color = CONTROL_INK
+	ring.Transparency = 0.15
+	ring.Thickness = 3
 	ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ring.Parent = button
 
-	local arrow = Instance.new("TextLabel")
-	arrow.BackgroundTransparency = 1
-	arrow.AnchorPoint = Vector2.new(0.5, 0.5)
-	arrow.Position = UDim2.fromScale(0.5, 0.47)
-	arrow.Size = UDim2.fromScale(0.62, 0.62)
-	arrow.Font = Enum.Font.GothamBold
-	arrow.Text = "⬆"
-	arrow.TextScaled = true
-	arrow.TextColor3 = Color3.fromRGB(235, 235, 240)
-	arrow.Parent = button
+	-- arrow: a triangle head on a rounded stem, both dark
+	local head = Instance.new("TextLabel")
+	head.BackgroundTransparency = 1
+	head.AnchorPoint = Vector2.new(0.5, 1)
+	head.Position = UDim2.fromScale(0.5, 0.56)
+	head.Size = UDim2.fromScale(0.56, 0.36)
+	head.Font = Enum.Font.GothamBlack
+	head.Text = "▲"
+	head.TextScaled = true
+	head.TextColor3 = CONTROL_INK
+	head.Parent = button
+	local stem = Instance.new("Frame")
+	stem.AnchorPoint = Vector2.new(0.5, 0)
+	stem.Position = UDim2.fromScale(0.5, 0.48)
+	stem.Size = UDim2.fromScale(0.16, 0.26)
+	stem.BackgroundColor3 = CONTROL_INK
+	stem.BorderSizePixel = 0
+	stem.Parent = button
+	Instance.new("UICorner", stem).CornerRadius = UDim.new(0.4, 0)
 
 	-- press feedback, like the stick
 	button.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
-			button.BackgroundTransparency = 0.4
-			ring.Transparency = 0.25
+			button.BackgroundTransparency = 0.3
 		end
 	end)
 	button.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch then
-			button.BackgroundTransparency = 0.55
-			ring.Transparency = 0.55
+			button.BackgroundTransparency = 0.5
 		end
 	end)
 

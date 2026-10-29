@@ -187,7 +187,16 @@ local function updateRootScale()
 	end
 
 	left.Position = UDim2.new(0, 10, topFraction, 0)
-	rootScale.Scale = math.clamp(math.min(viewport.Y / 760, fit), 0.5, 1.2)
+	-- Phones: the old viewport.Y / 760 cap halved the hub on a ~370 px tall screen even
+	-- though there was room. On touch screens it now fills the free height (fit), but stops
+	-- above the joystick in the bottom-left corner (BallController: ~21% of the height).
+	if UserInputService.TouchEnabled then
+		local stickTop = viewport.Y * (1 - 0.21) - 28
+		local touchFit = (stickTop - topFraction * viewport.Y) / COLUMN_HEIGHT
+		rootScale.Scale = math.clamp(math.min(fit, touchFit), 0.5, 1.2)
+	else
+		rootScale.Scale = math.clamp(math.min(viewport.Y / 760, fit), 0.5, 1.2)
+	end
 end
 
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateRootScale)

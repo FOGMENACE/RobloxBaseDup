@@ -777,26 +777,8 @@ end
 local function levelUpBurst(newLevel)
 	playLevelChime()
 
-	local banner = create("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 1, -170),
-		Size = UDim2.fromOffset(360, 64),
-		BackgroundTransparency = 1,
-		Font = FONT,
-		Text = "LEVEL UP!  " .. tostring(newLevel),
-		TextColor3 = LANE,
-		TextSize = 40,
-		TextTransparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.9,
-		ZIndex = 30,
-	}, gui)
-	create("UIStroke", { Color = INK, Thickness = 4, Transparency = ((player:GetAttribute("RunState") or "Waiting") == "Waiting") and 0 or 0.9 }, banner)
-	local bannerScale = create("UIScale", { Scale = 0.3 }, banner)
-
-	TweenService:Create(
-		bannerScale,
-		TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Scale = 1 }
-	):Play()
+	-- (the big "LEVEL UP!" card is LevelUpFX's; the extra "LEVEL UP! N" line that used
+	-- to sit above the level bar repeated it, so only the sparks and the bar pop stay here)
 
 	-- Confetti-style sparks around the level panel
 	local origin = levelPanel.AbsolutePosition + levelPanel.AbsoluteSize / 2
@@ -833,18 +815,6 @@ local function levelUpBurst(newLevel)
 
 	bump(levelScale, 1.12)
 	bump(badgeScale, 1.1)
-
-	task.delay(1.6, function()
-		local fade = TweenService:Create(
-			banner,
-			TweenInfo.new(0.4),
-			{ TextTransparency = 1, Position = UDim2.new(0.5, 0, 1, -200) }
-		)
-		fade.Completed:Once(function()
-			banner:Destroy()
-		end)
-		fade:Play()
-	end)
 end
 
 --------------------------------------------------

@@ -134,19 +134,25 @@ local function levelUp(level)
 	-- the middle of the view) and mostly see-through; it glides between the two looks
 	-- whenever the run starts or ends.
 	local holderScale = create("UIScale", { Scale = 1 }, holder)
+	-- sized to the screen: the 600 x 220 card filled most of a phone screen
+	local function screenScale()
+		local camera = workspace.CurrentCamera
+		local size = camera and camera.ViewportSize or Vector2.new(1280, 720)
+		return math.clamp(math.min(size.Y / 720, size.X / 1100), 0.5, 1)
+	end
 	local function fitOpacity()
 		local running = inRun()
 		TweenService:Create(holder, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
 			GroupTransparency = running and 0.8 or 0,
-			Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.4),
+			Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.36),
 		}):Play()
-		TweenService:Create(holderScale, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { Scale = running and 0.45 or 1 }):Play()
+		TweenService:Create(holderScale, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { Scale = (running and 0.45 or 1) * screenScale() }):Play()
 	end
 	do
 		local running = inRun()
 		holder.GroupTransparency = running and 0.8 or 0
-		holder.Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.4)
-		holderScale.Scale = running and 0.45 or 1
+		holder.Position = running and UDim2.fromScale(0.5, 0.2) or UDim2.fromScale(0.5, 0.36)
+		holderScale.Scale = (running and 0.45 or 1) * screenScale()
 	end
 	local stateConn = player:GetAttributeChangedSignal("RunState"):Connect(fitOpacity)
 	holder.Destroying:Once(function()
