@@ -175,6 +175,14 @@ local function updateKeys()
 		return
 	end
 
+	-- No movement behind the loading screen (LoadingBoot sets this when the
+	-- player's data, world and floor are in). The server gates runs too (JoinGate).
+	if player:GetAttribute("LoadingDone") ~= true then
+		inputX = 0
+		inputZ = 0
+		return
+	end
+
 	local x = 0
 	local z = 0
 
@@ -860,7 +868,7 @@ end
 local lastJumpSent = 0
 
 local function requestJump(held)
-	if UserInputService:GetFocusedTextBox() then
+	if UserInputService:GetFocusedTextBox() or player:GetAttribute("LoadingDone") ~= true then
 		return
 	end
 

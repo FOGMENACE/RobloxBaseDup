@@ -662,6 +662,22 @@ local function startRun(
 	end
 
 
+	-- JoinGate: no run until the player's data, world and loading screen are done
+	-- (slow connections could roll in behind the loading screen). The ball goes
+	-- back to the spawn pad instead of being left on the course.
+	if player:GetAttribute("JoinReady") ~= true then
+
+		local spawnPart = workspace:FindFirstChild("BallSpawn")
+		if spawnPart then
+			ball.AssemblyLinearVelocity = Vector3.zero
+			ball.CFrame = CFrame.new(spawnPart.Position + WorldConfig.Offset(player) + Vector3.new(0, ball.Size.Y / 2 + 1, 0))
+		end
+
+		return
+
+	end
+
+
 	--------------------------------------------------
 	-- LOCK RUN
 	--------------------------------------------------
