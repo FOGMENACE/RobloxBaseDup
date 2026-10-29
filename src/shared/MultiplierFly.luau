@@ -134,6 +134,8 @@ function MultiplierFly.Fly(options)
 	local multiplier = math.max(tonumber(options.Multiplier) or 1, 1)
 	local playSound = options.Sound or function() end
 	local viewport = gui.AbsoluteSize
+	-- size follows the screen (phone ~0.75x, laptop ~1.2x, big monitor 1.9x); every scale below is times this
+	local f = math.clamp(math.min(viewport.X / 1100, viewport.Y / 620), 0.6, 1.5) * 1.1
 
 	-- Just the big icon and number: no box, no background.
 	local width = options.Label and 400 or 330
@@ -143,7 +145,7 @@ function MultiplierFly.Fly(options)
 		BackgroundTransparency = 1,
 		ZIndex = 80,
 	}, gui)
-	local chipScale = create("UIScale", { Scale = 0.6 }, chip)
+	local chipScale = create("UIScale", { Scale = 0.6 * f }, chip)
 
 	if options.Kind == "Wins" then
 		create("ImageLabel", {
@@ -209,14 +211,18 @@ function MultiplierFly.Fly(options)
 	chip.Position = UDim2.fromOffset(startPoint.X, startPoint.Y)
 
 	-- 1) rise a little and pop in
+	-- it flies to the MIDDLE of the screen (not a short hop in the corner) so the player
+	-- watches the count-up; wins sit a little higher, clear of the big total below them
+	local halfWidth = width / 2 * f * 1.2
+	local halfHeight = 60 * f * 1.2
 	local rise = Vector2.new(
-		math.clamp(startPoint.X, 140, viewport.X - 140),
-		math.clamp(startPoint.Y - 130, 120, viewport.Y - 120)
+		math.clamp(viewport.X / 2, halfWidth, viewport.X - halfWidth),
+		math.clamp(viewport.Y * (options.Kind == "Wins" and 0.40 or 0.46), halfHeight, viewport.Y - halfHeight)
 	)
-	TweenService:Create(chipScale, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Scale = 1.1 }):Play()
+	TweenService:Create(chipScale, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Scale = 1.1 * f }):Play()
 	local up = TweenService:Create(
 		chip,
-		TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ Position = UDim2.fromOffset(rise.X, rise.Y) }
 	)
 	up:Play()
@@ -253,28 +259,28 @@ function MultiplierFly.Fly(options)
 			nextTick = t + math.max(0.015, tickBase * (1 - t * 0.85) / duration)
 			playSound(TICK_SOUND, 0.28, 0.85 + math.min(ticks, 30) * 0.045)
 			-- every tick punches the number a little
-			chipScale.Scale = 1.1 + 0.1 * alpha + 0.05
+			chipScale.Scale = (1.1 + 0.1 * alpha + 0.05) * f
 		end
 
 		-- shockwave + sparkles at each quarter of the climb
 		if t >= (milestone + 1) * 0.25 then
 			milestone += 1
-			ring(gui, center + Vector2.new(50, 0), baseColor, 220 + milestone * 40)
-			burst(gui, center + Vector2.new(50, 0), baseColor, 6 + milestone * 2, 120 + milestone * 20)
+			ring(gui, center + Vector2.new(50 * f, 0), baseColor, 220 + milestone * 40)
+			burst(gui, center + Vector2.new(50 * f, 0), baseColor, 6 + milestone * 2, 120 + milestone * 20)
 		end
 
-		chipScale.Scale += (1.1 + 0.12 * alpha + 0.04 * math.sin(os.clock() * 34) - chipScale.Scale) * 0.35
+		chipScale.Scale += ((1.1 + 0.12 * alpha + 0.04 * math.sin(os.clock() * 34)) * f - chipScale.Scale) * 0.35
 		chip.Rotation = math.sin(os.clock() * 22) * (1 + alpha * 3.5)
 		RunService.RenderStepped:Wait()
 	end
 	label.Text = "x" .. compact(multiplier)
 	label.TextColor3 = Color3.fromRGB(255, 240, 130)
 	chip.Rotation = 0
-	chipScale.Scale = 1.45
-	TweenService:Create(chipScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1.15 }):Play()
+	chipScale.Scale = 1.45 * f
+	TweenService:Create(chipScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Scale = 1.15 * f }):Play()
 	playSound(WHOOSH_SOUND, 0.45, 1.1 + math.min(multiplier, 40) * 0.01)
-	ring(gui, center + Vector2.new(50, 0), Color3.fromRGB(255, 240, 130), 420)
-	burst(gui, center + Vector2.new(50, 0), Color3.fromRGB(255, 226, 90), 22, 220)
+	ring(gui, center + Vector2.new(50 * f, 0), Color3.fromRGB(255, 240, 130), 420)
+	burst(gui, center + Vector2.new(50 * f, 0), Color3.fromRGB(255, 226, 90), 22, 220)
 	task.wait(0.28)
 
 	-- 3) drag it into the number, leaving a glittering trail
@@ -284,7 +290,7 @@ function MultiplierFly.Fly(options)
 		TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 		{ Position = UDim2.fromOffset(target.X, target.Y), GroupTransparency = 0.2 }
 	)
-	TweenService:Create(chipScale, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.35 }):Play()
+	TweenService:Create(chipScale, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.35 * f }):Play()
 	drag:Play()
 	task.spawn(function()
 		while chip.Parent and drag.PlaybackState == Enum.PlaybackState.Playing do

@@ -15,6 +15,9 @@ local RunService = game:GetService("RunService")
 
 local playerBalls = workspace:WaitForChild("PlayerBalls")
 
+-- Name tags are switched off for now. Set this to true to bring them back.
+local SHOW_NAMETAGS = false
+
 -- rebirth zone colours live in a shared module (the chat purchase lines use them too)
 local RebirthColors = require(game:GetService("ReplicatedStorage"):WaitForChild("RebirthColors"))
 local zoneColor = RebirthColors.Get
@@ -131,7 +134,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 			-- back when they are in the lobby again
 			if entry.Gui then
 				local state = entry.Player and entry.Player:GetAttribute("RunState")
-				entry.Gui.Enabled = state == nil or state == "" or state == "Waiting"
+				entry.Gui.Enabled = SHOW_NAMETAGS and (state == nil or state == "" or state == "Waiting")
 			end
 
 			local position = ball.Position
