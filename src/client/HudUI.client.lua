@@ -707,49 +707,37 @@ fitRebirth()
 -- LEVEL UP
 --------------------------------------------------
 
--- LEVEL-UP MELODY. Every level-up plays the NEXT note of a short, cheerful tune, so a streak of
--- level-ups sings:  duh duh DING  duh duh duh DING DING DING DING!
--- The notes are a warm MARIMBA hit (a single C3 note, the same sound family as the arcade /
--- bowling-alley feel of the game). The sample is low, so every note is played at 2x speed or
--- more (C4 and up) - it never sits down in the bass under the music. "duh" = soft mid notes,
--- "ding" = louder, brighter higher notes. All notes are the C major pentatonic scale, so any
--- run of them sounds good. A pause longer than STREAK_GAP starts the tune again.
--- The volume follows the MUSIC's dimming (SoundService attribute "MusicDuck", set by
--- MusicController: window unfocused / player idle), and the SFX setting still mutes it.
-local LEVEL_NOTE = "rbxassetid://104421055647409" -- "marimba-hit-c3_C_major" (Creator Store)
--- speeds are 2^(semitones / 12) on the C3 sample: 2.0 = C4, 3.0 = G4, 4.0 = C5 ...
-local C4, D4, E4, G4, A4, C5, D5, E5 = 2.0, 2.245, 2.52, 3.0, 3.364, 4.0, 4.49, 5.04
-local MELODY = {
-	{ "duh", C4 }, { "duh", D4 }, { "ding", G4 },
-	{ "duh", C4 }, { "duh", D4 }, { "duh", E4 }, { "ding", A4 },
-	{ "ding", C5 }, { "ding", D5 }, { "ding", E5, true }, -- the last one rings as a chord
-}
-local STREAK_GAP = 3.2 -- seconds between level-ups that still count as one run
-local MIN_GAP = 0.3 -- never more often than this (a burst of level-ups plays one note, not a clatter)
-local DUH_VOLUME = 0.55
-local DING_VOLUME = 0.85
+-- LEVEL-UP SOUND: one bright "level up" jingle (a quick rising arpeggio with a sparkle on top,
+-- "level-up-191997", Creator Store). Pitch-shifted pings, pins and home-made melodies all
+-- sounded off against the music; a jingle made for exactly this moment reads as "reward".
+-- Level-ups in a row climb one semitone each (a combo feel), capped at +5 so it never gets
+-- shrill; a pause of STREAK_GAP starts again from the natural pitch.
+-- Volume was balanced by measuring the SAMPLES in Studio (PlaybackLoudness ignores Volume, so
+-- the heard level is sample loudness x Volume, music also x ~1.4 for the bus's +3 dB):
+--   lobby music averages ~140 x 0.8 x 1.4 ~ 160, course music ~70 x 0.85 x 1.4 ~ 85;
+--   the jingle's hit is ~210 at Volume 1, so 1.0 in the lobby and 0.7 on the course keep it
+--   just above the music without blasting. Higher steps are a bit quieter (they sound louder).
+-- It follows the MUSIC's dimming (SoundService "MusicDuck", set by MusicController: window
+-- unfocused / player idle), and the SFX setting still mutes it.
+local LEVEL_UP_SOUND = "rbxassetid://17648982831" -- "level-up-191997" (Creator Store)
+local LOBBY_VOLUME = 1.0
+local COURSE_VOLUME = 0.7
+local MIN_GAP = 0.6 -- the jingle's hit lasts ~0.6 s: a burst of level-ups never piles up
+local STREAK_GAP = 2.5 -- seconds between level-ups that still count as "in a row"
+local MAX_STEP = 5 -- semitones
 
-local noteSounds = {}
-for index = 1, 6 do -- several voices so overlapping notes never cut each other off
-	noteSounds[index] = create("Sound", { SoundId = LEVEL_NOTE, Volume = 0 }, gui)
-end
-local nextVoice = 1
-local lastChime, melodyIndex = 0, 0
+local levelVoice = create("Sound", { SoundId = LEVEL_UP_SOUND, Volume = 0 }, gui)
+local lastChime, streak = 0, 0
 
 local function duck()
 	local level = SoundService:GetAttribute("MusicDuck")
 	return typeof(level) == "number" and level or 1
 end
 
-local function voice(speed, volume, delay)
-	local sound = noteSounds[nextVoice]
-	nextVoice = nextVoice % #noteSounds + 1
-	task.delay(delay or 0, function()
-		sound.PlaybackSpeed = speed
-		sound.Volume = volume * duck()
-		sound.TimePosition = 0
-		sound:Play()
-	end)
+local function onCourse()
+	local state = player:GetAttribute("RunState")
+	return state == "Starting" or state == "Running" or state == "Finishing"
+		or typeof(player:GetAttribute("WinTravelBudget")) == "number"
 end
 
 local function playLevelChime()
@@ -757,23 +745,15 @@ local function playLevelChime()
 	if now - lastChime < MIN_GAP then
 		return
 	end
-	if now - lastChime <= STREAK_GAP and melodyIndex > 0 then
-		melodyIndex = melodyIndex % #MELODY + 1 -- next note; after the last one the tune starts over
-	else
-		melodyIndex = 1
-	end
+	streak = (now - lastChime <= STREAK_GAP) and streak + 1 or 0
 	lastChime = now
 
-	local kind, speed, chord = table.unpack(MELODY[melodyIndex])
-	if kind == "duh" then
-		voice(speed, DUH_VOLUME)
-	else
-		voice(speed, DING_VOLUME)
-		if chord then -- the finishing chord: C5 + G4 + E4 under the top note
-			voice(C5, DING_VOLUME * 0.8, 0.04)
-			voice(G4, DING_VOLUME * 0.7, 0.08)
-		end
-	end
+	local step = math.min(streak, MAX_STEP)
+	levelVoice:Stop() -- one voice: two pitches overlapping would clash
+	levelVoice.PlaybackSpeed = 2 ^ (step / 12)
+	levelVoice.Volume = (onCourse() and COURSE_VOLUME or LOBBY_VOLUME) * (1 - 0.03 * step) * duck()
+	levelVoice.TimePosition = 0
+	levelVoice:Play()
 end
 
 local function levelUpBurst(newLevel)

@@ -59,6 +59,9 @@ local function step()
 						if item.Visual.Text ~= original.Text then
 							item.Visual.Text = original.Text
 						end
+						if item.Visual.TextColor3 ~= original.TextColor3 then
+							item.Visual.TextColor3 = original.TextColor3
+						end
 
 						if item.OriginalScale and item.VisualScale then
 							item.VisualScale.Scale = item.OriginalScale.Scale

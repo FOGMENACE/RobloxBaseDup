@@ -540,26 +540,26 @@ end
 local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE, 2)
 
 -- Percent to the next rebirth, floating over the REBIRTH button.
--- A sticker pinned to the button's top-right corner: bigger text, tilted, hanging a little
--- over the corner and nudged left so it never looks cut off.
+-- The percentage floats OVER the REBIRTH button's top-right corner: no box, just big bright
+-- outlined text, slightly tilted. It is drawn in the hub's overlay layer (BadgeOverlay), so the
+-- buttons around it can never cover or cut it off.
+local PERCENT_GREEN = Color3.fromRGB(120, 255, 120)
 local rebirthPercent = create("TextLabel", {
 	Name = "RebirthPercent",
 	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, 2, 0, -9),
-	Size = UDim2.fromOffset(70, 28),
-	Rotation = 9,
-	BackgroundColor3 = GREEN,
+	Position = UDim2.new(1, 0, 0, 0),
+	Size = UDim2.fromOffset(78, 30),
+	Rotation = 10,
+	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "0%",
-	TextColor3 = CREAM,
-	TextSize = 21,
+	TextColor3 = PERCENT_GREEN,
+	TextScaled = true,
 	ZIndex = 7,
 }, rebirthButton.Button)
-round(rebirthPercent, 13)
-rebirthPercent.TextScaled = true
-create("UITextSizeConstraint", { MaxTextSize = 21, MinTextSize = 10 }, rebirthPercent)
-create("UIPadding", { PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5), PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3) }, rebirthPercent)
+create("UITextSizeConstraint", { MaxTextSize = 24, MinTextSize = 10 }, rebirthPercent)
 outline(rebirthPercent, INK, 3)
+BadgeOverlay.Attach(rebirthPercent, rebirthButton.Button, { Dx = 14, Dy = -16 })
 
 local function refreshRebirthPercent()
 	local level = player:GetAttribute("Level") or 1
@@ -569,11 +569,11 @@ local function refreshRebirthPercent()
 
 	if fraction >= 1 then
 		rebirthPercent.Text = "READY!"
-		rebirthPercent.BackgroundColor3 = PIN_RED
+		rebirthPercent.TextColor3 = Color3.fromRGB(255, 96, 96)
 		rebirthButton.Badge.Visible = false -- the READY! sticker already says it
 	else
 		rebirthPercent.Text = math.floor(fraction * 100) .. "%"
-		rebirthPercent.BackgroundColor3 = GREEN
+		rebirthPercent.TextColor3 = PERCENT_GREEN
 		rebirthButton.Badge.Visible = false
 	end
 end
