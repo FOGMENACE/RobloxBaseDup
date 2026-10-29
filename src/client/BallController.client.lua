@@ -988,11 +988,11 @@ local CONTROL_CREAM = Color3.fromRGB(255, 247, 232)
 local CONTROL_INK = Color3.fromRGB(24, 22, 34)
 local CONTROL_MARGIN = 14
 
--- one size for both touch controls: about a fifth of the screen height
+-- one size for every touch control (stick, jump, course arrows): ~18% of the screen height
 local function controlSize()
 	local cam = workspace.CurrentCamera
 	local size = cam and cam.ViewportSize or Vector2.new(800, 400)
-	return math.floor(math.clamp(size.Y * 0.21, 66, 104))
+	return math.floor(math.clamp(size.Y * 0.18, 58, 92))
 end
 
 if UserInputService.TouchEnabled then
@@ -1035,7 +1035,14 @@ if UserInputService.TouchEnabled then
 		base.Size = UDim2.fromOffset(d, d)
 		knob.Size = UDim2.fromOffset(math.floor(d * 0.46), math.floor(d * 0.46))
 		knobTravel = (d - d * 0.46) / 2
-		restPos = UDim2.fromOffset(CONTROL_MARGIN + d / 2, size.Y - CONTROL_MARGIN - d / 2)
+		-- right of the oil / trophy multipliers panel in the bottom-left corner (HudUI)
+		local x = CONTROL_MARGIN + d / 2
+		local hud = player.PlayerGui:FindFirstChild("HudUI")
+		local panel = hud and hud:FindFirstChild("RebirthPanel", true)
+		if panel and panel:IsA("GuiObject") and panel.Visible and panel.AbsoluteSize.X > 0 then
+			x = panel.AbsolutePosition.X + panel.AbsoluteSize.X + 12 + d / 2
+		end
+		restPos = UDim2.fromOffset(x, size.Y - CONTROL_MARGIN - d / 2)
 	end
 	placeRest()
 	base.Position = restPos
@@ -1124,43 +1131,50 @@ if UserInputService.TouchEnabled then
 	local held = { [-1] = 0, [1] = 0 } -- touches holding each side
 
 	local function arrowButton(dir)
+		-- same style, size and height as the lobby controls: a rounded cream square with
+		-- the dark outline and a drawn dark chevron, in the bottom corners
 		local b = Instance.new("TextButton")
 		b.Name = dir < 0 and "LeftArrow" or "RightArrow"
 		b.AutoButtonColor = false
-		b.AnchorPoint = Vector2.new(dir < 0 and 0 or 1, 0.5)
-		b.Position = UDim2.new(dir < 0 and 0 or 1, dir < 0 and 28 or -28, 0.66, 0)
-		b.Size = UDim2.fromScale(0.24, 0.24)
-		b.BackgroundColor3 = Color3.new(1, 1, 1)
-		b.BackgroundTransparency = 0.72
+		b.AnchorPoint = Vector2.new(dir < 0 and 0 or 1, 1)
+		b.BackgroundColor3 = CONTROL_CREAM
+		b.BackgroundTransparency = 0.5
 		b.Text = ""
 		b.Parent = aGui
-		Instance.new("UICorner", b).CornerRadius = UDim.new(0.22, 0)
-		local ar = Instance.new("UIAspectRatioConstraint")
-		ar.AspectRatio = 1
-		ar.DominantAxis = Enum.DominantAxis.Height
-		ar.Parent = b
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0.3, 0)
 		local s = Instance.new("UIStroke")
-		s.Color = Color3.new(1, 1, 1)
-		s.Transparency = 0.45
+		s.Color = CONTROL_INK
+		s.Transparency = 0.15
 		s.Thickness = 3
 		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		s.Parent = b
 
-		local glyph = Instance.new("TextLabel")
-		glyph.BackgroundTransparency = 1
-		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
-		glyph.Position = UDim2.fromScale(0.5, 0.5)
-		glyph.Size = UDim2.fromScale(0.62, 0.62)
-		glyph.Rotation = dir < 0 and 180 or 0
-		glyph.Font = Enum.Font.FredokaOne
-		glyph.Text = "➡"
-		glyph.TextScaled = true
-		glyph.TextColor3 = Color3.new(1, 1, 1)
-		glyph.TextTransparency = 0.15
-		glyph.Parent = b
+		local function fitArrow()
+			local d = math.floor(controlSize() * 1.1)
+			b.Size = UDim2.fromOffset(d, d)
+			b.Position = UDim2.new(dir < 0 and 0 or 1, dir < 0 and CONTROL_MARGIN or -CONTROL_MARGIN, 1, -CONTROL_MARGIN)
+		end
+		fitArrow()
+		local cam = workspace.CurrentCamera
+		if cam then
+			cam:GetPropertyChangedSignal("ViewportSize"):Connect(fitArrow)
+		end
+
+		-- the chevron: two rounded dark bars meeting at the tip (points right; mirrored for left)
+		for _, side in ipairs({ -1, 1 }) do
+			local bar = Instance.new("Frame")
+			bar.AnchorPoint = Vector2.new(0.5, 0.5)
+			bar.Position = UDim2.fromScale(0.5 - dir * 0.02, 0.5 + side * 0.11)
+			bar.Size = UDim2.fromScale(0.36, 0.12)
+			bar.Rotation = -side * 45 * dir
+			bar.BackgroundColor3 = CONTROL_INK
+			bar.BorderSizePixel = 0
+			bar.Parent = b
+			Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+		end
 
 		local function refresh()
-			b.BackgroundTransparency = held[dir] > 0 and 0.5 or 0.72
+			b.BackgroundTransparency = held[dir] > 0 and 0.3 or 0.5
 			arrowX = (held[1] > 0 and 1 or 0) - (held[-1] > 0 and 1 or 0)
 		end
 		b.InputBegan:Connect(function(input)
@@ -1241,25 +1255,60 @@ if UserInputService.TouchEnabled then
 	ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	ring.Parent = button
 
-	-- arrow: a triangle head on a rounded stem, both dark
-	local head = Instance.new("TextLabel")
-	head.BackgroundTransparency = 1
-	head.AnchorPoint = Vector2.new(0.5, 1)
-	head.Position = UDim2.fromScale(0.5, 0.56)
-	head.Size = UDim2.fromScale(0.56, 0.36)
-	head.Font = Enum.Font.GothamBlack
-	head.Text = "▲"
-	head.TextScaled = true
-	head.TextColor3 = CONTROL_INK
-	head.Parent = button
-	local stem = Instance.new("Frame")
-	stem.AnchorPoint = Vector2.new(0.5, 0)
-	stem.Position = UDim2.fromScale(0.5, 0.48)
-	stem.Size = UDim2.fromScale(0.16, 0.26)
-	stem.BackgroundColor3 = CONTROL_INK
-	stem.BorderSizePixel = 0
-	stem.Parent = button
-	Instance.new("UICorner", stem).CornerRadius = UDim.new(0.4, 0)
+	-- icon: a bowling ball hopping up - the dark ball with its three finger holes, a
+	-- small up chevron above it and a soft shadow under it, all drawn with frames
+	local ball = Instance.new("Frame")
+	ball.AnchorPoint = Vector2.new(0.5, 0.5)
+	ball.Position = UDim2.fromScale(0.5, 0.58)
+	ball.Size = UDim2.fromScale(0.42, 0.42)
+	ball.BackgroundColor3 = Color3.fromRGB(46, 40, 92)
+	ball.BorderSizePixel = 0
+	ball.Parent = button
+	Instance.new("UICorner", ball).CornerRadius = UDim.new(1, 0)
+	local ballRing = Instance.new("UIStroke")
+	ballRing.Color = CONTROL_INK
+	ballRing.Thickness = 2
+	ballRing.Parent = ball
+	local shine = Instance.new("Frame")
+	shine.AnchorPoint = Vector2.new(0.5, 0.5)
+	shine.Position = UDim2.fromScale(0.3, 0.3)
+	shine.Size = UDim2.fromScale(0.22, 0.22)
+	shine.BackgroundColor3 = Color3.new(1, 1, 1)
+	shine.BackgroundTransparency = 0.55
+	shine.BorderSizePixel = 0
+	shine.Parent = ball
+	Instance.new("UICorner", shine).CornerRadius = UDim.new(1, 0)
+	for _, hole in ipairs({ { 0.56, 0.36 }, { 0.72, 0.5 }, { 0.6, 0.62 } }) do
+		local h = Instance.new("Frame")
+		h.AnchorPoint = Vector2.new(0.5, 0.5)
+		h.Position = UDim2.fromScale(hole[1], hole[2])
+		h.Size = UDim2.fromScale(0.16, 0.16)
+		h.BackgroundColor3 = CONTROL_INK
+		h.BorderSizePixel = 0
+		h.Parent = ball
+		Instance.new("UICorner", h).CornerRadius = UDim.new(1, 0)
+	end
+	-- the up chevron: two rounded bars meeting at the top
+	for _, side in ipairs({ -1, 1 }) do
+		local bar = Instance.new("Frame")
+		bar.AnchorPoint = Vector2.new(0.5, 0.5)
+		bar.Position = UDim2.fromScale(0.5 + side * 0.065, 0.24)
+		bar.Size = UDim2.fromScale(0.2, 0.07)
+		bar.Rotation = side * 38
+		bar.BackgroundColor3 = CONTROL_INK
+		bar.BorderSizePixel = 0
+		bar.Parent = button
+		Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+	end
+	local shadow = Instance.new("Frame")
+	shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+	shadow.Position = UDim2.fromScale(0.5, 0.86)
+	shadow.Size = UDim2.fromScale(0.34, 0.06)
+	shadow.BackgroundColor3 = CONTROL_INK
+	shadow.BackgroundTransparency = 0.6
+	shadow.BorderSizePixel = 0
+	shadow.Parent = button
+	Instance.new("UICorner", shadow).CornerRadius = UDim.new(1, 0)
 
 	-- press feedback, like the stick
 	button.InputBegan:Connect(function(input)

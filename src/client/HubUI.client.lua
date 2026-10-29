@@ -170,9 +170,10 @@ end)
 local function updateRootScale()
 	local viewport = gui.AbsoluteSize
 	local rebirthScale = math.clamp(viewport.X / 900, 0.65, 1)
-	-- touch screens: the rebirth badge sits in the empty slot beside QUESTS (HudUI),
-	-- so the column may use the full height
-	local rebirthTop = UserInputService.TouchEnabled and (viewport.Y - 12)
+	-- touch screens: the rebirth multipliers are a compact panel in the bottom-left corner
+	-- (HudUI: 15% of the screen height), so the column ends just above it
+	local rebirthTop = UserInputService.TouchEnabled
+		and (viewport.Y - 8 - 132 * math.clamp(viewport.Y * 0.15 / 132, 0.4, 1) - 10)
 		or (viewport.Y - 10 - 132 * rebirthScale - 10)
 
 	local topFraction = UserInputService.TouchEnabled and 0.2 or 0.335 -- phones: a little higher
@@ -188,12 +189,10 @@ local function updateRootScale()
 
 	left.Position = UDim2.new(0, 10, topFraction, 0)
 	-- Phones: the old viewport.Y / 760 cap halved the hub on a ~370 px tall screen even
-	-- though there was room. On touch screens it now fills the free height (fit), but stops
-	-- above the joystick in the bottom-left corner (BallController: ~21% of the height).
+	-- though there was room. On touch screens it fills the free height above the
+	-- multipliers panel (fit).
 	if UserInputService.TouchEnabled then
-		local stickTop = viewport.Y * (1 - 0.21) - 28
-		local touchFit = (stickTop - topFraction * viewport.Y) / COLUMN_HEIGHT
-		rootScale.Scale = math.clamp(math.min(fit, touchFit), 0.5, 1.2)
+		rootScale.Scale = math.clamp(fit, 0.5, 1.2)
 	else
 		rootScale.Scale = math.clamp(math.min(viewport.Y / 760, fit), 0.5, 1.2)
 	end

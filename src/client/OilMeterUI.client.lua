@@ -247,12 +247,24 @@ local function setShown(visible)
 	end
 end
 
+-- The meter's resting size follows the screen: full size on a monitor, about 60% on a
+-- phone held sideways (it used to cover a quarter of a phone screen). Pops return to it.
+local baseScale = 1
+local function fitMeter()
+	local size = gui.AbsoluteSize
+	baseScale = math.clamp(math.min(size.Y / 640, size.X / 1150), 0.55, 1)
+	scale.Scale = baseScale
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitMeter)
+fitMeter()
+
 local function bump(target, amount)
-	target.Scale = amount
+	local rest = target == scale and baseScale or 1
+	target.Scale = amount * rest
 	TweenService:Create(
 		target,
 		TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Scale = 1 }
+		{ Scale = rest }
 	):Play()
 end
 

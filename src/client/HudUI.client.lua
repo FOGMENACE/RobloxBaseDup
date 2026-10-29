@@ -684,48 +684,51 @@ task.delay(8, function()
 	applyTutorialVisibility()
 end)
 
--- Opens the existing rebirth panel (owned by RebirthUIClient).
+-- Opens the existing rebirth panel (owned by RebirthUIClient) - in the lobby only.
+local function inLobby()
+	local state = player:GetAttribute("RunState")
+	return state == nil or state == "" or state == "Waiting"
+end
+
 rebirthPanel.Activated:Connect(function()
+	if not inLobby() then
+		return
+	end
 	local toggle = playerGui:FindFirstChild("ToggleRebirthPanel")
 	if toggle then
 		toggle:Fire()
 	end
 end)
 
--- Touch screens: the panel fills the empty slot beside the QUESTS button in the
--- wins hub grid (not attached to it), as tall as one hub button, so it no longer
--- sits over the thumbstick in the bottom-left corner.
-local questsButton = nil
+-- On a course the multipliers are display only: the panel stops taking taps, so a
+-- thumb near the corner (or the left steering arrow) is never caught by it.
+local function applyPanelInput()
+	local lobby = inLobby()
+	rebirthPanel.Active = lobby
+	pcall(function()
+		rebirthPanel.Interactable = lobby
+	end)
+end
+player:GetAttributeChangedSignal("RunState"):Connect(applyPanelInput)
+applyPanelInput()
+
+-- The rebirth multipliers panel lives in the bottom-left corner on every device; on
+-- touch screens it is compact and the joystick sits right of it.
 local function fitRebirth()
 	local viewport = gui.AbsoluteSize
 	local scale = math.clamp(viewport.X / 900, 0.65, 1)
 	if touch then
-		local hub = playerGui:FindFirstChild("HubUI")
-		questsButton = (questsButton and questsButton.Parent) and questsButton or (hub and hub:FindFirstChild("QuestsButton", true))
-		if questsButton and questsButton.AbsoluteSize.Y > 0 then
-			local rect = questsButton.AbsolutePosition
-			local height = questsButton.AbsoluteSize.Y
-			scale = height / 132
-			rebirthPanel.AnchorPoint = Vector2.new(0, 0)
-			rebirthPanel.Position = UDim2.fromOffset(rect.X + questsButton.AbsoluteSize.X + 6, rect.Y)
-		else
-			scale *= 0.5
-			rebirthPanel.AnchorPoint = Vector2.new(0, 1)
-			rebirthPanel.Position = UDim2.new(0, 8, 1, -8)
-		end
+		-- phones / tablets: the oil + trophy multipliers stay in their own bottom-left
+		-- corner (compact, about 15% of the screen height); the joystick sits right beside
+		-- them (BallController) and the hub column ends above them (HubUI)
+		scale = math.clamp(viewport.Y * 0.15 / 132, 0.4, 1)
+		rebirthPanel.AnchorPoint = Vector2.new(0, 1)
+		rebirthPanel.Position = UDim2.new(0, 8, 1, -8)
 	end
 	rebirthScale.Scale = scale
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitRebirth)
 fitRebirth()
-if touch then
-	task.spawn(function()
-		while true do
-			task.wait(0.5) -- follows the hub as it rescales / reflows
-			fitRebirth()
-		end
-	end)
-end
 --------------------------------------------------
 -- LEVEL UP
 --------------------------------------------------
