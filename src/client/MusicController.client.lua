@@ -126,6 +126,9 @@ end
 local currentScene = nil
 
 local function applyVolumes(duration)
+	-- Shared "dimming" level (1 = normal, lower while the window is unfocused or the player is
+	-- idle): the level-up sounds read it so they dim exactly when the music dims.
+	SoundService:SetAttribute("MusicDuck", math.min(focusMultiplier, 1) * idleMultiplier)
 	for scene, track in pairs(tracks) do
 		local target = (scene == currentScene) and (track.BaseVolume * master()) or 0
 		TweenService:Create(

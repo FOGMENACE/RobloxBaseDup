@@ -21,6 +21,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoftPop = require(ReplicatedStorage:WaitForChild("SoftPop"))
 local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
@@ -706,47 +707,71 @@ fitRebirth()
 -- LEVEL UP
 --------------------------------------------------
 
--- Levels come often, so the level-up sound is built from the game's OWN ping (the same
--- sound as wins, oil platforms and the win celebration): three quick notes rising as a
--- major chord, so it matches the rest of the game and sits in key with cheerful music.
---
--- STREAK MELODY: level-ups that follow each other (within STREAK_GAP seconds) climb one
--- step of a major pentatonic scale each time, so a run of level-ups plays a rising tune
--- that keeps you going; a pause resets it to the bottom. Pentatonic steps never clash, so
--- every combination sounds good. Kept clearly above the music (the music bus is separate).
+-- LEVEL-UP MELODY. Every level-up plays the NEXT note of a short tune built from the game's
+-- own ping (the same sound as wins, oil platforms and the win celebration), so a streak of
+-- level-ups sings:  duh duh DING  duh duh duh DING DING DING DING!
+--   "duh" = a soft, low-mid note;  "ding" = a bright high note with a sparkle layered on top.
+-- Every note is a step of a major pentatonic scale, so any run of them sounds good. Level-ups
+-- further apart than STREAK_GAP seconds start the tune again from the top. The ping is low at
+-- normal speed, so every note is lifted into a clear range (a pitch of 1.35 and up).
+-- The volume follows the MUSIC's dimming (SoundService attribute "MusicDuck", set by
+-- MusicController: window unfocused / player idle), and the SFX setting still mutes it.
 local LEVEL_PING = "rbxasset://sounds/electronicpingshort.wav"
-local LEVEL_NOTES = { 1, 1.26, 1.5 } -- playback-speed ratios of a major triad
-local STREAK_SCALE = { 1, 1.125, 1.26, 1.5, 1.68, 2 } -- major pentatonic, root to octave
-local STREAK_GAP = 4
-local levelNotes = {}
-for index = 1, #LEVEL_NOTES do
-	levelNotes[index] = create("Sound", {
-		SoundId = LEVEL_PING,
-		Volume = 0.5,
-	}, gui)
+local MELODY = {
+	{ "duh", 1.35 }, { "duh", 1.52 }, { "ding", 1.90 },
+	{ "duh", 1.35 }, { "duh", 1.52 }, { "duh", 1.70 }, { "ding", 2.14 },
+	{ "ding", 2.40 }, { "ding", 2.85 }, { "ding", 2.85, true }, -- the last one rings as a chord
+}
+local STREAK_GAP = 3.2 -- seconds between level-ups that still count as one run
+local MIN_GAP = 0.3 -- never more often than this (a burst of level-ups plays one note, not a clatter)
+local DUH_VOLUME = 0.36
+local DING_VOLUME = 0.5
+
+local noteSounds = {}
+for index = 1, 4 do -- a few voices so overlapping notes never cut each other off
+	noteSounds[index] = create("Sound", { SoundId = LEVEL_PING, Volume = 0 }, gui)
 end
-local lastChime, chimeStreak = 0, 0
+local nextVoice = 1
+local lastChime, melodyIndex = 0, 0
+
+local function duck()
+	local level = SoundService:GetAttribute("MusicDuck")
+	return typeof(level) == "number" and level or 1
+end
+
+local function voice(speed, volume, delay)
+	local sound = noteSounds[nextVoice]
+	nextVoice = nextVoice % #noteSounds + 1
+	task.delay(delay or 0, function()
+		sound.PlaybackSpeed = speed
+		sound.Volume = volume * duck()
+		sound.TimePosition = 0
+		sound:Play()
+	end)
+end
 
 local function playLevelChime()
 	local now = os.clock()
-	if now - lastChime < 0.9 then
+	if now - lastChime < MIN_GAP then
 		return
 	end
-	if now - lastChime < STREAK_GAP then
-		chimeStreak = (chimeStreak % #STREAK_SCALE) + 1 -- climb, then start the tune again
+	if now - lastChime <= STREAK_GAP and melodyIndex > 0 then
+		melodyIndex = melodyIndex % #MELODY + 1 -- next note; after the last one the tune starts over
 	else
-		chimeStreak = 1
+		melodyIndex = 1
 	end
 	lastChime = now
-	local base = STREAK_SCALE[chimeStreak]
-	for index, ratio in ipairs(LEVEL_NOTES) do
-		task.delay((index - 1) * 0.07, function()
-			local note = levelNotes[index]
-			note.PlaybackSpeed = base * ratio
-			note.Volume = 0.5 - (index - 1) * 0.06 -- the top note a touch softer, so it rings, not shrieks
-			note.TimePosition = 0
-			note:Play()
-		end)
+
+	local kind, speed, chord = table.unpack(MELODY[melodyIndex])
+	if kind == "duh" then
+		voice(speed, DUH_VOLUME)
+	else
+		voice(speed, DING_VOLUME)
+		voice(math.min(speed * 2, 4.2), DING_VOLUME * 0.3, 0.03) -- the sparkle: the same note an octave up, quiet (capped so it never turns shrill)
+		if chord then
+			voice(speed * 0.84, DING_VOLUME * 0.7, 0.05) -- the finishing chord notes
+			voice(speed * 0.67, DING_VOLUME * 0.6, 0.09)
+		end
 	end
 end
 
