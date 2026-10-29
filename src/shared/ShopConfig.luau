@@ -37,6 +37,10 @@ ShopConfig.ExclusiveBalls = {
 -- developer product's). The owner price is the full price minus the barrel's.
 ShopConfig.CaptainPrice = 2799
 ShopConfig.CaptainOwnerPrice = 2799 - ShopConfig.ExclusiveBalls.OilBarrel.Price
+-- their Developer Product ids (same as server StoreConfig), used only to ask Roblox whether
+-- THIS player gets a Roblox Plus discount on them (display; the server picks the product)
+ShopConfig.CaptainProductId = 3719254046
+ShopConfig.CaptainOwnerProductId = 3719866685
 
 ShopConfig.RobuxPrices = {
 	CatPlz = 17,

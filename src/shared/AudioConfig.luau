@@ -15,19 +15,21 @@ AudioConfig.Music = {
 	-- "High Five Happy (c)" (APM Music, cheerful pop, ~112s)
 	Lobby = {
 		SoundId = "rbxassetid://9045803411",
-		Volume = 0.45,
+		Volume = 0.8,
 	},
 
 	-- "Fast Paced DnB for Gaming Sessions" (DistroKid)
 	Course = { -- shared by the OilCourse and the WinCourse
 		SoundId = "rbxassetid://128760779305846",
-		Volume = 0.5,
+		Volume = 0.85,
 	},
 
 }
 
--- Default master level for the player's music control (0..1).
-AudioConfig.DefaultMasterVolume = 0.7
+-- Default master level for the player's music control (0..1). Raised so the music sits
+-- at a level comparable to other popular games (the music group is compressed, see
+-- MusicController, so the louder level does not clip).
+AudioConfig.DefaultMasterVolume = 1
 
 -- How loud music gets while the window is not focused.
 AudioConfig.UnfocusedMultiplier = 0.1

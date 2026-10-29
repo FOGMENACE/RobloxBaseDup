@@ -37,6 +37,25 @@ musicGroup.Name = "Music"
 musicGroup.Volume = 1
 musicGroup.Parent = SoundService
 
+-- Mastering on the whole music bus (same sound ids): a gentle compressor evens out
+-- quiet and loud parts so the tracks sound fuller and punchier at the higher level
+-- without clipping, and a light "smile" EQ adds warmth (bass) and sparkle (highs).
+local compressor = Instance.new("CompressorSoundEffect")
+compressor.Threshold = -18
+compressor.Ratio = 3
+compressor.Attack = 0.01
+compressor.Release = 0.15
+compressor.GainMakeup = 3
+compressor.Priority = 2
+compressor.Parent = musicGroup
+
+local tone = Instance.new("EqualizerSoundEffect")
+tone.LowGain = 2.5
+tone.MidGain = -0.5
+tone.HighGain = 2
+tone.Priority = 1
+tone.Parent = musicGroup
+
 local tracks = {} -- [scene] = { Sound, Eq, BaseVolume }
 
 for scene, config in pairs(AudioConfig.Music) do

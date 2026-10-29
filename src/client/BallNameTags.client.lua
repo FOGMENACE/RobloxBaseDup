@@ -15,28 +15,10 @@ local RunService = game:GetService("RunService")
 
 local playerBalls = workspace:WaitForChild("PlayerBalls")
 
-local ZONES = {
-	{ From = 0, Color = Color3.fromRGB(150, 235, 90) }, -- lime
-	{ From = 5, Color = Color3.fromRGB(80, 220, 230) }, -- aqua
-	{ From = 10, Color = Color3.fromRGB(100, 150, 255) }, -- blue
-	{ From = 20, Color = Color3.fromRGB(190, 120, 255) },
-	{ From = 40, Color = Color3.fromRGB(255, 200, 70) },
-	{ From = 75, Color = Color3.fromRGB(255, 90, 130) },
-}
-
-local function zoneColor(rebirths)
-	local color = ZONES[1].Color
-	for _, zone in ipairs(ZONES) do
-		if rebirths >= zone.From then
-			color = zone.Color
-		end
-	end
-	return color
-end
-
-local function hex(color)
-	return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
-end
+-- rebirth zone colours live in a shared module (the chat purchase lines use them too)
+local RebirthColors = require(game:GetService("ReplicatedStorage"):WaitForChild("RebirthColors"))
+local zoneColor = RebirthColors.Get
+local hex = RebirthColors.Hex
 
 local folder = workspace:FindFirstChild("BallNameTags")
 if folder then

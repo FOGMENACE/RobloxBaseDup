@@ -138,48 +138,69 @@ local hud = create("Frame", {
 local hudScale = create("UIScale", { Scale = 1 }, hud)
 
 -- Next-rebirth level badge
+-- A gold card the same height as the level panel beside it, with a dark "NEXT REBIRTH"
+-- tab on its top edge and the target level large in the middle.
 local badge = create("Frame", {
 	Name = "GlobalBadge",
-	Position = UDim2.fromOffset(0, 4),
-	Size = UDim2.fromOffset(88, 88),
-	BackgroundColor3 = PIN_RED,
+	Position = UDim2.fromOffset(0, 14),
+	Size = UDim2.fromOffset(88, 70),
+	BackgroundColor3 = Color3.new(1, 1, 1), -- the gradient supplies the colour
 }, hud)
-round(badge, 44)
+round(badge, 14)
 outline(badge, 4)
+create("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new(Color3.fromRGB(255, 222, 110), Color3.fromRGB(242, 146, 48)),
+}, badge)
 local badgeScale = create("UIScale", { Scale = 1 }, badge)
 
-create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, 8),
-	Size = UDim2.new(1, 0, 0, 16),
+-- soft highlight across the top half for a glossy, finished look
+local gloss = create("Frame", {
+	Position = UDim2.fromOffset(4, 4),
+	Size = UDim2.new(1, -8, 0.45, 0),
+	BackgroundColor3 = Color3.new(1, 1, 1),
+	BackgroundTransparency = 0.72,
+	BorderSizePixel = 0,
+}, badge)
+round(gloss, 10)
+
+local tab = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0, 0),
+	Size = UDim2.fromOffset(84, 20),
+	BackgroundColor3 = INK,
 	Font = FONT,
 	Text = "NEXT REBIRTH",
-	TextColor3 = CREAM,
-	TextSize = 10,
+	TextColor3 = Color3.fromRGB(255, 222, 110),
+	TextSize = 11,
+	ZIndex = 3,
 }, badge)
+round(tab, 10)
 
 create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, 24),
+	Position = UDim2.fromOffset(0, 13),
 	Size = UDim2.new(1, 0, 0, 14),
 	Font = FONT,
-	Text = "LEVEL:",
-	TextColor3 = CREAM,
+	Text = "LEVEL",
+	TextColor3 = Color3.fromRGB(110, 50, 10),
 	TextSize = 12,
+	ZIndex = 2,
 }, badge)
 
 -- the level the player must reach for their next rebirth
 local globalLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(8, 38),
-	Size = UDim2.new(1, -16, 0, 34),
+	Position = UDim2.fromOffset(6, 27),
+	Size = UDim2.new(1, -12, 0, 34),
 	Font = FONT,
 	Text = "1",
 	TextColor3 = CREAM,
 	TextScaled = true,
+	ZIndex = 2,
 }, badge)
-create("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 10 }, globalLabel)
-create("UIStroke", { Color = INK, Thickness = 2 }, globalLabel)
+create("UITextSizeConstraint", { MaxTextSize = 28, MinTextSize = 10 }, globalLabel)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, globalLabel)
 
 -- Rebirth-cycle level + XP bar
 local levelPanel = create("Frame", {
@@ -476,7 +497,7 @@ refreshBonusPill()
 -- SOFT SHADOWS under the main bottom panels (depth, "premium" feel)
 --------------------------------------------------
 
-for _, entry in ipairs({ { "GlobalBadge", 44 }, { "LevelPanel", 20 }, { "OilChip", 20 } }) do
+for _, entry in ipairs({ { "GlobalBadge", 14 }, { "LevelPanel", 20 }, { "OilChip", 20 } }) do
 	local panel = hud:FindFirstChild(entry[1])
 	if panel then
 		local shadow = create("Frame", {

@@ -66,15 +66,21 @@ end
 -- Roblox charges the real price either way; this never changes what is granted or charged.
 --------------------------------------------------
 
-local pricingCache = {} -- [passId] = { Base, Pay, Percent }
+local pricingCache = {} -- [passId, or "P" .. productId] = { Base, Pay, Percent }
 
-local function fetchInfo(passId)
+-- entry: { PassId = id, Price = n } for a Game Pass, or { ProductId = id, Price = n } for a
+-- Developer Product (the Captain Oil Server Pack)
+local function cacheKey(entry)
+	return entry.ProductId and ("P" .. entry.ProductId) or entry.PassId
+end
+
+local function fetchInfo(id, infoType)
 	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfoAsync(passId, Enum.InfoType.GamePass)
+		return MarketplaceService:GetProductInfoAsync(id, infoType)
 	end)
 	if not ok then
 		ok, info = pcall(function()
-			return MarketplaceService:GetProductInfo(passId, Enum.InfoType.GamePass)
+			return MarketplaceService:GetProductInfo(id, infoType)
 		end)
 	end
 	return ok and typeof(info) == "table" and info or nil
@@ -82,17 +88,22 @@ end
 
 -- the last known pricing (never yields); the configured price until the lookup finishes
 function ExclusiveOffer.CachedPricing(entry)
-	return pricingCache[entry.PassId] or { Base = entry.Price, Pay = entry.Price, Percent = 0 }
+	return pricingCache[cacheKey(entry)] or { Base = entry.Price, Pay = entry.Price, Percent = 0 }
 end
 
 -- looks the price up once per session (yields the first time)
 function ExclusiveOffer.GetPricing(entry)
-	local cached = pricingCache[entry.PassId]
+	local cached = pricingCache[cacheKey(entry)]
 	if cached then
 		return cached
 	end
 	local result = { Base = entry.Price, Pay = entry.Price, Percent = 0 }
-	local info = entry.PassId ~= 0 and fetchInfo(entry.PassId) or nil
+	local info
+	if entry.ProductId then
+		info = entry.ProductId ~= 0 and fetchInfo(entry.ProductId, Enum.InfoType.Product) or nil
+	else
+		info = entry.PassId ~= 0 and fetchInfo(entry.PassId, Enum.InfoType.GamePass) or nil
+	end
 	if info and typeof(info.PriceDiscountDetails) == "table" then
 		for _, detail in ipairs(info.PriceDiscountDetails) do
 			if typeof(detail) == "table" and detail.Type == "RobloxPlusSubscription"
@@ -109,7 +120,7 @@ function ExclusiveOffer.GetPricing(entry)
 			end
 		end
 	end
-	pricingCache[entry.PassId] = result
+	pricingCache[cacheKey(entry)] = result
 	return result
 end
 

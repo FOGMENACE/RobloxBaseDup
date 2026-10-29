@@ -100,6 +100,11 @@ local DEBUG =
 -- DEBUG
 --------------------------------------------------
 
+-- Load the purchase announcer now so its Game Pass listener is active from the start.
+task.spawn(function()
+	pcall(require, ServerScriptService:WaitForChild("PurchaseAnnouncer"))
+end)
+
 local function debugPrint(...)
 
 	if not DEBUG then
@@ -486,6 +491,21 @@ MarketplaceService.ProcessReceipt =
 						)
 					).Add(
 						receiptInfo.PlayerId,
+						receiptInfo.CurrencySpent
+					)
+				end
+			)
+
+			-- "<name> bought <item>" in everyone's chat (display only)
+			pcall(
+				function()
+					require(
+						ServerScriptService:WaitForChild(
+							"PurchaseAnnouncer"
+						)
+					).Product(
+						player,
+						productId,
 						receiptInfo.CurrencySpent
 					)
 				end

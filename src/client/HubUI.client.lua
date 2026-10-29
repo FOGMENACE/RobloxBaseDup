@@ -1760,6 +1760,20 @@ do
 			oldPrice.Text = ""
 			newPrice.Text = ROBUX .. " " .. commas(ShopConfig.CaptainPrice)
 		end
+
+		-- Roblox Plus: only when Roblox reports a Plus discount on the product this player
+		-- would be sold, the discounted price is shown with the full price struck through.
+		-- Roblox charges the real price; nothing granted or charged changes here.
+		local entry = owner
+			and { ProductId = ShopConfig.CaptainOwnerProductId, Price = ShopConfig.CaptainOwnerPrice }
+			or { ProductId = ShopConfig.CaptainProductId, Price = ShopConfig.CaptainPrice }
+		task.spawn(function()
+			local pricing = ExclusiveOffer.GetPricing(entry)
+			if pricing.Pay < pricing.Base and (player:GetAttribute("OwnsBarrelPass") == true) == owner then
+				oldPrice.Text = "<s>" .. ROBUX .. " " .. commas(pricing.Base) .. "</s>"
+				newPrice.Text = ROBUX .. " " .. commas(pricing.Pay)
+			end
+		end)
 	end
 	player:GetAttributeChangedSignal("OwnsBarrelPass"):Connect(refresh)
 	refresh()
