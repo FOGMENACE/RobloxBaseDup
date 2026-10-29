@@ -202,7 +202,7 @@ end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateRootScale)
 updateRootScale()
 
--- All devices: the wins trophy sits on the same horizontal line as the x2 WINS tile on the right
+-- All devices: the wins trophy sits level with (top edge = top edge of) the x2 WINS tile on the right
 -- side of the screen. The column slides down to that line; if its bottom would then reach
 -- the oil / trophy multipliers panel in the bottom-left corner, it is scaled down to fit.
 -- (Measured from the real on-screen objects, so it follows any screen shape.)
@@ -230,7 +230,8 @@ do
 		if not pill or not tile or tile.AbsoluteSize.Y <= 0 or not gui.Enabled then
 			return
 		end
-		local delta = (tile.AbsolutePosition.Y + tile.AbsoluteSize.Y / 2) - (pill.AbsolutePosition.Y + pill.AbsoluteSize.Y / 2)
+		-- TOP edges level (the pill is shorter than the x2 WINS button, so centring it looked low)
+		local delta = tile.AbsolutePosition.Y - pill.AbsolutePosition.Y
 		if math.abs(delta) > 1 then
 			left.Position = UDim2.new(left.Position.X.Scale, left.Position.X.Offset, left.Position.Y.Scale, left.Position.Y.Offset + delta)
 		end
