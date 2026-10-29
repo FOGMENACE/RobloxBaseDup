@@ -832,12 +832,17 @@ RunService.RenderStepped:Connect(function()
 	distanceLabel.Text = math.floor(distance) .. " studs"
 	distanceLabel.Visible = onScreen and screen.Z > 0
 end)
--- Keep the banner out of the way while rolling (only shown in the lobby).
-player:GetAttributeChangedSignal("RunState"):Connect(function()
-	if shownStep ~= nil and shownStep < DONE and shownStep >= 1 then
-		banner.Visible = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+-- The whole tutorial (banner, arrows, distance) is hidden while on a course and comes
+-- back in the lobby, so nothing covers the run.
+local function applyCourseVisibility()
+	local inLobby = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+	gui.Enabled = inLobby
+	if inLobby and shownStep ~= nil and shownStep < DONE and shownStep >= 1 then
+		banner.Visible = true
 	end
-end)
+end
+player:GetAttributeChangedSignal("RunState"):Connect(applyCourseVisibility)
+applyCourseVisibility()
 
 -- While the Ball Shop is open, dock the instruction panel at the BOTTOM of the screen: on
 -- laptops and short windows it used to sit over the shop's X, so players could not leave it.

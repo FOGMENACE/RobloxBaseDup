@@ -64,8 +64,17 @@ local function choose(player, worldId)
 	return fastestEvolved(player, worldId)
 end
 
+local lastWorld = {} -- [player] = the world they were in before this move
+
+local function rawSpeed(ballId)
+	local definition = typeof(ballId) == "string" and PlayerDataService.GetBallDefinition(ballId)
+	return definition and definition.ForwardSpeed or 0
+end
+
 local function onWorldChanged(player)
 	local worldId = player:GetAttribute("World") or 1
+	local cameFrom = lastWorld[player]
+	lastWorld[player] = worldId
 	if worldId < 2 then
 		return
 	end
@@ -78,6 +87,14 @@ local function onWorldChanged(player)
 		return
 	end
 	local ballId = choose(player, worldId)
+	-- Coming DOWN from a higher world: the ball they last equipped there stays equipped
+	-- when it is at least as fast as what this world would pick. If it has no skin for
+	-- this world it rolls at the starter speed (WorldBallSpeed) until they equip one here.
+	local current = player:GetAttribute("EquippedBall")
+	if typeof(cameFrom) == "number" and cameFrom > worldId and typeof(current) == "string"
+		and PlayerDataService.OwnsBall(player, current) and rawSpeed(current) >= rawSpeed(ballId) then
+		ballId = nil
+	end
 	if ballId and ballId ~= player:GetAttribute("EquippedBall") then
 		applying[player] = true
 		local ok, err = pcall(function()
@@ -154,7 +171,7 @@ end
 
 Players.PlayerRemoving:Connect(function(player)
 	save(player)
-	memory[player], loaded[player], dirty[player], applying[player] = nil, nil, nil, nil
+	memory[player], loaded[player], dirty[player], applying[player], lastWorld[player] = nil, nil, nil, nil, nil
 end)
 
 game:BindToClose(function()

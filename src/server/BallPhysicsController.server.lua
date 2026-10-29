@@ -383,6 +383,7 @@ end
 --------------------------------------------------
 
 local WorldConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("WorldConfig"))
+local WorldBallSpeed = require(ServerScriptService:WaitForChild("WorldBallSpeed"))
 
 local function isBallInsideGenerator(ball, part, offset)
 
@@ -720,8 +721,8 @@ local function getForwardSpeed(
 				return definition.ForwardSpeed + 5
 			end
 		end
-
-		return definition.ForwardSpeed
+		-- a ball from another world (no skin for this one) rolls at the starter ball's speed
+		return WorldBallSpeed.ForBall(ball, definition.ForwardSpeed)
 
 	end
 

@@ -38,4 +38,12 @@ AdminConfig.WatchLimits = {
 -- give <player> wins|oil <amount>: the largest single support grant
 AdminConfig.MaxGrant = 10000000
 
+-- Who may use the GRANT commands (give wins/oil, grant ball/skin). Smaller than Admins on
+-- purpose: other admins can still moderate (kick, ban, inspect...) but cannot hand out
+-- currency or items unless their UserId is added HERE, in this script. Every grant also
+-- needs a typed one-time confirmation code. Set to {} to switch grants off completely.
+AdminConfig.CanGrant = {
+	[50333721] = true, -- owner (Studio account)
+}
+
 return AdminConfig

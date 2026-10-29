@@ -730,13 +730,25 @@ end
 -- LEVEL UP
 --------------------------------------------------
 
--- Levels come often, so the level-up sound is one short, clean UI "level up" (was a loud victory
--- fanfare on every level). It plays at most about once a second, and quick level-ups in a
--- row climb a little in pitch, so a streak feels rewarding instead of repetitive.
-local levelUpSound = create("Sound", {
-	SoundId = "rbxassetid://112485797063762", -- "UI - Level Up" (Creator Store); alternatives auditioned: 134821092416328, 105193542038988, 6079105785
-	Volume = 0.38,
-}, gui)
+-- Levels come often, so the level-up sound is built from the game's OWN ping (the same
+-- sound as wins, oil platforms and the win celebration): three quick notes rising as a
+-- major chord, so it matches the rest of the game and sits in key with cheerful music.
+--
+-- STREAK MELODY: level-ups that follow each other (within STREAK_GAP seconds) climb one
+-- step of a major pentatonic scale each time, so a run of level-ups plays a rising tune
+-- that keeps you going; a pause resets it to the bottom. Pentatonic steps never clash, so
+-- every combination sounds good. Kept clearly above the music (the music bus is separate).
+local LEVEL_PING = "rbxasset://sounds/electronicpingshort.wav"
+local LEVEL_NOTES = { 1, 1.26, 1.5 } -- playback-speed ratios of a major triad
+local STREAK_SCALE = { 1, 1.125, 1.26, 1.5, 1.68, 2 } -- major pentatonic, root to octave
+local STREAK_GAP = 4
+local levelNotes = {}
+for index = 1, #LEVEL_NOTES do
+	levelNotes[index] = create("Sound", {
+		SoundId = LEVEL_PING,
+		Volume = 0.5,
+	}, gui)
+end
 local lastChime, chimeStreak = 0, 0
 
 local function playLevelChime()
@@ -744,11 +756,22 @@ local function playLevelChime()
 	if now - lastChime < 0.9 then
 		return
 	end
-	chimeStreak = (now - lastChime < 4) and math.min(chimeStreak + 1, 6) or 0
+	if now - lastChime < STREAK_GAP then
+		chimeStreak = (chimeStreak % #STREAK_SCALE) + 1 -- climb, then start the tune again
+	else
+		chimeStreak = 1
+	end
 	lastChime = now
-	levelUpSound.PlaybackSpeed = 1 + chimeStreak * 0.04
-	levelUpSound.TimePosition = 0
-	levelUpSound:Play()
+	local base = STREAK_SCALE[chimeStreak]
+	for index, ratio in ipairs(LEVEL_NOTES) do
+		task.delay((index - 1) * 0.07, function()
+			local note = levelNotes[index]
+			note.PlaybackSpeed = base * ratio
+			note.Volume = 0.5 - (index - 1) * 0.06 -- the top note a touch softer, so it rings, not shrieks
+			note.TimePosition = 0
+			note:Play()
+		end)
+	end
 end
 
 local function levelUpBurst(newLevel)

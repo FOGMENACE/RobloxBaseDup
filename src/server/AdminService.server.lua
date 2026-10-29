@@ -205,7 +205,23 @@ commands.blockers = function(admin, args)
 	return true, table.concat(lines, "\n")
 end
 
-commands.give = function(_, args)
+-- GRANTS (give / grant) hand out currency or items, so they are locked twice:
+--   * only UserIds in AdminConfig.CanGrant may use them (a smaller list than Admins)
+--   * nothing happens until the admin types the one-time "confirm <code>" (60 s)
+local function canGrant(admin)
+	return AdminConfig.CanGrant ~= nil and AdminConfig.CanGrant[admin.UserId] == true
+end
+
+local function askToConfirm(admin, description, run)
+	local code = tostring(math.random(1000, 9999))
+	pending[admin] = { Code = code, Kind = "grant", Description = description, Run = run, Time = os.clock() }
+	return true, string.format("%s\nType:  confirm %s   (within %ds) or  cancel", description, code, AdminConfig.ConfirmSeconds)
+end
+
+commands.give = function(admin, args)
+	if not canGrant(admin) then
+		return false, "grants are not enabled for your account (AdminConfig.CanGrant)"
+	end
 	local target = findPlayer(args[1])
 	local what = (args[2] or ""):lower()
 	local amount = tonumber(args[3] or "")
@@ -216,15 +232,23 @@ commands.give = function(_, args)
 	if amount <= 0 or amount > (AdminConfig.MaxGrant or 1e7) then
 		return false, "amount must be 1 .. " .. tostring(AdminConfig.MaxGrant or 1e7)
 	end
-	local ok = what == "wins" and PlayerDataService.AddWins(target, amount) or PlayerDataService.AddOil(target, amount)
-	if not ok then
-		return false, "grant failed (data not loaded?)"
-	end
-	PlayerDataService.SavePlayer(target)
-	return true, string.format("gave %s %d %s", target.Name, amount, what)
+	return askToConfirm(admin, string.format("GIVE %s %d %s", target.Name, amount, what), function()
+		if not target.Parent then
+			return false, "player left"
+		end
+		local ok = what == "wins" and PlayerDataService.AddWins(target, amount) or PlayerDataService.AddOil(target, amount)
+		if not ok then
+			return false, "grant failed (data not loaded?)"
+		end
+		PlayerDataService.SavePlayer(target)
+		return true, string.format("gave %s %d %s", target.Name, amount, what)
+	end)
 end
 
-commands.grant = function(_, args)
+commands.grant = function(admin, args)
+	if not canGrant(admin) then
+		return false, "grants are not enabled for your account (AdminConfig.CanGrant)"
+	end
 	local target = findPlayer(args[1])
 	local what = (args[2] or ""):lower()
 	local ballId = args[3]
@@ -235,19 +259,29 @@ commands.grant = function(_, args)
 		if PlayerDataService.OwnsBall(target, ballId) then
 			return false, target.Name .. " already owns " .. ballId
 		end
-		if not PlayerDataService.AddOwnedBall(target, ballId) then
-			return false, "grant failed"
-		end
-		PlayerDataService.SavePlayer(target)
-		return true, "granted ball " .. ballId .. " to " .. target.Name
+		return askToConfirm(admin, string.format("GRANT %s the ball %s", target.Name, ballId), function()
+			if not target.Parent then
+				return false, "player left"
+			end
+			if not PlayerDataService.AddOwnedBall(target, ballId) then
+				return false, "grant failed"
+			end
+			PlayerDataService.SavePlayer(target)
+			return true, "granted ball " .. ballId .. " to " .. target.Name
+		end)
 	elseif what == "skin" then
 		local worldId = tonumber(args[4] or "")
 		local hook = ServerStorage:FindFirstChild("SkinService") and ServerStorage.SkinService:FindFirstChild("GrantSkin")
 		if not worldId or not hook then
 			return false, "usage: grant <name> skin <BallId> <world 2-4>"
 		end
-		local ok, message = hook:Invoke(target, ballId, worldId)
-		return ok == true, tostring(message)
+		return askToConfirm(admin, string.format("GRANT %s the %s skin for world %d", target.Name, ballId, worldId), function()
+			if not target.Parent then
+				return false, "player left"
+			end
+			local ok, message = hook:Invoke(target, ballId, worldId)
+			return ok == true, tostring(message)
+		end)
 	end
 	return false, "grant what? ball or skin"
 end
@@ -717,6 +751,12 @@ commands.confirm = function(admin, args)
 		return false, "wrong code"
 	end
 	pending[admin] = nil
+
+	if action.Kind == "grant" then
+		local ok, message = action.Run()
+		log(admin, "grant", action.Description, ok and "OK" or ("FAILED " .. tostring(message)))
+		return ok, message
+	end
 
 	if action.Kind == "restart" then
 		if action.Scope == "all" then

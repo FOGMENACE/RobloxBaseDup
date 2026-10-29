@@ -608,8 +608,10 @@ local function configurePreviewPlatform(
 			color or PREVIEW_COLOR
 
 
+		-- solid, not see-through: overlapping transparent green / red panels were re-sorted
+		-- every frame by the renderer and blinked between colours in the lobby
 		part.Transparency =
-			0.25
+			0
 
 	end
 

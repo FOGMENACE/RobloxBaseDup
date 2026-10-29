@@ -224,6 +224,8 @@ local function oilToTravel(oil, ball, player)
 	local ballId = ball and ball:GetAttribute("BallId")
 	if okBalls and typeof(ballId) == "string" and balls[ballId] and typeof(balls[ballId].ForwardSpeed) == "number" then
 		speed = balls[ballId].ForwardSpeed
+		-- a ball from another world counts as the starter ball here (WorldBallSpeed)
+		speed = require(ServerScriptService:WaitForChild("WorldBallSpeed")).Effective(player, ballId, speed)
 	end
 	local ballFactor = 0.7 + 0.6 * math.clamp((speed - 50) / 100, 0, 1)
 
