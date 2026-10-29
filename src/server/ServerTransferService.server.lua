@@ -41,16 +41,33 @@ local function remote(name)
 end
 local afkRejoin = remote("AfkRejoin")
 local transferNotice = remote("ServerTransferNotice") -- server -> client: show loading screen
+local connectionRejoin = remote("ConnectionRejoin") -- client -> server: weak connection, move me
 
 local lastAfk = {}
 local pending = {}
+local lastConnection = {}
 
-local function teleport(players, sameServer, reason)
+-- Rejoin attempts already used by this player's session lineage (carried in the teleport data),
+-- so a connection that never recovers cannot loop forever.
+local MAX_CONNECTION_RETRIES = 2
+local CONNECTION_COOLDOWN = 90
+local function connectionAttempts(player)
+	local ok, joinData = pcall(function()
+		return player:GetJoinData()
+	end)
+	local data = ok and joinData and joinData.TeleportData
+	if typeof(data) == "table" and typeof(data.ConnAttempt) == "number" then
+		return math.clamp(data.ConnAttempt, 0, 10)
+	end
+	return 0
+end
+
+local function teleport(players, sameServer, reason, attempt)
 	local options = Instance.new("TeleportOptions")
 	if sameServer and game.JobId ~= "" then
 		options.ServerInstanceId = game.JobId
 	end
-	options:SetTeleportData({ Transfer = reason })
+	options:SetTeleportData({ Transfer = reason, ConnAttempt = attempt or 0 })
 	return pcall(function()
 		TeleportService:TeleportAsync(game.PlaceId, players, options)
 	end)
@@ -71,14 +88,55 @@ afkRejoin.OnServerEvent:Connect(function(player)
 		return
 	end
 	pending[player] = "afk"
-	local ok, err = teleport({ player }, true, "afk")
+	local ok, err = teleport({ player }, true, "afk", connectionAttempts(player))
 	if not ok then
-		ok, err = teleport({ player }, false, "afk")
+		ok, err = teleport({ player }, false, "afk", connectionAttempts(player))
 	end
 	if not ok then
 		warn("[ServerTransfer] AFK rejoin failed:", player.Name, err)
 		pending[player] = nil
 	end
+end)
+
+--------------------------------------------------
+-- WEAK CONNECTION REJOIN
+--
+-- The client (ConnectionWatch) asks for this when its connection is clearly bad: assets and
+-- sounds failing to download, a very high ping for a long time, or loading that never finishes.
+-- The player is moved back into THIS server (any server if it is full or closed) with the
+-- branded loading screen, which reloads everything over a fresh connection. The client only
+-- asks; this side decides (cooldown, a cap per session, never in Studio).
+--------------------------------------------------
+
+connectionRejoin.OnServerEvent:Connect(function(player)
+	local now = os.clock()
+	if pending[player] or (lastConnection[player] and now - lastConnection[player] < CONNECTION_COOLDOWN) then
+		return
+	end
+	local attempt = connectionAttempts(player)
+	if attempt >= MAX_CONNECTION_RETRIES then
+		return
+	end
+	lastConnection[player] = now
+	if RunService:IsStudio() then
+		print("[ServerTransfer] connection rejoin requested by", player.Name, "(teleports do not run in Studio)")
+		return
+	end
+	pending[player] = "connection"
+	transferNotice:FireClient(player, "Weak connection - moving you back into your server...")
+	task.delay(1.5, function()
+		if not player.Parent then
+			return
+		end
+		local ok = teleport({ player }, true, "connection", attempt + 1)
+		if not ok then
+			ok = teleport({ player }, false, "connection", attempt + 1)
+		end
+		if not ok then
+			warn("[ServerTransfer] connection rejoin failed:", player.Name)
+			pending[player] = nil
+		end
+	end)
 end)
 
 TeleportService.TeleportInitFailed:Connect(function(player, result, message)
@@ -89,9 +147,9 @@ TeleportService.TeleportInitFailed:Connect(function(player, result, message)
 	pending[player] = nil
 	warn("[ServerTransfer] teleport failed:", player.Name, result, message)
 	-- the same server is full / closing: any server of the game instead
-	if reason == "afk" and (result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.GameEnded) then
+	if (reason == "afk" or reason == "connection") and (result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.GameEnded) then
 		pending[player] = reason
-		teleport({ player }, false, reason)
+		teleport({ player }, false, reason, connectionAttempts(player) + (reason == "connection" and 1 or 0))
 	end
 end)
 
@@ -192,5 +250,6 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	lastAfk[player] = nil
+	lastConnection[player] = nil
 	pending[player] = nil
 end)

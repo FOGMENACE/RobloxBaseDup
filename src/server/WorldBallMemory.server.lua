@@ -13,6 +13,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local DataRetry = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ServerStorage = game:GetService("ServerStorage")
@@ -139,9 +140,7 @@ end
 
 local function onJoin(player)
 	memory[player] = {}
-	local ok, data = pcall(function()
-		return store:GetAsync(tostring(player.UserId))
-	end)
+	local ok, data = DataRetry.Get(store, tostring(player.UserId))
 	if ok and typeof(data) == "table" then
 		for key, ballId in pairs(data) do
 			local worldId = tonumber(key)

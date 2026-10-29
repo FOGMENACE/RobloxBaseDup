@@ -52,8 +52,8 @@ local function step()
 						local position = button.AbsolutePosition
 						local size = button.AbsoluteSize
 						item.Visual.Position = UDim2.fromOffset(
-							position.X - origin.X + size.X + item.Dx,
-							position.Y - origin.Y + item.Dy
+							math.round(position.X - origin.X + size.X + item.Dx), -- whole pixels: text on a half pixel looks blurry
+							math.round(position.Y - origin.Y + item.Dy)
 						)
 
 						if item.Visual.Text ~= original.Text then

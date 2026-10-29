@@ -12,6 +12,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local DataRetry = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -239,9 +240,7 @@ end
 local function onJoin(player)
 	owned[player] = {}
 	player:SetAttribute("Skins", "")
-	local ok, data = pcall(function()
-		return store:GetAsync(tostring(player.UserId))
-	end)
+	local ok, data = DataRetry.Get(store, tostring(player.UserId))
 	if not player.Parent then
 		return
 	end

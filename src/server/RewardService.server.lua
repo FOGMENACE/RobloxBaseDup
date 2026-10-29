@@ -15,6 +15,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local DataRetry = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService = game:GetService("DataStoreService")
@@ -73,9 +74,7 @@ local function publishLeave(player, nextAt)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	local ok, value = pcall(function()
-		return leaveStore:GetAsync(key(player))
-	end)
+	local ok, value = DataRetry.Get(leaveStore, key(player))
 	if player.Parent then
 		publishLeave(player, ok and tonumber(value) or 0)
 	end
@@ -83,9 +82,7 @@ end)
 
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(function()
-		local ok, value = pcall(function()
-			return leaveStore:GetAsync(key(player))
-		end)
+		local ok, value = DataRetry.Get(leaveStore, key(player))
 		publishLeave(player, ok and tonumber(value) or 0)
 	end)
 end
@@ -154,16 +151,12 @@ local function isMember(player)
 end
 
 local function hasFavorited(player)
-	local ok, value = pcall(function()
-		return flagStore:GetAsync("Flags_" .. tostring(player.UserId))
-	end)
+	local ok, value = DataRetry.Get(flagStore, "Flags_" .. tostring(player.UserId), 3)
 	return ok and typeof(value) == "table" and value.FavoriteVerified == true
 end
 
 local function alreadyClaimed(player)
-	local ok, value = pcall(function()
-		return communityStore:GetAsync(key(player))
-	end)
+	local ok, value = DataRetry.Get(communityStore, key(player), 3)
 	if not ok then
 		return nil
 	end

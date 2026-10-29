@@ -246,11 +246,10 @@ do
 			end
 		end
 	end
-	task.spawn(function()
-		while true do
-			task.wait(0.4)
-			pcall(alignWinsToBoost)
-		end
+	-- every frame (cheap, exits as soon as the two are level): the x2 WINS column moves when a
+	-- tile appears or the window resizes, and a slow poll left the trophy visibly off in between
+	RunService.RenderStepped:Connect(function()
+		pcall(alignWinsToBoost)
 	end)
 end
 
@@ -542,25 +541,24 @@ local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE
 
 -- Percent to the next rebirth, floating over the REBIRTH button.
 -- The percentage floats OVER the REBIRTH button's top-right corner: no box, just big bright
--- outlined text, slightly tilted. It is drawn in the hub's overlay layer (BadgeOverlay), so the
+-- outlined text. It is drawn in the hub's overlay layer (BadgeOverlay), so the
 -- buttons around it can never cover or cut it off.
 local PERCENT_GREEN = Color3.fromRGB(120, 255, 120)
 local rebirthPercent = create("TextLabel", {
 	Name = "RebirthPercent",
 	AnchorPoint = Vector2.new(1, 0),
 	Position = UDim2.new(1, 0, 0, 0),
-	Size = UDim2.fromOffset(78, 30),
-	Rotation = 10,
+	Size = UDim2.fromOffset(90, 30),
 	BackgroundTransparency = 1,
 	Font = FONT,
 	Text = "0%",
 	TextColor3 = PERCENT_GREEN,
-	TextScaled = true,
+	TextSize = 24, -- fixed size, no tilt and no scaling: rotated or scaled text is resampled and looks blurry
+	TextXAlignment = Enum.TextXAlignment.Right,
 	ZIndex = 7,
 }, rebirthButton.Button)
-create("UITextSizeConstraint", { MaxTextSize = 24, MinTextSize = 10 }, rebirthPercent)
 outline(rebirthPercent, INK, 3)
-BadgeOverlay.Attach(rebirthPercent, rebirthButton.Button, { Dx = 14, Dy = -16 })
+BadgeOverlay.Attach(rebirthPercent, rebirthButton.Button, { Dx = 10, Dy = -14 })
 
 local function refreshRebirthPercent()
 	local level = player:GetAttribute("Level") or 1

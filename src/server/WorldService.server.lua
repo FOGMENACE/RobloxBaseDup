@@ -10,6 +10,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local DataRetry = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Workspace = game:GetService("Workspace")
@@ -652,9 +653,7 @@ local function onJoin(player)
 			player:SetAttribute("WorldReady", true)
 		end
 	end
-	local ok, saved = pcall(function()
-		return store:GetAsync(tostring(player.UserId))
-	end)
+	local ok, saved = DataRetry.Get(store, tostring(player.UserId), 3)
 	if not ok or typeof(saved) ~= "number" or saved <= 1 then
 		ready()
 		return

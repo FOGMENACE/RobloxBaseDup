@@ -13,6 +13,7 @@
 --------------------------------------------------
 
 local Players = game:GetService("Players")
+local DataRetry = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 
@@ -52,9 +53,7 @@ local function loadPlayer(player)
 	local state = { Favorite = false, Loaded = false }
 	flags[player] = state
 
-	local ok, value = pcall(function()
-		return store:GetAsync(key(player))
-	end)
+	local ok, value = DataRetry.Get(store, key(player))
 
 	if ok then
 		-- FavoriteVerified: older "Favorite" flags were wrongly set when a
