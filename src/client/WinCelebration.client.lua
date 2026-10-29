@@ -89,6 +89,15 @@ local gui = create("ScreenGui", {
 	DisplayOrder = 40,
 }, playerGui)
 
+-- Screen factor: the banner and the big win numbers were drawn for a big monitor and filled a
+-- whole phone screen. `fit` shrinks them to the screen; `compact` (short screens) also moves
+-- them up and shortens how long they stay, so the player can line up the next roll at once.
+local function screenFit()
+	local camera = workspace.CurrentCamera
+	local size = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	return math.clamp(math.min(size.Y / 720, size.X / 1100), 0.4, 1), size.Y < 600
+end
+
 --------------------------------------------------
 -- COUNTDOWN
 --------------------------------------------------
@@ -275,14 +284,16 @@ local liveLabel = create("TextLabel", {
 	ZIndex = 65,
 }, gui)
 addStroke(liveLabel, 6)
-local liveScale = create("UIScale", { Scale = 1 }, liveLabel)
+local liveBase = (screenFit())
+local liveScale = create("UIScale", { Scale = liveBase }, liveLabel)
 
 local function addLive(amount)
 	liveTotal += amount
 	liveLabel.Visible = true
 	liveLabel.Text = "+" .. commas(liveTotal)
-	liveScale.Scale = 1.18
-	TweenService:Create(liveScale, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	liveBase = (screenFit())
+	liveScale.Scale = 1.18 * liveBase
+	TweenService:Create(liveScale, TweenInfo.new(0.2, Enum.EasingStyle.Back), { Scale = liveBase }):Play()
 end
 
 local function resetLive()
@@ -298,6 +309,7 @@ local celebrating = false
 --   WinRunRebirthMult / WinRunBoostMult multipliers that were applied
 --   WinRunCredited what was actually added to the player's wins
 local function showResult()
+	local fit, compact = screenFit()
 	local base = player:GetAttribute("WinRunBase") or 0
 	local credited = player:GetAttribute("WinRunCredited") or 0
 	local rebirthMult = player:GetAttribute("WinRunRebirthMult") or 1
@@ -310,7 +322,7 @@ local function showResult()
 	-- 1) banner
 	local banner = create("TextLabel", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.29),
+		Position = UDim2.fromScale(0.5, compact and 0.17 or 0.29),
 		Size = UDim2.fromOffset(640, 70),
 		BackgroundTransparency = 1,
 		Font = FONT,
@@ -321,14 +333,14 @@ local function showResult()
 	}, gui)
 	addStroke(banner, 6)
 	local bannerScale = create("UIScale", { Scale = 0 }, banner)
-	TweenService:Create(bannerScale, TweenInfo.new(0.45, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	TweenService:Create(bannerScale, TweenInfo.new(0.45, Enum.EasingStyle.Back), { Scale = fit }):Play()
 	play(FANFARE_SOUND, 0.6)
 
 
 	-- 3) big total, counting up from the tile sum
 	local total = create("TextLabel", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.53),
+		Position = UDim2.fromScale(0.5, compact and 0.34 or 0.53),
 		Size = UDim2.fromOffset(800, 140),
 		BackgroundTransparency = 1,
 		Font = FONT,
@@ -342,8 +354,8 @@ local function showResult()
 		Color = ColorSequence.new(Color3.fromRGB(255, 250, 170), Color3.fromRGB(255, 160, 30)),
 		Rotation = 90,
 	}, total)
-	local totalScale = create("UIScale", { Scale = 0.3 }, total)
-	TweenService:Create(totalScale, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	local totalScale = create("UIScale", { Scale = 0.3 * fit }, total)
+	TweenService:Create(totalScale, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Scale = fit }):Play()
 	confetti()
 	task.wait(1.0)
 
@@ -367,8 +379,8 @@ local function showResult()
 		-- the number multiplies with a punch
 		local from = shown
 		shown = shown * multiplier
-		totalScale.Scale = 1.35
-		TweenService:Create(totalScale, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+		totalScale.Scale = 1.35 * fit
+		TweenService:Create(totalScale, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Scale = fit }):Play()
 		play(FANFARE_SOUND, 0.45, 1 + multiplier * 0.05)
 		-- count up: longer for bigger jumps, and it speeds up as it goes
 		local jump = math.max(shown - from, 1)
@@ -431,14 +443,15 @@ local function showResult()
 	-- 5) final: the exact amount the server credited
 	total.Text = "+" .. commas(credited) .. " WINS!"
 	-- the final total GROWS and stays bigger while it is on screen
-	totalScale.Scale = 1.0
-	TweenService:Create(totalScale, TweenInfo.new(0.55, Enum.EasingStyle.Back), { Scale = 1.45 }):Play()
+	totalScale.Scale = fit
+	-- the final number grows a little (a lot on a big screen, only slightly on a phone)
+	TweenService:Create(totalScale, TweenInfo.new(0.55, Enum.EasingStyle.Back), { Scale = fit * (compact and 1.12 or 1.45) }):Play()
 	confetti()
 	play(FANFARE_SOUND, 0.7)
 	task.wait(0.5)
 	confetti()
 
-	task.wait(2.4)
+	task.wait(compact and 1.5 or 2.4)
 	TweenService:Create(totalScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 }):Play()
 	TweenService:Create(bannerScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 0 }):Play()
 	task.wait(0.4)
