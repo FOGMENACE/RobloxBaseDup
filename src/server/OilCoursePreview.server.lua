@@ -94,6 +94,37 @@ local START_POSITION =
 -- PREVIEW COLOR
 --------------------------------------------------
 
+-- Preview colours (see previewColors below). The first row always shows one green and one red
+-- platform, like the real course (OilCourseGenerator).
+local PREVIEW_GREEN = Color3.fromRGB(40, 222, 72)
+local PREVIEW_RED = Color3.fromRGB(236, 42, 52)
+local previewRng = Random.new()
+-- Every row gets believable green / red colours (mostly one of each, now and then two of a kind);
+-- the first row is always green + red. The "???" labels still hide the amounts.
+local rowColors = {} -- [rowNumber] = { Left, Right }
+local function previewColors(rowNumber)
+	local cached = rowColors[rowNumber]
+	if cached then
+		return cached
+	end
+	local roll = previewRng:NextNumber()
+	local leftGreen, rightGreen
+	if rowNumber == 1 or roll >= 0.3 then
+		leftGreen = previewRng:NextInteger(0, 1) == 1
+		rightGreen = not leftGreen
+	elseif roll < 0.15 then
+		leftGreen, rightGreen = true, true
+	else
+		leftGreen, rightGreen = false, false
+	end
+	cached = {
+		Left = leftGreen and PREVIEW_GREEN or PREVIEW_RED,
+		Right = rightGreen and PREVIEW_GREEN or PREVIEW_RED,
+	}
+	rowColors[rowNumber] = cached
+	return cached
+end
+
 local PREVIEW_COLOR =
 	Color3.fromRGB(
 		100,
@@ -504,7 +535,8 @@ end
 --------------------------------------------------
 
 local function configurePreviewPlatform(
-	platform
+	platform,
+	color
 )
 
 	if not platform then
@@ -573,7 +605,7 @@ local function configurePreviewPlatform(
 
 
 		part.Color =
-			PREVIEW_COLOR
+			color or PREVIEW_COLOR
 
 
 		part.Transparency =
@@ -721,7 +753,8 @@ for rowNumber = 1, NUMBER_OF_ROWS do
 	if left then
 
 		configurePreviewPlatform(
-			left
+			left,
+			previewColors(rowNumber).Left
 		)
 
 	end
@@ -734,7 +767,8 @@ for rowNumber = 1, NUMBER_OF_ROWS do
 	if right then
 
 		configurePreviewPlatform(
-			right
+			right,
+			previewColors(rowNumber).Right
 		)
 
 	end

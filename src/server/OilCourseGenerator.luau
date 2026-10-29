@@ -904,6 +904,24 @@ local function buildPolarityPlan(platformCount)
 			plan[swapIndex], plan[index]
 	end
 
+	-- The FIRST row is always one green and one red (never red + red, never green + green),
+	-- in a random order. The rest of the plan is rearranged only by swapping, so the
+	-- course keeps exactly the same number of green and red platforms.
+	if #plan >= 4 then
+		local greenFirst = rng:NextInteger(0, 1) == 1
+		local wanted = { greenFirst, not greenFirst }
+		for slot = 1, 2 do
+			if plan[slot] ~= wanted[slot] then
+				for other = 3, #plan do
+					if plan[other] == wanted[slot] then
+						plan[slot], plan[other] = plan[other], plan[slot]
+						break
+					end
+				end
+			end
+		end
+	end
+
 	return plan
 end
 
