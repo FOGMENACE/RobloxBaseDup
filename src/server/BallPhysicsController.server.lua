@@ -993,6 +993,68 @@ end
 
 
 --------------------------------------------------
+-- STUCK LOBBY BALL
+--
+-- If the player holds a direction but the ball has not moved for a moment
+-- (wedged into the floor after a landing, ownership hiccup), and no wall is in
+-- the way, the server pops it up a little and hands ownership back so it rolls
+-- again. Pushing against a real wall is left alone.
+--------------------------------------------------
+
+local stuckTime = {}
+local lastUnstick = {}
+
+local function unstickLobbyBall(player, ball, runState, input, previousPosition, currentPosition, deltaTime)
+	if runState ~= "Waiting"
+		or not previousPosition
+		or typeof(input) ~= "Vector2"
+		or input.Magnitude < 0.5
+		or ball.Anchored
+		or ball:GetAttribute("WinCourseActive") == true then
+		stuckTime[player] = 0
+		return
+	end
+
+	local moved = Vector3.new(currentPosition.X - previousPosition.X, 0, currentPosition.Z - previousPosition.Z).Magnitude
+	if moved > LOBBY_SPEED * deltaTime * 0.15 then
+		stuckTime[player] = 0
+		return
+	end
+
+	stuckTime[player] = (stuckTime[player] or 0) + deltaTime
+	if stuckTime[player] < 0.6 or os.clock() - (lastUnstick[player] or 0) < 1.5 then
+		return
+	end
+
+	local radius = ball.Size.Y * 0.5
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { ball.Parent }
+	params.CollisionGroup = ball.CollisionGroup -- only what can really block this ball
+	params.RespectCanCollide = true
+	local direction = Vector3.new(input.X, 0, input.Y).Unit
+	if workspace:Raycast(currentPosition, direction * (radius + 1), params) then
+		stuckTime[player] = 0
+		return -- a wall: nothing to fix
+	end
+
+	stuckTime[player] = 0
+	lastUnstick[player] = os.clock()
+	ball.AssemblyAngularVelocity = Vector3.zero
+	ball.CFrame = ball.CFrame + Vector3.new(0, 0.6, 0)
+	ball.AssemblyLinearVelocity = Vector3.new(0, 8, 0)
+	pcall(function()
+		ball:SetNetworkOwner(player)
+	end)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	stuckTime[player] = nil
+	lastUnstick[player] = nil
+end)
+
+
+--------------------------------------------------
 -- LOBBY BALL SCALE
 --
 -- Balls are a little smaller in the lobby (Waiting) and pop up to
@@ -1710,6 +1772,15 @@ end
 					currentXZ - previousXZ
 				).Magnitude
 
+				-- Jumping in place counts as moving: vertical travel earns XP at
+				-- most at the lobby rolling rate, and only the larger of the two
+				-- counts (never added), so jumping while rolling is not double XP.
+				local verticalDistance = math.min(
+					math.abs(currentPosition.Y - previousPosition.Y),
+					LOBBY_SPEED * deltaTime
+				)
+				distance = math.max(distance, verticalDistance)
+
 				-- Client-owned lobby ball: never credit more distance than
 				-- the legal lobby speed allows (+ small tolerance), so a
 				-- teleporting or speed-hacked ball cannot farm XP.
@@ -1827,6 +1898,8 @@ local awardedXP = math.floor(
 				end
 			end
 
+
+			unstickLobbyBall(player, ball, runState, input, previousPosition, currentPosition, deltaTime)
 
 			lastBallPositions[player] =
 				currentPosition

@@ -281,3 +281,11 @@ local function refreshFriends()
 end
 player:GetAttributeChangedSignal("FriendBonusPct"):Connect(refreshFriends)
 refreshFriends()
+
+-- Lobby only: on a course (oil or win) the screen is kept clear for the run.
+local function refreshVisible()
+	local state = player:GetAttribute("RunState")
+	gui.Enabled = state == nil or state == "" or state == "Waiting"
+end
+player:GetAttributeChangedSignal("RunState"):Connect(refreshVisible)
+refreshVisible()

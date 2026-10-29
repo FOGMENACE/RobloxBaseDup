@@ -1283,6 +1283,8 @@ player:GetAttributeChangedSignal("RunState"):Connect(function()
 	if state == "Starting" or state == "Running" then
 		PanelManager.CloseAll()
 	end
+	-- on a course (oil or win) only the wins trophy stays; the hub buttons come back in the lobby
+	grid.Visible = state == nil or state == "" or state == "Waiting"
 end)
 
 local function setCalendarOpen(open)

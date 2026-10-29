@@ -139,9 +139,11 @@ end
 
 local cachedControls = nil
 
--- On-screen joystick state (touch devices without Roblox's PlayerModule, which
--- this place does not ship). x = right, z = forward, both -1..1.
+-- On-screen joystick state (touch devices; Roblox's own thumbstick is turned off
+-- by TouchControls on the server). x = right, z = forward, both -1..1.
 local stickX, stickZ = 0, 0
+-- Oil-course arrow buttons (touch): -1 left, 0, 1 right.
+local arrowX = 0
 
 local function getControls()
 	if cachedControls then
@@ -259,6 +261,10 @@ local function updateKeys()
 
 	if x == 0 and z == 0 and (stickX ~= 0 or stickZ ~= 0) then
 		x, z = stickX, stickZ
+	end
+
+	if x == 0 and arrowX ~= 0 then
+		x = arrowX
 	end
 
 	inputX = x
@@ -965,9 +971,9 @@ if UserInputService.TouchEnabled then
 end
 
 -- On-screen joystick: a floating stick that appears where the left-hand thumb
--- lands (left 45% of the screen, outside any button/panel). Only used when
--- Roblox's own control module is absent, so there is never a second stick.
-if UserInputService.TouchEnabled and not getControls() then
+-- lands (left 45% of the screen, outside any button/panel). It is the only
+-- stick: Roblox's thumbstick is off (TouchControls), and it is lobby-only.
+if UserInputService.TouchEnabled then
 	local STICK_RADIUS = 60
 	local sGui = Instance.new("ScreenGui")
 	sGui.Name = "BallJoystick"
@@ -999,7 +1005,14 @@ if UserInputService.TouchEnabled and not getControls() then
 	local knob = circle(54, 0.88)
 	local baseStroke = base:FindFirstChildOfClass("UIStroke")
 	local knobStroke = knob:FindFirstChildOfClass("UIStroke")
+	-- resting spot sits right of the bottom-left rebirth panel so it never covers it
 	local restPos = UDim2.new(0, 110, 1, -110)
+	local function placeRest()
+		local cam = workspace.CurrentCamera
+		local size = cam and cam.ViewportSize or Vector2.new(800, 400)
+		restPos = UDim2.fromOffset(math.clamp(size.X * 0.27, 160, 300), size.Y - 90)
+	end
+	placeRest()
 	base.Position = restPos
 	knob.Position = restPos
 
@@ -1031,7 +1044,8 @@ if UserInputService.TouchEnabled and not getControls() then
 	end
 
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed or activeTouch or input.UserInputType ~= Enum.UserInputType.Touch then
+		if processed or activeTouch or input.UserInputType ~= Enum.UserInputType.Touch
+			or not sGui.Enabled then
 			return
 		end
 		local cam = workspace.CurrentCamera
@@ -1061,6 +1075,110 @@ if UserInputService.TouchEnabled and not getControls() then
 	end)
 
 	UserInputService.WindowFocusReleased:Connect(release)
+
+	-- lobby only: on a course the arrow buttons steer instead
+	RunService.RenderStepped:Connect(function()
+		local inLobby = getRunState() == nil or getRunState() == "Waiting"
+		if sGui.Enabled ~= inLobby then
+			sGui.Enabled = inLobby
+			release()
+		end
+		if not activeTouch then
+			placeRest()
+			base.Position = restPos
+			knob.Position = restPos
+		end
+	end)
+
+	----------------------------------------------
+	-- OIL COURSE ARROWS: two big see-through buttons, hold to steer
+	-- left/right. Shown only while on the oil course (Starting/Running).
+	----------------------------------------------
+	local aGui = Instance.new("ScreenGui")
+	aGui.Name = "BallArrowControls"
+	aGui.ResetOnSpawn = false
+	aGui.DisplayOrder = 5
+	aGui.IgnoreGuiInset = true
+	aGui.Enabled = false
+	aGui.Parent = player:WaitForChild("PlayerGui")
+
+	local held = { [-1] = 0, [1] = 0 } -- touches holding each side
+
+	local function arrowButton(dir)
+		local b = Instance.new("TextButton")
+		b.Name = dir < 0 and "LeftArrow" or "RightArrow"
+		b.AutoButtonColor = false
+		b.AnchorPoint = Vector2.new(dir < 0 and 0 or 1, 0.5)
+		b.Position = UDim2.new(dir < 0 and 0 or 1, dir < 0 and 28 or -28, 0.66, 0)
+		b.Size = UDim2.fromScale(0.24, 0.24)
+		b.BackgroundColor3 = Color3.new(1, 1, 1)
+		b.BackgroundTransparency = 0.72
+		b.Text = ""
+		b.Parent = aGui
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0.22, 0)
+		local ar = Instance.new("UIAspectRatioConstraint")
+		ar.AspectRatio = 1
+		ar.DominantAxis = Enum.DominantAxis.Height
+		ar.Parent = b
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.new(1, 1, 1)
+		s.Transparency = 0.45
+		s.Thickness = 3
+		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		s.Parent = b
+
+		local glyph = Instance.new("TextLabel")
+		glyph.BackgroundTransparency = 1
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		glyph.Size = UDim2.fromScale(0.62, 0.62)
+		glyph.Rotation = dir < 0 and 180 or 0
+		glyph.Font = Enum.Font.FredokaOne
+		glyph.Text = "➡"
+		glyph.TextScaled = true
+		glyph.TextColor3 = Color3.new(1, 1, 1)
+		glyph.TextTransparency = 0.15
+		glyph.Parent = b
+
+		local function refresh()
+			b.BackgroundTransparency = held[dir] > 0 and 0.5 or 0.72
+			arrowX = (held[1] > 0 and 1 or 0) - (held[-1] > 0 and 1 or 0)
+		end
+		b.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch
+				or input.UserInputType == Enum.UserInputType.MouseButton1 then
+				held[dir] += 1
+				refresh()
+			end
+		end)
+		b.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch
+				or input.UserInputType == Enum.UserInputType.MouseButton1 then
+				held[dir] = math.max(held[dir] - 1, 0)
+				refresh()
+			end
+		end)
+		return refresh
+	end
+
+	local refreshLeft = arrowButton(-1)
+	local refreshRight = arrowButton(1)
+
+	local function clearArrows()
+		held[-1], held[1] = 0, 0
+		refreshLeft()
+		refreshRight()
+	end
+	UserInputService.WindowFocusReleased:Connect(clearArrows)
+
+	RunService.RenderStepped:Connect(function()
+		local state = getRunState()
+		local onCourse = state == "Starting" or state == "Running"
+		if aGui.Enabled ~= onCourse then
+			aGui.Enabled = onCourse
+			clearArrows()
+		end
+	end)
 end
 
 if UserInputService.TouchEnabled then

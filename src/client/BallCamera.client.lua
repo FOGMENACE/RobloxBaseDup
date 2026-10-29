@@ -260,6 +260,22 @@ local COURSE_LOOK_HEIGHT =
 local COURSE_FOV =
 	70
 
+-- Small / touch screens see less around the ball, so the camera pulls back a
+-- little and widens on them (1 on a big monitor, up to ~1.15 on a phone).
+local function roomy()
+	local camera = workspace.CurrentCamera
+	local height = camera and camera.ViewportSize.Y or 800
+	local extra = math.clamp((800 - height) / 400, 0, 1) * 0.15
+	if UserInputService.TouchEnabled then
+		extra = math.max(extra, 0.1)
+	end
+	return 1 + extra
+end
+
+local function roomyFov()
+	return (roomy() - 1) * 40
+end
+
 
 --------------------------------------------------
 -- GET PLAYER BALL
@@ -744,7 +760,7 @@ local function updateLobbyCamera(
 	local cameraPosition =
 		getLobbyOrbitPosition(
 			ballPosition,
-			zoom.distance
+			zoom.distance * roomy()
 		)
 
 
@@ -819,7 +835,7 @@ local function updateLobbyCamera(
 	--------------------------------------------------
 
 	camera.FieldOfView =
-		zoom.fov
+		zoom.fov + roomyFov()
 
 
 	--------------------------------------------------
@@ -901,10 +917,10 @@ local function updateCourseCamera(
 	local isWin = ball:GetAttribute("WinCourseActive") == true
 	-- (aimed almost AT the ball so it sits in the middle of the frame, which
 	-- is also where the dash streaks converge)
-	local viewDistance = isWin and 19 or COURSE_DISTANCE
-	local viewHeight = isWin and 11 or COURSE_HEIGHT
+	local viewDistance = (isWin and 19 or COURSE_DISTANCE) * roomy()
+	local viewHeight = (isWin and 11 or COURSE_HEIGHT) * roomy()
 	local viewAhead = isWin and 2 or COURSE_LOOK_AHEAD
-	local baseFov = isWin and 64 or COURSE_FOV
+	local baseFov = (isWin and 64 or COURSE_FOV) + roomyFov()
 
 	-- SETTLE: when the ball slows to a stop (out of oil) the camera eases in a
 	-- little closer and lower and the view narrows, so the end of the run

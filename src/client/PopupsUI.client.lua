@@ -867,7 +867,9 @@ do
 	end
 	task.spawn(function()
 		while true do
-			cardGui.Enabled = not (PanelManagerForCard.AnyOpen() or overlayOpen() or leaveFrame.Visible)
+			local runState = player:GetAttribute("RunState")
+			local onCourse = runState ~= nil and runState ~= "" and runState ~= "Waiting"
+			cardGui.Enabled = not (onCourse or PanelManagerForCard.AnyOpen() or overlayOpen() or leaveFrame.Visible)
 			task.wait(0.1)
 		end
 	end)

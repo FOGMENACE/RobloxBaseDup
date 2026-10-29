@@ -78,9 +78,10 @@ overlay.Enabled = false
 pcall(function()
 	overlay.ScreenInsets = Enum.ScreenInsets.None
 end)
--- this one must stay readable in whatever orientation the device is in
+-- landscape like everything else: a "Sensor" overlay would let the device turn
+-- portrait again and keep the prompt up instead of auto-rotating
 pcall(function()
-	overlay.ScreenOrientation = Enum.ScreenOrientation.Sensor
+	overlay.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
 end)
 overlay.Parent = playerGui
 
@@ -165,9 +166,22 @@ local function isPortrait()
 	return size.Y > size.X
 end
 
+-- The screen is locked to landscape, so the device normally turns by itself. The prompt
+-- only shows when it is still portrait after a short wait (rotation lock on, etc.).
+local portraitSince = nil
+local PORTRAIT_GRACE = 2
+
 local function update()
 	-- never on a PC / touch laptop: the overlay only exists for phones and tablets
 	local portrait = isMobileDevice() and isPortrait()
+	if not portrait then
+		portraitSince = nil
+	elseif not portraitSince then
+		portraitSince = os.clock()
+		task.delay(PORTRAIT_GRACE + 0.05, update)
+	end
+	portrait = portrait and os.clock() - portraitSince >= PORTRAIT_GRACE
+		or (portrait and player:GetAttribute("OrientationTest") == "portrait")
 	overlay.Enabled = portrait
 	if portrait then
 		local size = viewportSize()

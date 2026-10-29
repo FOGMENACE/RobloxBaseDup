@@ -37,7 +37,8 @@ task.spawn(function()
 					local dt = math.max(now - previous.Time, 0.05)
 					local flat = Vector3.new(ball.Position.X - previous.Position.X, 0, ball.Position.Z - previous.Position.Z)
 					local speed = flat.Magnitude / dt
-					local outOfRoom = ball.Position.Y < spawnPad.Position.Y - 60 or ball.Position.Y > spawnPad.Position.Y + 120
+					-- fell under the lobby floor (nothing to land on 25 studs down): straight back to the pad
+					local outOfRoom = ball.Position.Y < spawnPad.Position.Y - 25 or ball.Position.Y > spawnPad.Position.Y + 120
 
 					if speed > MAX_LOBBY_SPEED or outOfRoom then
 						ball.AssemblyLinearVelocity = Vector3.zero
