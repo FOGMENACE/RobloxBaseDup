@@ -10,6 +10,13 @@
 
 local Players = game:GetService("Players")
 
+-- Switched OFF for now: the game does not offer Roblox's "get notified" prompt. Set to true
+-- when the reminders (and their changelog note) are ready to go live.
+local NOTIFICATIONS_ENABLED = false
+if not NOTIFICATIONS_ENABLED then
+	return
+end
+
 local player = Players.LocalPlayer
 
 local asked = false
