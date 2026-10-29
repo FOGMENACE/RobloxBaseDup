@@ -125,7 +125,7 @@ local left = create("Frame", {
 	BackgroundTransparency = 1,
 	-- lower than before so the Roblox chat window does not cover the wins counter
 	Position = UDim2.new(0, 10, 0.37, 0),
-	Size = UDim2.fromOffset(176, 440),
+	Size = UDim2.fromOffset(216, 440),
 }, gui)
 
 local rootScale = create("UIScale", { Scale = 1 }, left)
@@ -258,34 +258,53 @@ end
 -- WINS COUNTER
 --------------------------------------------------
 
+-- The wins counter: a wide gold plate (wider than the button grid below it, so big totals
+-- like 12.34M never look cramped), soft top-to-bottom gold gradient with a thin shine line,
+-- and the trophy popping slightly out of its left end.
+local WINS_WIDTH = 216
 local winsPill = create("Frame", {
 	Name = "Wins",
-	Size = UDim2.fromOffset(176, 58),
-	BackgroundColor3 = LANE,
+	Size = UDim2.fromOffset(WINS_WIDTH, 60),
+	BackgroundColor3 = Color3.new(1, 1, 1), -- the gradient below gives the gold
 	BackgroundTransparency = 0,
 }, left)
-round(winsPill, 12)
+round(winsPill, 18)
 outline(winsPill, INK, 3)
+create("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new(Color3.fromRGB(255, 214, 120), Color3.fromRGB(232, 160, 60)),
+}, winsPill)
+local winsShine = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 6, 0, 6),
+	Size = UDim2.new(1, -76, 0, 5),
+	BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+	BackgroundTransparency = 0.55,
+	BorderSizePixel = 0,
+}, winsPill)
+round(winsShine, 3)
 local winsScale = create("UIScale", { Scale = 1 }, winsPill)
 
 local winsIcon = create("ImageLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(6, 5),
-	Size = UDim2.fromOffset(48, 48),
+	Position = UDim2.fromOffset(2, 1),
+	Size = UDim2.fromOffset(56, 56),
 	Image = TROPHY_IMAGE,
+	ZIndex = 2,
 }, winsPill)
 
 local winsLabel = create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(58, 0),
-	Size = UDim2.new(1, -64, 1, 0),
+	Position = UDim2.fromOffset(62, 0),
+	Size = UDim2.new(1, -72, 1, 0),
 	Font = FONT,
 	Text = "0",
 	TextColor3 = CREAM,
-	TextSize = 30,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	TextSize = 32,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 2,
 }, winsPill)
-create("UIStroke", { Color = INK, Thickness = 2 }, winsLabel)
+create("UIStroke", { Color = INK, Thickness = 2.5 }, winsLabel)
 
 local displayedWins = 0
 local inFlight = 0

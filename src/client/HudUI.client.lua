@@ -73,12 +73,15 @@ local function formatNumber(value)
 	return tostring(value)
 end
 
-local function bump(scaleObject, amount)
-	scaleObject.Scale = amount
+-- base: the scale the object rests at (default 1). A fitted object (the phone-sized multipliers
+-- panel) must settle back to ITS size, not 1, or every rebirth blew it up to full size.
+local function bump(scaleObject, amount, base)
+	base = base or 1
+	scaleObject.Scale = amount * base
 	TweenService:Create(
 		scaleObject,
 		TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-		{ Scale = 1 }
+		{ Scale = base }
 	):Play()
 end
 
@@ -688,6 +691,7 @@ end)
 
 -- The rebirth multipliers panel lives in the bottom-left corner on every device; on
 -- touch screens it is compact and the joystick sits right of it.
+local rebirthFit = 1
 local function fitRebirth()
 	local viewport = gui.AbsoluteSize
 	local scale = math.clamp(viewport.X / 900, 0.65, 1)
@@ -699,6 +703,7 @@ local function fitRebirth()
 		rebirthPanel.AnchorPoint = Vector2.new(0, 1)
 		rebirthPanel.Position = UDim2.new(0, 8, 1, -8)
 	end
+	rebirthFit = scale
 	rebirthScale.Scale = scale
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitRebirth)
@@ -981,7 +986,7 @@ local function refreshRebirth()
 
 	if lastRebirths ~= nil and rebirths > lastRebirths then
 		-- A rebirth just happened: pop the panel and both tiles.
-		bump(rebirthScale, 1.15)
+		bump(rebirthScale, 1.15, rebirthFit)
 		bump(oilChipScale, 1.3)
 		bump(winsChipScale, 1.3)
 	end

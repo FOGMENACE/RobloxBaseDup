@@ -87,6 +87,8 @@ local slowSince = nil
 
 local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ConnectionRejoin")
 local lastAsk = -math.huge
+local asks = 0
+local MAX_ASKS = 3 -- per session; the server also caps real moves (2 per session, 5 min apart)
 
 task.spawn(function()
 	while true do
@@ -110,8 +112,9 @@ task.spawn(function()
 		end
 
 		-- loading that never finishes is asked for right away; the rest wait for the lobby
-		if reason and (reason == "loading" or inLobby()) and now - lastAsk > 60 and not RunService:IsStudio() then
+		if reason and (reason == "loading" or inLobby()) and now - lastAsk > 120 and asks < MAX_ASKS and not RunService:IsStudio() then
 			lastAsk = now
+			asks += 1
 			warn("[ConnectionWatch] weak connection (" .. reason .. "), asking to be moved back in")
 			remote:FireServer()
 			failures = {}

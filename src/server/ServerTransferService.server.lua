@@ -51,6 +51,16 @@ local lastConnection = {}
 -- so a connection that never recovers cannot loop forever.
 local MAX_CONNECTION_RETRIES = 2
 local CONNECTION_COOLDOWN = 90
+-- after ARRIVING through one of these rejoins the player gets this long to just play before
+-- another may happen (the reload itself re-downloads everything and can look "weak" again)
+local ARRIVAL_GRACE = 300
+local joinedAt = {}
+Players.PlayerAdded:Connect(function(player)
+	joinedAt[player] = os.clock()
+end)
+for _, player in ipairs(Players:GetPlayers()) do
+	joinedAt[player] = os.clock()
+end
 local function connectionAttempts(player)
 	local ok, joinData = pcall(function()
 		return player:GetJoinData()
@@ -115,6 +125,9 @@ connectionRejoin.OnServerEvent:Connect(function(player)
 	end
 	local attempt = connectionAttempts(player)
 	if attempt >= MAX_CONNECTION_RETRIES then
+		return
+	end
+	if attempt > 0 and now - (joinedAt[player] or now) < ARRIVAL_GRACE then
 		return
 	end
 	lastConnection[player] = now
@@ -251,5 +264,6 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	lastAfk[player] = nil
 	lastConnection[player] = nil
+	joinedAt[player] = nil
 	pending[player] = nil
 end)

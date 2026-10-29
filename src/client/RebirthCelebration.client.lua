@@ -124,19 +124,6 @@ local SHOWN = UDim2.new(0.5, 0, 0, 64)
 local HIDDEN = UDim2.new(0.5, 0, 0, -120)
 local hideToken = 0
 
-local function pulseBadge()
-	local hud = playerGui:FindFirstChild("HudUI")
-	local badge = hud and hud:FindFirstChild("RebirthPanel", true)
-	local badgeScale = badge and badge:FindFirstChildOfClass("UIScale")
-	if badgeScale then
-		task.spawn(function()
-			local base = badgeScale.Scale
-			TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base * 1.15 }):Play()
-			task.wait(0.22)
-			TweenService:Create(badgeScale, TweenInfo.new(0.18), { Scale = base }):Play()
-		end)
-	end
-end
 
 local function celebrate(rebirths)
 	local auto = player:GetAttribute("AutoRebirth") == true
@@ -156,7 +143,8 @@ local function celebrate(rebirths)
 
 	banner.Visible = true
 	TweenService:Create(banner, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = SHOWN }):Play()
-	pulseBadge()
+	-- (the multipliers panel pops by itself in HudUI; a second pulse here read its mid-pop size
+	-- as "normal" and left it 15% too big, on phones even full desktop size)
 	if not auto then
 		local sound = create("Sound", { SoundId = "rbxasset://sounds/victory.wav", Volume = 0.45 }, SoundService)
 		sound:Play()
