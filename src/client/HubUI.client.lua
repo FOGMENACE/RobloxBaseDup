@@ -210,6 +210,7 @@ if UserInputService.TouchEnabled then
 	local function winsPillObject()
 		return left:FindFirstChild("Wins")
 	end
+	-- The x2 WINS tile is a Frame (button + "4 ONLY!" label); the trophy lines up with its button.
 	local function firstBoostTile()
 		local boost = playerGui:FindFirstChild("BoostButtonsUI")
 		local column = boost and boost:FindFirstChildWhichIsA("Frame")
@@ -218,11 +219,11 @@ if UserInputService.TouchEnabled then
 		end
 		local best
 		for _, child in ipairs(column:GetChildren()) do
-			if child:IsA("GuiButton") and (not best or child.LayoutOrder < best.LayoutOrder) then
+			if child:IsA("GuiObject") and child.Visible and (not best or child.LayoutOrder < best.LayoutOrder) then
 				best = child
 			end
 		end
-		return best
+		return best and (best:FindFirstChildWhichIsA("GuiButton") or best)
 	end
 	local function alignWinsToBoost()
 		local pill, tile = winsPillObject(), firstBoostTile()
