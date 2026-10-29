@@ -707,22 +707,22 @@ fitRebirth()
 -- LEVEL UP
 --------------------------------------------------
 
--- LEVEL-UP SOUND: one bright "level up" jingle (a quick rising arpeggio with a sparkle on top,
--- "level-up-191997", Creator Store). Pitch-shifted pings, pins and home-made melodies all
--- sounded off against the music; a jingle made for exactly this moment reads as "reward".
+-- LEVEL-UP SOUND: a short ARCADE power-up blip (two quick rising 8-bit notes, "retro coin pickup
+-- sound effect powerup", Creator Store, from LilMati on freesound). Pings, pins and a soft jingle
+-- all felt off; a crisp retro blip fits the game's arcade-bowling feel and stays out of the way.
 -- Level-ups in a row climb one semitone each (a combo feel), capped at +5 so it never gets
 -- shrill; a pause of STREAK_GAP starts again from the natural pitch.
 -- Volume was balanced by measuring the SAMPLES in Studio (PlaybackLoudness ignores Volume, so
 -- the heard level is sample loudness x Volume, music also x ~1.4 for the bus's +3 dB):
 --   lobby music averages ~140 x 0.8 x 1.4 ~ 160, course music ~70 x 0.85 x 1.4 ~ 85;
---   the jingle's hit is ~210 at Volume 1, so 1.0 in the lobby and 0.7 on the course keep it
+--   the blip's hit is ~200 at Volume 1, so 1.0 in the lobby and 0.7 on the course keep it
 --   just above the music without blasting. Higher steps are a bit quieter (they sound louder).
 -- It follows the MUSIC's dimming (SoundService "MusicDuck", set by MusicController: window
 -- unfocused / player idle), and the SFX setting still mutes it.
-local LEVEL_UP_SOUND = "rbxassetid://17648982831" -- "level-up-191997" (Creator Store)
+local LEVEL_UP_SOUND = "rbxassetid://93529351909119" -- "retro coin pickup sound effect powerup" (Creator Store)
 local LOBBY_VOLUME = 1.0
 local COURSE_VOLUME = 0.7
-local MIN_GAP = 0.6 -- the jingle's hit lasts ~0.6 s: a burst of level-ups never piles up
+local MIN_GAP = 0.45 -- the blip lasts ~0.5 s: a burst of level-ups never piles up
 local STREAK_GAP = 2.5 -- seconds between level-ups that still count as "in a row"
 local MAX_STEP = 5 -- semitones
 
