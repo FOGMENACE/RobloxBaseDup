@@ -190,9 +190,10 @@ local function updateRootScale()
 	left.Position = UDim2.new(0, 10, topFraction, 0)
 	-- Phones: the old viewport.Y / 760 cap halved the hub on a ~370 px tall screen even
 	-- though there was room. On touch screens it fills the free height above the
-	-- multipliers panel (fit).
+	-- multipliers panel (fit), a little larger than before (alignWinsToBoost below then
+	-- lines the trophy up with x2 WINS and trims the size if it would reach the multipliers).
 	if UserInputService.TouchEnabled then
-		rootScale.Scale = math.clamp(fit, 0.5, 1.2)
+		rootScale.Scale = math.clamp(fit * 1.12, 0.5, 1.2)
 	else
 		rootScale.Scale = math.clamp(math.min(viewport.Y / 760, fit), 0.5, 1.2)
 	end
@@ -200,6 +201,57 @@ end
 
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateRootScale)
 updateRootScale()
+
+-- Phones: the wins trophy sits on the same horizontal line as the x2 WINS tile on the right
+-- side of the screen. The column slides down to that line; if its bottom would then reach
+-- the oil / trophy multipliers panel in the bottom-left corner, it is scaled down to fit.
+-- (Measured from the real on-screen objects, so it follows any screen shape.)
+if UserInputService.TouchEnabled then
+	local function winsPillObject()
+		return left:FindFirstChild("Wins")
+	end
+	local function firstBoostTile()
+		local boost = playerGui:FindFirstChild("BoostButtonsUI")
+		local column = boost and boost:FindFirstChildWhichIsA("Frame")
+		if not column then
+			return nil
+		end
+		local best
+		for _, child in ipairs(column:GetChildren()) do
+			if child:IsA("GuiButton") and (not best or child.LayoutOrder < best.LayoutOrder) then
+				best = child
+			end
+		end
+		return best
+	end
+	local function alignWinsToBoost()
+		local pill, tile = winsPillObject(), firstBoostTile()
+		if not pill or not tile or tile.AbsoluteSize.Y <= 0 or not gui.Enabled then
+			return
+		end
+		local delta = (tile.AbsolutePosition.Y + tile.AbsoluteSize.Y / 2) - (pill.AbsolutePosition.Y + pill.AbsoluteSize.Y / 2)
+		if math.abs(delta) > 1 then
+			left.Position = UDim2.new(left.Position.X.Scale, left.Position.X.Offset, left.Position.Y.Scale, left.Position.Y.Offset + delta)
+		end
+		-- keep clear of the multipliers panel
+		local hud = playerGui:FindFirstChild("HudUI")
+		local multipliers = hud and hud:FindFirstChild("RebirthPanel", true)
+		if multipliers and multipliers.AbsoluteSize.Y > 0 then
+			local top = left.AbsolutePosition.Y
+			local bottom = top + COLUMN_HEIGHT * rootScale.Scale
+			local limit = multipliers.AbsolutePosition.Y - 6
+			if bottom > limit and limit > top + 60 then
+				rootScale.Scale = math.max(0.45, rootScale.Scale * (limit - top) / (bottom - top))
+			end
+		end
+	end
+	task.spawn(function()
+		while true do
+			task.wait(0.4)
+			pcall(alignWinsToBoost)
+		end
+	end)
+end
 
 --------------------------------------------------
 -- WINS COUNTER
@@ -488,20 +540,26 @@ end
 local rebirthButton = makeHubButton(2, "RebirthButton", "♻", "REBIRTH", PURPLE, 2)
 
 -- Percent to the next rebirth, floating over the REBIRTH button.
+-- A sticker pinned to the button's top-right corner: bigger text, tilted, hanging a little
+-- over the corner and nudged left so it never looks cut off.
 local rebirthPercent = create("TextLabel", {
 	Name = "RebirthPercent",
-	AnchorPoint = Vector2.new(0, 0),
-	Position = UDim2.fromOffset(4, 4),
-	Size = UDim2.fromOffset(52, 20),
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, 2, 0, -9),
+	Size = UDim2.fromOffset(70, 28),
+	Rotation = 9,
 	BackgroundColor3 = GREEN,
 	Font = FONT,
 	Text = "0%",
 	TextColor3 = CREAM,
-	TextSize = 15,
+	TextSize = 21,
 	ZIndex = 7,
 }, rebirthButton.Button)
-round(rebirthPercent, 11)
-outline(rebirthPercent, INK, 2.5)
+round(rebirthPercent, 13)
+rebirthPercent.TextScaled = true
+create("UITextSizeConstraint", { MaxTextSize = 21, MinTextSize = 10 }, rebirthPercent)
+create("UIPadding", { PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5), PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3) }, rebirthPercent)
+outline(rebirthPercent, INK, 3)
 
 local function refreshRebirthPercent()
 	local level = player:GetAttribute("Level") or 1
@@ -512,7 +570,7 @@ local function refreshRebirthPercent()
 	if fraction >= 1 then
 		rebirthPercent.Text = "READY!"
 		rebirthPercent.BackgroundColor3 = PIN_RED
-		rebirthButton.Badge.Visible = true
+		rebirthButton.Badge.Visible = false -- the READY! sticker already says it
 	else
 		rebirthPercent.Text = math.floor(fraction * 100) .. "%"
 		rebirthPercent.BackgroundColor3 = GREEN

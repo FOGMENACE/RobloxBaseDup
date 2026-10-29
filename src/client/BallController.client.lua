@@ -1128,18 +1128,52 @@ if UserInputService.TouchEnabled then
 	aGui.Enabled = false
 	aGui.Parent = player:WaitForChild("PlayerGui")
 
-	local held = { [-1] = 0, [1] = 0 } -- touches holding each side
+	-- STEERING: the WHOLE left half of the screen steers left and the whole right half steers
+	-- right (the arrows are only the picture of it), so thumbs never have to find a small
+	-- button. Touches are tracked by their position, not by what they landed on:
+	--   * a finger that came from the lobby joystick is picked up the moment it moves;
+	--   * sliding across the middle switches the side;
+	--   * taps on real UI (settings, panels) are left alone (gameProcessed).
+	local touchSide = {} -- [InputObject] = -1 / 1
+	local arrowFaces = {} -- [dir] = { Button, Refresh }
+
+	local function viewportWidth()
+		local cam = workspace.CurrentCamera
+		return cam and cam.ViewportSize.X or 800
+	end
+
+	local function sideOf(input)
+		return input.Position.X < viewportWidth() / 2 and -1 or 1
+	end
+
+	local function recompute()
+		local left, right = false, false
+		for _, side in pairs(touchSide) do
+			if side < 0 then
+				left = true
+			else
+				right = true
+			end
+		end
+		arrowX = (right and 1 or 0) - (left and 1 or 0)
+		for dir, face in pairs(arrowFaces) do
+			face.Button.BackgroundTransparency = ((dir < 0 and left) or (dir > 0 and right)) and 0.3 or 0.5
+		end
+	end
+
+	local function onCourse()
+		local state = getRunState()
+		return state == "Starting" or state == "Running"
+	end
 
 	local function arrowButton(dir)
 		-- same style, size and height as the lobby controls: a rounded cream square with
-		-- the dark outline and a drawn dark chevron, in the bottom corners
-		local b = Instance.new("TextButton")
+		-- the dark outline and a drawn dark chevron, in the bottom corners (display only)
+		local b = Instance.new("Frame")
 		b.Name = dir < 0 and "LeftArrow" or "RightArrow"
-		b.AutoButtonColor = false
 		b.AnchorPoint = Vector2.new(dir < 0 and 0 or 1, 1)
 		b.BackgroundColor3 = CONTROL_CREAM
 		b.BackgroundTransparency = 0.5
-		b.Text = ""
 		b.Parent = aGui
 		Instance.new("UICorner", b).CornerRadius = UDim.new(0.3, 0)
 		local s = Instance.new("UIStroke")
@@ -1172,36 +1206,41 @@ if UserInputService.TouchEnabled then
 			bar.Parent = b
 			Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
 		end
-
-		local function refresh()
-			b.BackgroundTransparency = held[dir] > 0 and 0.3 or 0.5
-			arrowX = (held[1] > 0 and 1 or 0) - (held[-1] > 0 and 1 or 0)
-		end
-		b.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch
-				or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				held[dir] += 1
-				refresh()
-			end
-		end)
-		b.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch
-				or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				held[dir] = math.max(held[dir] - 1, 0)
-				refresh()
-			end
-		end)
-		return refresh
+		arrowFaces[dir] = { Button = b }
 	end
 
-	local refreshLeft = arrowButton(-1)
-	local refreshRight = arrowButton(1)
+	arrowButton(-1)
+	arrowButton(1)
 
 	local function clearArrows()
-		held[-1], held[1] = 0, 0
-		refreshLeft()
-		refreshRight()
+		table.clear(touchSide)
+		recompute()
 	end
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or not onCourse() or input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		touchSide[input] = sideOf(input)
+		recompute()
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if not onCourse() or input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+		local side = sideOf(input)
+		-- also picks up a finger that started in the lobby (the joystick) and is still down
+		if touchSide[input] ~= side and (touchSide[input] ~= nil or input.UserInputState ~= Enum.UserInputState.End) then
+			touchSide[input] = side
+			recompute()
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if touchSide[input] then
+			touchSide[input] = nil
+			recompute()
+		end
+	end)
 	UserInputService.WindowFocusReleased:Connect(clearArrows)
 
 	RunService.RenderStepped:Connect(function()

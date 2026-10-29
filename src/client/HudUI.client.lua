@@ -583,15 +583,13 @@ refreshCompact()
 
 local touch = UserInputService.TouchEnabled
 
-local rebirthPanel = create("TextButton", {
+local rebirthPanel = create("Frame", { -- a plain Frame: display only, it can never take a tap
 	Name = "RebirthPanel",
 	AnchorPoint = Vector2.new(0, 1),
 	-- On touch devices the left-bottom corner belongs to the thumbstick.
 	Position = touch and UDim2.new(0, 10, 1, -190) or UDim2.new(0, 10, 1, -10),
 	Size = UDim2.fromOffset(270, 132),
 	BackgroundColor3 = CREAM,
-	Text = "",
-	AutoButtonColor = false,
 }, gui)
 round(rebirthPanel, 18)
 outline(rebirthPanel, 4)
@@ -684,33 +682,8 @@ task.delay(8, function()
 	applyTutorialVisibility()
 end)
 
--- Opens the existing rebirth panel (owned by RebirthUIClient) - in the lobby only.
-local function inLobby()
-	local state = player:GetAttribute("RunState")
-	return state == nil or state == "" or state == "Waiting"
-end
-
-rebirthPanel.Activated:Connect(function()
-	if not inLobby() then
-		return
-	end
-	local toggle = playerGui:FindFirstChild("ToggleRebirthPanel")
-	if toggle then
-		toggle:Fire()
-	end
-end)
-
--- On a course the multipliers are display only: the panel stops taking taps, so a
--- thumb near the corner (or the left steering arrow) is never caught by it.
-local function applyPanelInput()
-	local lobby = inLobby()
-	rebirthPanel.Active = lobby
-	pcall(function()
-		rebirthPanel.Interactable = lobby
-	end)
-end
-player:GetAttributeChangedSignal("RunState"):Connect(applyPanelInput)
-applyPanelInput()
+-- The multipliers panel is display only (a plain Frame: no click, no tap capture), so a
+-- finger moving across it still steers the ball. The hub's REBIRTH button opens rebirth.
 
 -- The rebirth multipliers panel lives in the bottom-left corner on every device; on
 -- touch screens it is compact and the joystick sits right of it.

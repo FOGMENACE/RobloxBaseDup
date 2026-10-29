@@ -149,7 +149,60 @@ create("UIStroke", { Color = INK, Thickness = 2.5 }, x6Claim)
 
 Shine.Attach(x6Button, { Offset = 0.5 })
 
-x6Button.Activated:Connect(function()
+-- A card that can be TAPPED or CLICKED but never swallows a drag. A normal button takes the
+-- whole press, so a finger or cursor that started over the card could not turn the camera.
+-- This one leaves the input alone (Active = false): a drag starting on it orbits the camera
+-- as usual, and a short press-and-release on it (little movement) counts as the click.
+local TAP_SLOP = 14 -- pixels a finger / cursor may move and still be a tap
+
+local function tapOnly(button, onTap)
+	button.Active = false
+	local starts = {} -- [InputObject] = Vector2 where the press began
+
+	local function topmostIsButton(position)
+		local hits = playerGui:GetGuiObjectsAtPosition(position.X, position.Y)
+		for _, object in ipairs(hits) do
+			if object == button or object:IsDescendantOf(button) then
+				return true
+			end
+			-- something clickable in front of the card (a panel, the hub, a popup) wins
+			if (object:IsA("GuiButton") and object.Active) or (object:IsA("GuiObject") and object.Active and not object:IsDescendantOf(cardGui)) then
+				return false
+			end
+		end
+		return false
+	end
+
+	UserInputService.InputBegan:Connect(function(input)
+		local kind = input.UserInputType
+		if kind ~= Enum.UserInputType.Touch and kind ~= Enum.UserInputType.MouseButton1 then
+			return
+		end
+		-- (gameProcessed is ignored on purpose: an Active object BEHIND the card also sets it;
+		-- topmostIsButton already rejects anything clickable IN FRONT of the card)
+		if not cardGui.Enabled then
+			return
+		end
+		local at = Vector2.new(input.Position.X, input.Position.Y)
+		if topmostIsButton(at) then
+			starts[input] = at
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		local start = starts[input]
+		if not start then
+			return
+		end
+		starts[input] = nil
+		local at = Vector2.new(input.Position.X, input.Position.Y)
+		if (at - start).Magnitude <= TAP_SLOP and cardGui.Enabled and topmostIsButton(at) then
+			onTap()
+		end
+	end)
+end
+
+tapOnly(x6Button, function()
 	remotes:WaitForChild("X6Claim"):FireServer()
 end)
 
@@ -382,7 +435,7 @@ local function remainingSeconds()
 	return typeof(untilTime) == "number" and math.max(0, untilTime - workspace:GetServerTimeNow()) or 0
 end
 
-genButton.Activated:Connect(function()
+tapOnly(genButton, function()
 	local world = themedWorld()
 	if not world then
 		return
