@@ -22,6 +22,7 @@ WorldConfig.Worlds = {
 		Id = 1, Name = "ROOKIE LANES", Rebirths = 0, Offset = Vector3.zero,
 		WinSpeedMult = 1, WinRewardMult = 1,
 		Admin = { ["GenX100 Admin XP"] = 100, ["GenX1000 Admin XP"] = 1000 },
+		AdminPass = { ["GenX100 Admin XP"] = 2039936926, ["GenX1000 Admin XP"] = 2036355132 }, -- R$ 249 / R$ 1,249
 	},
 	{
 		Id = 2, Name = "PRO ALLEY", Rebirths = 15, Offset = Vector3.new(1600, 0, 0),

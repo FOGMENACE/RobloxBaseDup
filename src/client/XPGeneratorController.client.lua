@@ -495,11 +495,19 @@ end)
 task.spawn(function()
 	local MarketplaceService = game:GetService("MarketplaceService")
 	local owned, lastPrompt = {}, 0
+	-- a finished purchase must not leave a stale "not owned" answer (it would prompt again)
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(who, passId, purchased)
+		if who == player then
+			owned[passId] = purchased and true or nil
+		end
+	end)
 	while true do
 		task.wait(0.3)
 		local world = WorldConfig.Of(player)
+		-- world 1 is the original lobby (Workspace.XPGenerators); the other worlds are copies
 		local worldModel = Workspace:FindFirstChild("Worlds") and Workspace.Worlds:FindFirstChild("World" .. world.Id)
-		local gens = worldModel and worldModel:FindFirstChild("XPGenerators")
+		local gens = world.Id == 1 and Workspace:FindFirstChild("XPGenerators")
+			or (worldModel and worldModel:FindFirstChild("XPGenerators"))
 		local balls = Workspace:FindFirstChild("PlayerBalls")
 		local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
 		if world.AdminPass and gens and ball and os.clock() - lastPrompt > 6 then

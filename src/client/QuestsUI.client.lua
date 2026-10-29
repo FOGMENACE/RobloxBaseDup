@@ -62,6 +62,18 @@ local panel = create("Frame", {
 create("UICorner", { CornerRadius = UDim.new(0, 22) }, panel)
 create("UIStroke", { Color = INK, Thickness = 5 }, panel)
 
+-- The panel is a fixed 480 x 520: on a phone (landscape is only ~350 px tall) its bottom,
+-- including the last weekly quest, ran off the screen. It scales down to always fit.
+local panelScale = create("UIScale", { Scale = 1 }, panel)
+local function fitPanel()
+	local size = gui.AbsoluteSize
+	if size.X > 0 and size.Y > 0 then
+		panelScale.Scale = math.clamp(math.min((size.X - 20) / 480, (size.Y - 20) / 520), 0.45, 1)
+	end
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitPanel)
+fitPanel()
+
 local function label(props, parent)
 	props.BackgroundTransparency = 1
 	props.Font = FONT

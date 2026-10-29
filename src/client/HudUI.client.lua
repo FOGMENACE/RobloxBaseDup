@@ -4,7 +4,7 @@
 -- CLIENT ONLY. Replaces the old top-right Wins/Oil/Level panel
 -- (StarterGui.MainUI) and the bottom-right ProgressionUI.
 --
--- Bottom-center : global "Strike" level badge, rebirth-cycle LEVEL
+-- Bottom-center : "Next Rebirth" level badge, rebirth-cycle LEVEL
 --                 with its XP bar, and this run's OIL.
 -- Bottom-left   : rebirth progress with the oil image and the current
 --                 XP multiplier (it grows with every rebirth).
@@ -137,7 +137,7 @@ local hud = create("Frame", {
 }, gui)
 local hudScale = create("UIScale", { Scale = 1 }, hud)
 
--- Global (Strike) level badge
+-- Next-rebirth level badge
 local badge = create("Frame", {
 	Name = "GlobalBadge",
 	Position = UDim2.fromOffset(0, 4),
@@ -153,31 +153,33 @@ create("TextLabel", {
 	Position = UDim2.fromOffset(0, 8),
 	Size = UDim2.new(1, 0, 0, 16),
 	Font = FONT,
-	Text = "STRIKE",
+	Text = "NEXT REBIRTH",
 	TextColor3 = CREAM,
-	TextSize = 11,
+	TextSize = 10,
 }, badge)
-
-local globalLabel = create("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, 22),
-	Size = UDim2.new(1, 0, 0, 40),
-	Font = FONT,
-	Text = "1",
-	TextColor3 = CREAM,
-	TextSize = 34,
-}, badge)
-create("UIStroke", { Color = INK, Thickness = 2 }, globalLabel)
 
 create("TextLabel", {
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(0, 62),
-	Size = UDim2.new(1, 0, 0, 16),
+	Position = UDim2.fromOffset(0, 24),
+	Size = UDim2.new(1, 0, 0, 14),
 	Font = FONT,
-	Text = "LEVEL",
+	Text = "LEVEL:",
 	TextColor3 = CREAM,
-	TextSize = 11,
+	TextSize = 12,
 }, badge)
+
+-- the level the player must reach for their next rebirth
+local globalLabel = create("TextLabel", {
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(8, 38),
+	Size = UDim2.new(1, -16, 0, 34),
+	Font = FONT,
+	Text = "1",
+	TextColor3 = CREAM,
+	TextScaled = true,
+}, badge)
+create("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 10 }, globalLabel)
+create("UIStroke", { Color = INK, Thickness = 2 }, globalLabel)
 
 -- Rebirth-cycle level + XP bar
 local levelPanel = create("Frame", {
@@ -860,10 +862,13 @@ end
 
 local function refreshGlobal()
 	local rebirths = player:GetAttribute("Rebirths")
-	local level = player:GetAttribute("Level")
-	if typeof(rebirths) == "number" and typeof(level) == "number" then
-		local earned = completedLevels(math.max(0, math.floor(rebirths))) + math.max(0, math.floor(level) - 1)
-		local text = earned >= 10000 and string.format("%.1fK", earned / 1000) or tostring(earned)
+	if typeof(rebirths) == "number" then
+		-- server-published requirement; the shared schedule is the fallback (display only)
+		local required = player:GetAttribute("RebirthLevelRequirement")
+		if typeof(required) ~= "number" then
+			required = RebirthBonuses.RequiredLevel(math.max(0, math.floor(rebirths)))
+		end
+		local text = tostring(math.floor(required)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 		if globalLabel.Text ~= text then
 			globalLabel.Text = text
 			bump(badgeScale, 1.12)
@@ -955,7 +960,7 @@ for _, name in ipairs({ "Level", "XPIntoLevel", "XPNeededForLevel", "LevelProgre
 end
 player:GetAttributeChangedSignal("GlobalLevel"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("Rebirths"):Connect(refreshGlobal)
-player:GetAttributeChangedSignal("Level"):Connect(refreshGlobal)
+player:GetAttributeChangedSignal("RebirthLevelRequirement"):Connect(refreshGlobal)
 player:GetAttributeChangedSignal("OilTotal"):Connect(refreshOil)
 for _, name in ipairs({ "Rebirths", "RebirthLevelRequirement", "Level" }) do
 	player:GetAttributeChangedSignal(name):Connect(refreshRebirth)
