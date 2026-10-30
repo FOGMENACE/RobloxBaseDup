@@ -245,14 +245,17 @@ local CAMERA_SMOOTHNESS =
 -- the mouse.
 --------------------------------------------------
 
+-- close enough that the ball reads big on screen (~15 % bigger than at 20 / 16)
 local COURSE_DISTANCE =
-	20
+	17
 
+-- a little overhead (about 15 degrees down instead of 13), so the row after the
+-- next one shows over the boards in front instead of hiding behind them
 local COURSE_HEIGHT =
-	12
+	14
 
 local COURSE_LOOK_AHEAD =
-	34
+	32
 
 local COURSE_LOOK_HEIGHT =
 	1
@@ -685,6 +688,13 @@ local function smoothCamera(
 
 	end
 
+	-- far from where it should be (the ball was just placed back in the lobby after a
+	-- run): cut straight to the view instead of swooping across the map
+	if (targetPosition - currentCameraPosition).Magnitude > 60 then
+		currentCameraPosition = targetPosition
+		currentLookTarget = targetLookTarget
+	end
+
 
 	--------------------------------------------------
 	-- FRAME RATE INDEPENDENT SMOOTHING
@@ -1026,6 +1036,8 @@ end
 -- CAMERA UPDATE
 --------------------------------------------------
 
+local lastCameraMode = nil
+
 local function updateCamera(
 	deltaTime
 )
@@ -1065,6 +1077,15 @@ local function updateCamera(
 
 	if mode == "Lobby" then
 
+		-- back from a run: the smoothed lobby camera restarts at the lobby view (it
+		-- used to ease in from where the course camera left off and fly through
+		-- the lobby wall, the "twitch" when the ball respawns in the lobby)
+		if lastCameraMode ~= "Lobby" then
+			currentCameraPosition = nil
+			currentLookTarget = nil
+		end
+		lastCameraMode = mode
+
 		updateLobbyCamera(
 			ball,
 			deltaTime
@@ -1080,6 +1101,7 @@ local function updateCamera(
 	--------------------------------------------------
 
 	if mode == "Course" then
+		lastCameraMode = mode
 
 		--------------------------------------------------
 		-- RELEASE ANY ACTIVE RIGHT-CLICK ROTATION

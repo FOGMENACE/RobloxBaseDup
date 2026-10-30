@@ -46,6 +46,16 @@
 -- SERVICES
 --------------------------------------------------
 
+-- Routine logging (every tile / platform) is off on live servers; set
+-- DEBUG_LOGS = true while testing. Warnings always show.
+local DEBUG_LOGS = false
+local rawPrint = print
+local function print(...)
+	if DEBUG_LOGS then
+		rawPrint(...)
+	end
+end
+
 local ServerStorage =
 	game:GetService("ServerStorage")
 

@@ -107,7 +107,6 @@ local function waitForCone()
 end
 
 local RunService = game:GetService("RunService")
-local Debris = game:GetService("Debris")
 
 local IS_CLIENT = RunService:IsClient()
 
@@ -1332,7 +1331,7 @@ end
 -- toward where the ball travels) and spins about its side axis as the ball
 -- covers ground, like a barrel rolling on its side.
 local barrelStates = setmetatable({}, { __mode = "k" })
-local barrelSparkClock = setmetatable({}, { __mode = "k" })
+local barrelSparkClock = setmetatable({}, { __mode = "k" }) -- [ball] = this client's grinding-spark effects
 
 local function barrelFrame(ball, now)
 	local state = barrelStates[ball]
@@ -1389,6 +1388,9 @@ local function upgradeProng(ball, old)
 		new:SetAttribute(key, value)
 	end
 	new:SetAttribute("AccKind", "Cone")
+	-- this local copy never replicates, so the server cannot delete it when the ball
+	-- changes in place (BallSpawner bumps "AccGen"); Pose drops it when the generation moves on
+	new:SetAttribute("LocalAccGen", ball:GetAttribute("AccGen") or 0)
 
 	local oldWeld = old:FindFirstChild("AccWeld")
 	local weld = Instance.new("Weld")
@@ -1415,7 +1417,14 @@ function BallAccessories.Pose(ball, now)
 	local center = ball.Position
 	local yawCF, spinCF, barrelSpeed = nil, nil, nil
 
+	local accGen = ball:GetAttribute("AccGen") or 0
 	for _, child in ipairs(ball:GetChildren()) do
+		local localGen = IS_CLIENT and child:GetAttribute("LocalAccGen")
+		if localGen and localGen ~= accGen then
+			-- a local cone of the ball's previous look (it was upgraded / downgraded in place)
+			child:Destroy()
+			continue
+		end
 		if IS_CLIENT and child.ClassName == "Part" and child:GetAttribute("AccKind") == "Pyramid" then
 			child = upgradeProng(ball, child) or child
 		end
@@ -1542,45 +1551,92 @@ function BallAccessories.Pose(ball, now)
 		end
 	end
 
-	-- Train-track sparks: little hot streaks thrown back and up from the
-	-- metal-on-lane contact. Real small parts (crisp, unlike a soft
-	-- particle), made on this client only, arcing down under gravity and
-	-- cooling from white-hot to rusty red. Purely visual.
+	-- Grinding sparks where the barrel scrapes the lane, built on this client only
+	-- (purely visual): a fan of long, glowing streaks thrown back and up that arc
+	-- down and cool from white-hot to orange, a flickering hot spot right at the
+	-- contact and a warm light on the lane. All of it scales with the speed, so a
+	-- fast WinCourse roll throws a dense spray instead of a few loose specks.
 	if barrelSpeed and IS_CLIENT then
 		local spark = ball:FindFirstChild("Acc_SparkPoint")
-		local now2 = os.clock()
-		local last = barrelSparkClock[ball] or 0
-
-		if spark and barrelSpeed > 12 and now2 - last > 0.025 then
-			barrelSparkClock[ball] = now2
-
-			local count = barrelSpeed > 40 and 3 or 2
-			for _ = 1, count do
-				local streak = Instance.new("Part")
-				streak.Name = "TrackSpark"
-				streak.Size = Vector3.new(0.06, 0.06, 0.5 + math.random() * 0.45)
-				streak.Material = Enum.Material.Neon
-				streak.Color = (math.random() < 0.55) and rgb(255, 214, 120)
-					or ((math.random() < 0.6) and rgb(255, 130, 40) or rgb(190, 64, 26))
-				streak.Anchored = false
-				streak.CanCollide = false
-				streak.CanTouch = false
-				streak.CanQuery = false
-				streak.CastShadow = false
-				streak.Massless = true
-
-				local back = -(ball.AssemblyLinearVelocity * Vector3.new(1, 0, 1))
-				back = back.Magnitude > 1 and back.Unit or Vector3.new(0, 0, -1)
-				local side = Vector3.new(-back.Z, 0, back.X)
-				local velocity = back * (14 + math.random() * 22)
-					+ side * ((math.random() - 0.5) * 12)
-					+ Vector3.new(0, 7 + math.random() * 12, 0)
-
-				streak.CFrame = CFrame.lookAt(spark.Position, spark.Position + velocity)
-				streak.AssemblyLinearVelocity = velocity
-				streak.Parent = workspace
-				Debris:AddItem(streak, 0.32 + math.random() * 0.12)
+		if spark then
+			local fx = barrelSparkClock[ball]
+			if not fx or not fx.Aim.Parent then
+				fx = {}
+				fx.Aim = Instance.new("Attachment")
+				fx.Aim.Name = "SparkAim"
+				fx.Aim.Parent = spark
+				fx.Streaks = emitter(fx.Aim, {
+					Name = "GrindStreaks",
+					Texture = SMOKE,
+					Orientation = Enum.ParticleOrientation.VelocityParallel,
+					Rate = 0,
+					Lifetime = NumberRange.new(0.12, 0.34),
+					Speed = NumberRange.new(18, 58),
+					SpreadAngle = Vector2.new(5, 9),
+					Acceleration = Vector3.new(0, -90, 0),
+					Drag = 1.2,
+					Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0, rgb(255, 240, 190)),
+						ColorSequenceKeypoint.new(0.15, rgb(255, 190, 70)),
+						ColorSequenceKeypoint.new(0.6, rgb(255, 110, 25)),
+						ColorSequenceKeypoint.new(1, rgb(190, 50, 15)),
+					}),
+					Size = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 0.42),
+						NumberSequenceKeypoint.new(1, 0.08),
+					}),
+					Squash = NumberSequence.new(-2),
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 0),
+						NumberSequenceKeypoint.new(0.75, 0.15),
+						NumberSequenceKeypoint.new(1, 1),
+					}),
+					LightEmission = 0.8,
+					LightInfluence = 0,
+					Brightness = 1.6,
+					EmissionDirection = Enum.NormalId.Front,
+				})
+				fx.Flare = emitter(fx.Aim, {
+					Name = "GrindFlare",
+					Texture = SMOKE,
+					Rate = 0,
+					Lifetime = NumberRange.new(0.05, 0.1),
+					Speed = NumberRange.new(0),
+					Rotation = NumberRange.new(0, 360),
+					Color = ColorSequence.new(rgb(255, 236, 170), rgb(255, 150, 50)),
+					Size = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 1.3),
+						NumberSequenceKeypoint.new(1, 0.5),
+					}),
+					Transparency = NumberSequence.new(0.2, 1),
+					LightEmission = 1,
+					LightInfluence = 0,
+					Brightness = 2,
+				})
+				fx.Light = Instance.new("PointLight")
+				fx.Light.Color = rgb(255, 160, 70)
+				fx.Light.Range = 9
+				fx.Light.Brightness = 0
+				fx.Light.Shadows = false
+				fx.Light.Parent = fx.Aim
+				barrelSparkClock[ball] = fx
 			end
+
+			local back = -(ball.AssemblyLinearVelocity * Vector3.new(1, 0, 1))
+			back = back.Magnitude > 1 and back.Unit or Vector3.new(0, 0, -1)
+			local origin = spark.Position
+			fx.Aim.WorldCFrame = CFrame.lookAt(origin, origin + back + Vector3.new(0, 0.4, 0))
+
+			-- a tight line of streaks straight back, flickering in strength with
+			-- random extra spurts so it reads as sporadic grinding, not a steady jet
+			local grinding = barrelSpeed > 12 and not ball.Anchored
+			local rate = grinding and math.clamp(barrelSpeed * 2.4, 60, 280) * (0.45 + math.random() * 1.1) or 0
+			fx.Streaks.Rate = rate
+			fx.Flare.Rate = rate * 0.3
+			if grinding and math.random() < 0.18 then
+				fx.Streaks:Emit(math.random(4, 10))
+			end
+			fx.Light.Brightness = grinding and (1.4 + math.random() * 2) or 0
 		end
 	end
 end

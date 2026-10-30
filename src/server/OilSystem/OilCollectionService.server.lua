@@ -38,6 +38,16 @@
 -- SERVICES
 --------------------------------------------------
 
+-- Routine per-run logging (every tile / platform) is off on live servers; set
+-- DEBUG_LOGS = true while testing. Warnings and [AUDIT] warns always show.
+local DEBUG_LOGS = false
+local rawPrint = print
+local function print(...)
+	if DEBUG_LOGS then
+		rawPrint(...)
+	end
+end
+
 local Players =
 	game:GetService("Players")
 

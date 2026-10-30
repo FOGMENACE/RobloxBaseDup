@@ -78,7 +78,9 @@ local function label(props, parent)
 	props.BackgroundTransparency = 1
 	props.Font = FONT
 	local l = create("TextLabel", props, parent or panel)
-	create("UIStroke", { Color = INK, Thickness = 2.5 }, l)
+	-- outline follows the text size: a fixed thick outline fills in the holes of
+	-- small digits (0, 6, 8, 9) and makes numbers look blurry
+	create("UIStroke", { Color = INK, Thickness = math.clamp(l.TextSize * 0.11, 1, 2.5) }, l)
 	return l
 end
 
@@ -86,7 +88,7 @@ local function button(props, parent)
 	props.Font = FONT
 	local b = create("TextButton", props, parent)
 	create("UICorner", { CornerRadius = UDim.new(0, 12) }, b)
-	create("UIStroke", { Color = INK, Thickness = 3 }, b)
+	create("UIStroke", { Color = INK, Thickness = math.clamp(b.TextSize * 0.12, 1, 3) }, b)
 	return b
 end
 

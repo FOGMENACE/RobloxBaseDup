@@ -75,10 +75,15 @@ create("UIStroke", { Color = Color3.fromRGB(22, 12, 52), Thickness = 6 }, bar)
 
 local track = bar -- (kept name: the fill lives inside the bar)
 
+-- ClipsDescendants only clips square, so the fill, sweep and gloss each wear
+-- the bar's own corner: a full bar keeps its rounded ends
+local BAR_CORNER = UDim.new(0, 18)
+
 local fill = create("Frame", {
 	Size = UDim2.fromScale(0, 1),
 	BackgroundColor3 = Color3.fromRGB(150, 90, 235),
 }, bar)
+create("UICorner", { CornerRadius = BAR_CORNER }, fill)
 local fillGradient = create("UIGradient", {
 	Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(196, 130, 255)),
@@ -110,35 +115,52 @@ local function setTheme(name)
 	})
 end
 
--- a soft light sweep that keeps gliding across the bar
+-- a soft light sweep that keeps gliding across the bar: a slanted band in a
+-- gradient on a bar-sized rounded overlay, slid along by the gradient's Offset
 local shine = create("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(-0.2, 0.5),
-	Size = UDim2.new(0, 70, 1.6, 0),
-	Rotation = 18,
+	Size = UDim2.fromScale(1, 1),
 	BackgroundColor3 = Color3.new(1, 1, 1),
-	BackgroundTransparency = 0.78,
 	BorderSizePixel = 0,
 	ZIndex = 3,
 }, bar)
+create("UICorner", { CornerRadius = BAR_CORNER }, shine)
+local shineGradient = create("UIGradient", {
+	Rotation = 18,
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.45, 1),
+		NumberSequenceKeypoint.new(0.5, 0.78),
+		NumberSequenceKeypoint.new(0.55, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	}),
+}, shine)
 task.spawn(function()
 	while true do
-		shine.Position = UDim2.fromScale(-0.2, 0.5)
-		local tween = TweenService:Create(shine, TweenInfo.new(1.8, Enum.EasingStyle.Sine), { Position = UDim2.fromScale(1.2, 0.5) })
+		shineGradient.Offset = Vector2.new(-0.7, 0)
+		local tween = TweenService:Create(shineGradient, TweenInfo.new(1.8, Enum.EasingStyle.Sine), { Offset = Vector2.new(0.7, 0) })
 		tween:Play()
 		tween.Completed:Wait()
 		task.wait(1.2)
 	end
 end)
 
--- gloss on the upper half
-create("Frame", {
-	Size = UDim2.new(1, 0, 0.42, 0),
+-- gloss on the upper half (a rounded overlay fading out below the middle)
+local gloss = create("Frame", {
+	Size = UDim2.fromScale(1, 1),
 	BackgroundColor3 = Color3.new(1, 1, 1),
-	BackgroundTransparency = 0.82,
 	BorderSizePixel = 0,
 	ZIndex = 2,
 }, bar)
+create("UICorner", { CornerRadius = BAR_CORNER }, gloss)
+create("UIGradient", {
+	Rotation = 90,
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.82),
+		NumberSequenceKeypoint.new(0.41, 0.82),
+		NumberSequenceKeypoint.new(0.43, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	}),
+}, gloss)
 
 -- light plate behind the icon so the dark spill pops against the purple bar
 local plate = create("Frame", {
@@ -208,9 +230,10 @@ create("UIGradient", {
 
 local function formatNumber(value)
 	value = math.floor(tonumber(value) or 0)
-	if value >= 1e9 then
+	-- each step starts where the one below would round up to "1000.0" (999,960,000 is 1.0B)
+	if value >= 999.95e6 then
 		return string.format("%.1fB", value / 1e9)
-	elseif value >= 1e6 then
+	elseif value >= 999.95e3 then
 		return string.format("%.1fM", value / 1e6)
 	elseif value >= 1e3 then
 		return string.format("%.1fK", value / 1e3)
@@ -293,6 +316,10 @@ local runOil = 0 -- oil carried into the WinCourse
 -- meter shows the oil BEFORE the multipliers and counts up as each one lands.
 -- The real CurrentOil (already multiplied by the server) is shown at the end.
 local displayOverride = nil
+-- At the finish wall the server multiplies CurrentOil at once, but the countdown (and
+-- its multiplier animation) only starts after the ball glides to the WinCourse. Until
+-- that animation has played, the meter keeps showing the RAW oil so it is not spoiled.
+local multipliersRevealed = true
 
 -- An oil spill with the platform's "+amount" beside it flies into the meter.
 local function flyDroplet(amount)
@@ -358,29 +385,34 @@ local function scheduleHide()
 	end)
 end
 
+-- WinCourse drain: the server publishes the distance 10x a second; between updates the
+-- distance is carried on at the published roll speed, and the shown share eases toward
+-- it every frame
+local winDrain = { Active = false, Shown = 1, Budget = 1, Travelled = 0, At = 0 }
+
 local function refresh()
 	local budget = player:GetAttribute("WinTravelBudget")
 	local runState = player:GetAttribute("RunState")
 
 	if typeof(budget) == "number" and budget > 0 then
-		-- WinCourse: the budget drains as distance is travelled.
+		-- WinCourse: the budget drains as distance is travelled. The bar and the number
+		-- are drawn every frame by the drain loop below (smooth, not 10 jumps a second).
 		local travelled = player:GetAttribute("WinDistanceTravelled") or 0
-		local remaining = math.clamp(1 - travelled / budget, 0, 1)
+		if not winDrain.Active then
+			winDrain.Active = true
+			winDrain.Shown = math.clamp(1 - travelled / budget, 0, 1)
+		end
+		winDrain.Budget = budget
+		winDrain.Travelled = travelled
+		winDrain.At = os.clock()
 
 		title.Text = "OIL LEFT"
 		displayOverride = nil
-		setTheme(remaining > 0.5 and "high" or (remaining > 0.2 and "mid" or "low"))
-		-- remaining oil as a number (the oil you rolled in with), not a percentage
-		valueLabel.Text = formatNumber(runOil * remaining)
-		TweenService:Create(
-			fill,
-			TweenInfo.new(0.1, Enum.EasingStyle.Linear),
-			{ Size = UDim2.fromScale(remaining, 1) }
-		):Play()
 		hideToken += 1
 		setShown(true)
 		return
 	end
+	winDrain.Active = false
 
 	if runState == "Starting"
 		or runState == "Running"
@@ -388,9 +420,17 @@ local function refresh()
 
 		-- Oil course (and the finish countdown): show oil collected.
 		local oil = player:GetAttribute("CurrentOil") or 0
+		if runState ~= "Finishing" then
+			multipliersRevealed = false
+		elseif not multipliersRevealed then
+			local raw = player:GetAttribute("OilRawCollected")
+			if typeof(raw) == "number" then
+				oil = math.min(raw, oil)
+			end
+		end
 		title.Text = "OIL"
 		setTheme("oil")
-		runOil = oil
+		runOil = player:GetAttribute("CurrentOil") or 0 -- the real (multiplied) oil
 		fill.Size = UDim2.fromScale(1, 1)
 
 		-- a platform's result shows when the ball the player SEES reaches it
@@ -504,6 +544,27 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 end)
 
+RunService.RenderStepped:Connect(function(deltaTime)
+	if not winDrain.Active then
+		return
+	end
+	local speed = tonumber(player:GetAttribute("WinSpeed")) or 0
+	local ahead = speed * math.min(os.clock() - winDrain.At, 0.15) -- never run far ahead of the server
+	local travelled = math.min(winDrain.Travelled + ahead, winDrain.Budget)
+	local target = math.clamp(1 - travelled / winDrain.Budget, 0, 1)
+	winDrain.Shown += (target - winDrain.Shown) * math.min(1, deltaTime * 14)
+
+	local remaining = winDrain.Shown
+	local before = currentTheme
+	setTheme(remaining > 0.5 and "high" or (remaining > 0.2 and "mid" or "low"))
+	if currentTheme ~= before then
+		bump(scale, 1.08) -- a little kick as the bar turns amber, then red
+	end
+	-- remaining oil as a number (the oil you rolled in with), not a percentage
+	valueLabel.Text = formatNumber(runOil * remaining)
+	fill.Size = UDim2.fromScale(remaining, 1)
+end)
+
 local lastSpeedBucket = 0
 player:GetAttributeChangedSignal("WinSpeed"):Connect(function()
 	local speed = player:GetAttribute("WinSpeed")
@@ -573,6 +634,7 @@ animEvent.Event:Connect(function(command, value)
 		end
 	elseif command == "End" then
 		displayOverride = nil
+		multipliersRevealed = true
 		refresh()
 	end
 end)

@@ -63,7 +63,8 @@ local function label(props)
 	props.BackgroundTransparency = 1
 	props.Font = FONT
 	local l = create("TextLabel", props, panel)
-	create("UIStroke", { Color = INK, Thickness = 2.5 }, l)
+	-- outline follows the text size so small digits ("0 / 400") stay crisp
+	create("UIStroke", { Color = INK, Thickness = math.clamp(l.TextSize * 0.11, 1, 2.5) }, l)
 	return l
 end
 

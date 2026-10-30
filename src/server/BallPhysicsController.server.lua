@@ -1963,7 +1963,7 @@ if runState == "Waiting"
 				--------------------------------------------------
 
 				-- On the oil course the raw ball stats (50..150 studs/s) were far too
-				-- fast to read and dodge the platform rows (42 studs apart). They are
+				-- fast to read and dodge the platform rows (45 studs apart). They are
 				-- mapped onto a playable band that still rewards faster balls:
 				-- forward 58 -> 110 studs/s, steering 52 -> 78 studs/s. BallDefinitions
 				-- (and everything else that reads them) are unchanged.
@@ -1975,6 +1975,13 @@ if runState == "Waiting"
 				local targetForwardSpeed =
 					COURSE_CRUISE_SPEED + tier * 30 -- 52 .. 82 studs/s
 				local rollAcceleration = 1.2 + tier * 3.3 -- studs/s per second after reaching cruise
+
+				-- a re-themed ball outside its own world rolls just under the slowest ball and never speeds up (WorldBallSpeed)
+				local slowdown = WorldBallSpeed.CourseSlowdown(ball)
+				if slowdown then
+					targetForwardSpeed = COURSE_CRUISE_SPEED * slowdown
+					rollAcceleration = 0
+				end
 
 				local targetHorizontalSpeed =
 					52 + math.clamp(getHorizontalSpeed(ball) - 50, 0, 100) * 0.26
@@ -2004,17 +2011,22 @@ if runState == "Waiting"
 				--------------------------------------------------
 
 				-- quick, smooth ramp up to cruise; slow, ball-dependent ramp after
-				local rate = currentSpeed < COURSE_CRUISE_SPEED and COURSE_ACCELERATION or rollAcceleration
-				currentSpeed =
-					math.min(
-						currentSpeed
-						+
-						rate
-						*
-						deltaTime,
+				if slowdown then
+					-- ease smoothly onto the braked speed
+					currentSpeed += (targetForwardSpeed - currentSpeed) * (1 - math.exp(-3 * deltaTime))
+				else
+					local rate = currentSpeed < COURSE_CRUISE_SPEED and COURSE_ACCELERATION or rollAcceleration
+					currentSpeed =
+						math.min(
+							currentSpeed
+							+
+							rate
+							*
+							deltaTime,
 
-						math.max(targetForwardSpeed, math.min(currentSpeed, COURSE_CRUISE_SPEED))
-					)
+							math.max(targetForwardSpeed, math.min(currentSpeed, COURSE_CRUISE_SPEED))
+						)
+				end
 
 
 				currentSpeed =
@@ -2044,9 +2056,14 @@ if runState == "Waiting"
 				-- Steering is decoupled from the forward ramp (it used to scale with
 				-- the current forward speed, so the first second felt sluggish) and
 				-- eased toward the pressed direction in a few frames: crisp, no jerk.
+				-- Pushing (or switching sides) eases in fast so it answers right away; letting
+				-- go eases out a little softer, so the ball glides on a moment while it rolls
+				-- instead of stopping dead sideways (that hard stop felt like a drag).
 				local desiredLateral = -input.X * targetHorizontalSpeed
 				local lateral = ballLateral[ball] or 0
-				lateral += (desiredLateral - lateral) * (1 - math.exp(-22 * deltaTime))
+				local pushing = math.abs(desiredLateral) > math.abs(lateral) or desiredLateral * lateral < 0
+				local steerRate = pushing and 18 or 9
+				lateral += (desiredLateral - lateral) * (1 - math.exp(-steerRate * deltaTime))
 				ballLateral[ball] = lateral
 
 				controller.VectorVelocity =

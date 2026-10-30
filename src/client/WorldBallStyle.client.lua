@@ -8,7 +8,9 @@
 -- of its own it keeps the theme of the highest world skin the owner owns for it
 -- (the same answer on every client, and it survives rejoining). A ball with no
 -- skin at all looks exactly like the original. This is the look only: how fast
--- the ball rolls is still decided by the server (WorldBallSpeed).
+-- the ball rolls is still decided by the server (WorldBallSpeed). A ball swapped in
+-- by an upgrade / downgrade platform during a run (server-set "RunTierBall") always
+-- wears the current world's look for that tier.
 --------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -39,7 +41,12 @@ task.spawn(function()
 				local ballId = ball:GetAttribute("BallId")
 				local want = nil
 				if world and ballId then
-					if world.Theme and WorldConfig.OwnsSkin(owner, ballId, world.Id) then
+					if ball:GetAttribute("RunTierBall") == true then
+						-- a ball swapped in by an upgrade / downgrade platform is this world's
+						-- version of that tier (the original look in world 1), never a skin
+						-- carried in from another world
+						want = world.Theme and world.Id or nil
+					elseif world.Theme and WorldConfig.OwnsSkin(owner, ballId, world.Id) then
 						want = world.Id
 					else
 						want = highestOwnedSkin(owner, ballId)

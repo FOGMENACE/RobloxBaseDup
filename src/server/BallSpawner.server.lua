@@ -1042,6 +1042,9 @@ local function createPlayerBall(
 					end
 				end
 				current:SetAttribute("AccessoriesApplied", nil)
+				-- clients swap some accessories for local-only copies (cone spikes) that this
+				-- server cleanup cannot reach; a new generation tells them to drop those too
+				current:SetAttribute("AccGen", (current:GetAttribute("AccGen") or 0) + 1)
 
 				current.TextureID = swapTemplate.TextureID
 				current.Color = swapTemplate.Color
@@ -1052,6 +1055,8 @@ local function createPlayerBall(
 				local sizeChanged = (current.Size - swapTemplate.Size).Magnitude > 0.05
 				if sizeChanged then current.Size = swapTemplate.Size end
 				current:SetAttribute("BallId", options.BallId)
+				-- an upgrade / downgrade platform ball rolls at its own full speed (WorldBallSpeed)
+				current:SetAttribute("RunTierBall", true)
 
 				-- a bigger ball must not sink into the lane
 				local lift = (current.Size.Y - oldHeight) / 2
@@ -1289,6 +1294,8 @@ local function createPlayerBall(
 			"CarrySpeed",
 			options.CarrySpeed
 		)
+		-- an upgrade / downgrade platform ball rolls at its own full speed (WorldBallSpeed)
+		ball:SetAttribute("RunTierBall", true)
 	end
 
 	-- Building the accessories can yield (mesh loading), so two overlapping
@@ -1409,6 +1416,12 @@ if not swapRunBall then
 
 end
 
+-- One swap at a time per player: rebuilding a ball can yield (mesh / accessory loading),
+-- and a second tier platform hit meanwhile ran a second rebuild at the same time; the
+-- two interleaved, so a downgrade could be lost or keep the upgrade's accessories
+-- (a StraightBall with Aftershock shards). Later swaps wait their turn, in order.
+local swapping = {} -- [player] = true while a swap runs
+
 swapRunBall.Event:Connect(
 	function(
 		player,
@@ -1425,6 +1438,15 @@ swapRunBall.Event:Connect(
 
 		end
 
+		local waited = false
+		while swapping[player] and player.Parent do
+			waited = true
+			task.wait()
+		end
+		if not player.Parent then
+			return
+		end
+
 		local character =
 			player.Character
 
@@ -1434,7 +1456,18 @@ swapRunBall.Event:Connect(
 
 		end
 
-		createPlayerBall(
+		-- a swap that waited continues from where the ball is now, not where it was
+		if waited and typeof(cframe) == "CFrame" then
+			local current = playerBalls:FindFirstChild(getPlayerBallName(player))
+			if current and current:IsA("BasePart") then
+				cframe = current.CFrame
+				velocity = current.AssemblyLinearVelocity
+			end
+		end
+
+		swapping[player] = true
+		local ok, err = pcall(
+			createPlayerBall,
 			player,
 			character,
 			{
@@ -1445,9 +1478,17 @@ swapRunBall.Event:Connect(
 				InPlace = ballId ~= nil and typeof(cframe) == "CFrame" and typeof(carrySpeed) == "number",
 			}
 		)
+		swapping[player] = nil
+		if not ok then
+			warn("[BallSpawner] ball swap failed:", player.Name, err)
+		end
 
 	end
 )
+
+Players.PlayerRemoving:Connect(function(player)
+	swapping[player] = nil
+end)
 
 
 --------------------------------------------------

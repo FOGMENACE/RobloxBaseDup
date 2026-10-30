@@ -366,7 +366,7 @@ local autoButton = create("TextButton", {
 	AutoButtonColor = false,
 }, panel)
 round(autoButton, 14)
-stroke(autoButton, 3)
+stroke(autoButton, 2)
 
 local skipButton = create("TextButton", {
 	AnchorPoint = Vector2.new(1, 0),
@@ -380,7 +380,7 @@ local skipButton = create("TextButton", {
 	AutoButtonColor = false,
 }, panel)
 round(skipButton, 14)
-stroke(skipButton, 3)
+stroke(skipButton, 2)
 Shine.Attach(skipButton, { Offset = 1.2 })
 
 local function refreshAuto()

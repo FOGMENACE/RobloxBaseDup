@@ -48,9 +48,10 @@ end
 
 local function compact(value)
 	value = math.floor(value)
-	if value >= 1e9 then
+	-- each step starts where the one below would round up to "1000.0" (999,960,000 is 1.0B)
+	if value >= 999.95e6 then
 		return string.format("%.1fB", value / 1e9)
-	elseif value >= 1e6 then
+	elseif value >= 999.95e3 then
 		return string.format("%.1fM", value / 1e6)
 	elseif value >= 1e4 then
 		return string.format("%.1fK", value / 1e3)

@@ -61,11 +61,12 @@ end
 
 local function formatNumber(value)
 	value = math.floor(tonumber(value) or 0)
-	if value >= 1e12 then
+	-- each step starts where the one below would round up to "1000.0" (999,960,000 is 1.0B)
+	if value >= 999.95e9 then
 		return string.format("%.1fT", value / 1e12)
-	elseif value >= 1e9 then
+	elseif value >= 999.95e6 then
 		return string.format("%.1fB", value / 1e9)
-	elseif value >= 1e6 then
+	elseif value >= 999.95e3 then
 		return string.format("%.1fM", value / 1e6)
 	elseif value >= 1e3 then
 		return string.format("%.1fK", value / 1e3)
@@ -205,7 +206,8 @@ local globalLabel = create("TextLabel", {
 	ZIndex = 2,
 }, badge)
 create("UITextSizeConstraint", { MaxTextSize = 28, MinTextSize = 10 }, globalLabel)
-create("UIStroke", { Color = INK, Thickness = 2.5 }, globalLabel)
+-- thin enough that the holes in 0/6/8/9 stay open at this size
+create("UIStroke", { Color = INK, Thickness = 1.6 }, globalLabel)
 
 -- Rebirth-cycle level + XP bar
 local levelPanel = create("Frame", {
@@ -248,19 +250,29 @@ create("UIGradient", {
 	Rotation = 90,
 	Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(196, 214, 196)),
 }, barFill)
+-- the sweep is a slanted band in a gradient on a fill-sized rounded overlay, so it
+-- keeps the bar's rounded ends (a rotated strip would show square corners)
 local barShine = create("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(-0.3, 0.5),
-	Size = UDim2.new(0.22, 0, 2, 0),
-	Rotation = 20,
+	Size = UDim2.fromScale(1, 1),
 	BackgroundColor3 = Color3.new(1, 1, 1),
-	BackgroundTransparency = 0.72,
 	BorderSizePixel = 0,
 }, barFill)
+round(barShine, 12)
+local barShineGradient = create("UIGradient", {
+	Rotation = 20,
+	Offset = Vector2.new(-0.8, 0),
+	Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.4, 1),
+		NumberSequenceKeypoint.new(0.5, 0.72),
+		NumberSequenceKeypoint.new(0.6, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	}),
+}, barShine)
 TweenService:Create(
-	barShine,
+	barShineGradient,
 	TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 2.2),
-	{ Position = UDim2.fromScale(1.3, 0.5) }
+	{ Offset = Vector2.new(0.8, 0) }
 ):Play()
 
 local barLabel = create("TextLabel", {
@@ -485,7 +497,7 @@ local function bonusLine(y, color)
 		TextSize = 16,
 		TextXAlignment = Enum.TextXAlignment.Right,
 	}, bonusPill)
-	create("UIStroke", { Color = INK, Thickness = 2.5 }, line)
+	create("UIStroke", { Color = INK, Thickness = 1.8 }, line)
 	return line
 end
 

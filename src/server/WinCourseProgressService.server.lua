@@ -29,6 +29,16 @@
 -- SERVICES
 --------------------------------------------------
 
+-- Routine per-run logging (every tile / platform) is off on live servers; set
+-- DEBUG_LOGS = true while testing. Warnings and [AUDIT] warns always show.
+local DEBUG_LOGS = false
+local rawPrint = print
+local function print(...)
+	if DEBUG_LOGS then
+		rawPrint(...)
+	end
+end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -129,7 +139,7 @@ end
 -- SETTINGS
 --------------------------------------------------
 
-local DEBUG = true
+local DEBUG = false -- verbose run tracing (debugPrint); true while testing
 
 
 --------------------------------------------------
@@ -218,19 +228,30 @@ local function oilToTravel(oil, ball, player)
 	end
 
 	local speed = 50
+	local WorldBallSpeed = require(ServerScriptService:WaitForChild("WorldBallSpeed"))
 	local okBalls, balls = pcall(function()
 		return require(ServerScriptService:WaitForChild("BallDefinitions"))
 	end)
 	local ballId = ball and ball:GetAttribute("BallId")
 	if okBalls and typeof(ballId) == "string" and balls[ballId] and typeof(balls[ballId].ForwardSpeed) == "number" then
 		speed = balls[ballId].ForwardSpeed
-		-- a ball from another world counts as the starter ball here (WorldBallSpeed)
-		speed = require(ServerScriptService:WaitForChild("WorldBallSpeed")).Effective(player, ballId, speed)
+		-- an equipped ball from another world counts as the starter ball here, even if
+		-- it was upgraded on the course; a home ball's upgrades count (WorldBallSpeed)
+		speed = WorldBallSpeed.ForWinCourse(player, ball, speed)
 	end
 	local ballFactor = 0.7 + 0.6 * math.clamp((speed - 50) / 100, 0, 1)
+	if speed < 50 then
+		-- a re-themed ball outside its own world (WorldBallSpeed.ForWinCourse): far less travel
+		ballFactor = 0.7 * math.max(speed, 1) / 50
+	end
 
 	local rebirths = tonumber(player:GetAttribute("Rebirths")) or 0
 	local rebirthFactor = 1 + math.min(rebirths * 0.01, 0.35)
+	if not WorldBallSpeed.EquippedIsHome(player) then
+		-- the rebirth stretch is earned with this world's balls: a ball from another
+		-- world gets none of it (it used to win back most of its penalty at high rebirths)
+		rebirthFactor = 1
+	end
 
 	return TRAVEL_COEFFICIENT * (oil ^ TRAVEL_EXPONENT) * ballFactor * rebirthFactor
 end
@@ -1045,11 +1066,16 @@ end
 -- onto the exact start position for the countdown.
 --------------------------------------------------
 
-local GLIDE_OMEGA = 5 -- higher = snappier (settles in ~1 s)
-local GLIDE_MAX_TIME = 2.2
-local GLIDE_BRAKE = 0.4 -- share of the incoming speed kept (the finish wall takes the rest)
+-- The glide is a timed, eased path (a cubic Hermite curve): it continues the ball's
+-- incoming motion, so there is no jolt at the wall, slows down smoothly and settles
+-- exactly in the middle of the start. The ball is steered along it through its velocity
+-- (with a small position correction), so the server-owned physics replicates smoothly,
+-- and it spins as it rolls. The countdown only starts once it has settled (onSettled).
+local GLIDE_TIME = 1.6 -- seconds from the finish wall to resting in the start
+local GLIDE_BRAKE = 0.35 -- share of the incoming speed carried into the glide
+local GLIDE_SETTLE_PAUSE = 0.25 -- a short beat at rest before the countdown begins
 
-local function beginGlideToStart(run, ball, position)
+local function beginGlideToStart(run, ball, position, onSettled)
 
 	if not ball
 		or not ball.Parent then
@@ -1077,22 +1103,61 @@ local function beginGlideToStart(run, ball, position)
 
 	task.spawn(function()
 		local startTime = os.clock()
-		local velocity = ball.AssemblyLinearVelocity * GLIDE_BRAKE
+		local p0 = ball.Position
+		-- incoming velocity, flattened and braked: the start tangent of the curve
+		local incoming = ball.AssemblyLinearVelocity
+		-- carried along the line to the start, and capped by the distance left, so the ball
+		-- eases straight in and stops (too much carried speed overshot the start and rolled back)
+		local toTarget = Vector3.new(target.X - p0.X, 0, target.Z - p0.Z)
+		local m0 = Vector3.zero
+		if toTarget.Magnitude > 0.05 then
+			local along = math.max(0, Vector3.new(incoming.X, 0, incoming.Z):Dot(toTarget.Unit))
+			m0 = toTarget.Unit * math.min(along * GLIDE_BRAKE * GLIDE_TIME, toTarget.Magnitude * 1.5)
+		end
+		local radius = math.max(ball.Size.Y / 2, 0.5)
 
-		while ball.Parent
-			and not run.Finished
-			and os.clock() - startTime < GLIDE_MAX_TIME do
-
-			local dt = RunService.Heartbeat:Wait()
-			local offset = ball.Position - target
-
-			if offset.Magnitude < 0.35 and velocity.Magnitude < 2 then
+		while ball.Parent and not run.Finished do
+			RunService.Heartbeat:Wait()
+			local k = math.clamp((os.clock() - startTime) / GLIDE_TIME, 0, 1)
+			if k >= 1 then
 				break
 			end
 
-			local accel = -2 * GLIDE_OMEGA * velocity - GLIDE_OMEGA * GLIDE_OMEGA * offset
-			velocity += accel * dt
+			-- Hermite: position and its derivative at k (end tangent 0 = arrive at rest)
+			local k2, k3 = k * k, k * k * k
+			local wanted = (2 * k3 - 3 * k2 + 1) * p0 + (k3 - 2 * k2 + k) * m0 + (-2 * k3 + 3 * k2) * target
+			local slope = ((6 * k2 - 6 * k) * p0 + (3 * k2 - 4 * k + 1) * m0 + (-6 * k2 + 6 * k) * target) / GLIDE_TIME
+
+			-- follow the curve; the correction keeps it on the path even if physics drifts
+			local velocity = slope + (wanted - ball.Position) * 8
 			ball.AssemblyLinearVelocity = velocity
+
+			-- roll: spin around the axis across the direction of travel
+			local flat = Vector3.new(velocity.X, 0, velocity.Z)
+			local spin = flat.Magnitude > 0.05 and Vector3.yAxis:Cross(flat) / radius or Vector3.zero
+
+			-- over the later part the spin turns the ball into its resting pose (face to
+			-- the camera, as placeBallAtStart sets it), so it settles facing front instead
+			-- of stopping at a random angle and snapping
+			local align = math.clamp((k - 0.25) / 0.35, 0, 1)
+			if align > 0 then
+				align = align * align * (3 - 2 * align)
+				local current = ball.CFrame - ball.CFrame.Position
+				local remaining = math.max((1 - k) * GLIDE_TIME, 0.05)
+				-- keep rolling FORWARD (about +X, the way it rolls down the lane) until the
+				-- next time it faces front, instead of turning back the short way
+				local up = current.UpVector
+				local forwardLeft = (-math.atan2(up.Z, up.Y)) % (2 * math.pi)
+				if forwardLeft > 2 * math.pi - 0.4 then
+					forwardLeft -= 2 * math.pi -- just past front: ease back a hair, not a full extra turn
+				end
+				-- any small tilt off that axis (from the sideways centring) is undone directly
+				local axis, angle = (current:Inverse()):ToAxisAngle()
+				local tilt = (angle > 1e-3 and axis.Magnitude > 0.5) and axis.Unit * (angle / remaining) or Vector3.zero
+				local turn = Vector3.new(forwardLeft / remaining, tilt.Y, tilt.Z)
+				spin = spin:Lerp(turn, align)
+			end
+			ball.AssemblyAngularVelocity = spin
 		end
 
 		run.Gliding = false
@@ -1100,6 +1165,10 @@ local function beginGlideToStart(run, ball, position)
 		if ball.Parent and not run.Finished then
 			-- lock onto the exact official start for the countdown
 			placeBallAtStart(ball, position)
+			task.wait(GLIDE_SETTLE_PAUSE)
+			if onSettled and not run.Finished then
+				onSettled()
+			end
 		end
 	end)
 
@@ -2516,13 +2585,16 @@ end
 			run.CurrentOil
 		)
 
+	-- a re-themed ball outside its own world rolls in slow motion (WorldBallSpeed)
+	local rollScale = require(ServerScriptService:WaitForChild("WorldBallSpeed")).WinCourseRollScale(run.Player)
+
 	run.StartingSpeed =
 		calculateStartingSpeed(
 			run.CurrentOil
-		)
+		) * rollScale
 
 	run.MaxSpeed =
-		MAX_WIN_COURSE_SPEED
+		MAX_WIN_COURSE_SPEED * rollScale
 
 	run.CurrentSpeed =
 		run.StartingSpeed
@@ -2970,8 +3042,9 @@ local function startTracking(
 		-- COUNTDOWN
 		--------------------------------------------------
 
+		-- set when the ball has glided into the start and settled (beginGlideToStart)
 		CountdownStarted =
-			os.clock(),
+			math.huge,
 
 		Rolling =
 			false,
@@ -3071,11 +3144,22 @@ local function startTracking(
 	-- PLACE BALL
 	--------------------------------------------------
 
+	-- the countdown starts once the ball has glided into the start and settled
 	local positioned =
 		beginGlideToStart(
 			run,
 			ball,
-			startPosition
+			startPosition,
+			function()
+				run.CountdownStarted = os.clock()
+				if player.Parent then
+					winCourseRemote:FireClient(
+						player,
+						"CountdownStart",
+						START_DELAY
+					)
+				end
+			end
 		)
 
 	if not positioned then
@@ -3086,17 +3170,6 @@ local function startTracking(
 		return
 
 	end
-
-
-	--------------------------------------------------
-	-- COUNTDOWN
-	--------------------------------------------------
-
-	winCourseRemote:FireClient(
-		player,
-		"CountdownStart",
-		START_DELAY
-	)
 
 
 	--------------------------------------------------

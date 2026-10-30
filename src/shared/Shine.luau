@@ -37,7 +37,7 @@ local function ensureLoop()
 
 				if t < SWEEP_TIME then
 					entry.Frame.Visible = true
-					entry.Frame.Position = UDim2.fromScale(-0.3 + (t / SWEEP_TIME) * 1.6, 0.5)
+					entry.Gradient.Offset = Vector2.new(-0.8 + (t / SWEEP_TIME) * 1.6, 0)
 				else
 					entry.Frame.Visible = false
 				end
@@ -51,12 +51,12 @@ function Shine.Attach(button, options)
 
 	button.ClipsDescendants = true
 
+	-- The shine covers the whole button and wears the button's own corner, so it
+	-- never shows square corners (ClipsDescendants only clips square). The glare
+	-- is a slanted band in the gradient, slid across by its Offset.
 	local frame = Instance.new("Frame")
 	frame.Name = "Shine"
-	frame.AnchorPoint = Vector2.new(0.5, 0.5)
-	frame.Size = UDim2.new(0.22, 0, 2.4, 0)
-	frame.Position = UDim2.fromScale(-0.3, 0.5)
-	frame.Rotation = 20
+	frame.Size = UDim2.fromScale(1, 1)
 	frame.BackgroundColor3 = Color3.new(1, 1, 1)
 	frame.BackgroundTransparency = 0
 	frame.BorderSizePixel = 0
@@ -64,11 +64,29 @@ function Shine.Attach(button, options)
 	frame.Visible = false
 	frame.ZIndex = (button.ZIndex or 1) + 20
 
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 0)
+	corner.Parent = frame
+	local function copyCorner(child)
+		if child:IsA("UICorner") then
+			corner.CornerRadius = child.CornerRadius
+		end
+	end
+	for _, child in ipairs(button:GetChildren()) do
+		copyCorner(child)
+	end
+	button.ChildAdded:Connect(copyCorner)
+
 	-- Soft edges: fully clear at the sides, bright in the middle.
+	local peak = 1 - (options.Strength or 0.55)
 	local gradient = Instance.new("UIGradient")
+	gradient.Rotation = 20
+	gradient.Offset = Vector2.new(-0.8, 0)
 	gradient.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.5, 1 - (options.Strength or 0.55)),
+		NumberSequenceKeypoint.new(0.4, 1),
+		NumberSequenceKeypoint.new(0.5, peak),
+		NumberSequenceKeypoint.new(0.6, 1),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	gradient.Parent = frame
@@ -77,6 +95,7 @@ function Shine.Attach(button, options)
 
 	table.insert(entries, {
 		Frame = frame,
+		Gradient = gradient,
 		Offset = options.Offset or 0,
 		Interval = options.Interval or 5,
 	})

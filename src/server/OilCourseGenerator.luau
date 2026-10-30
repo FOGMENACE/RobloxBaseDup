@@ -49,6 +49,16 @@
 -- SERVICES
 --------------------------------------------------
 
+-- Routine per-run logging (every tile / platform) is off on live servers; set
+-- DEBUG_LOGS = true while testing. Warnings and [AUDIT] warns always show.
+local DEBUG_LOGS = false
+local rawPrint = print
+local function print(...)
+	if DEBUG_LOGS then
+		rawPrint(...)
+	end
+end
+
 local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Players = game:GetService("Players")
@@ -80,13 +90,18 @@ local course = workspace:WaitForChild("Course")
 --------------------------------------------------
 
 local NUMBER_OF_ROWS = 12
-local ROW_SPACING = 42
+-- 45 studs: about 0.55 s between rows for the fastest ball (82 studs/s) up to
+-- about 0.85 s for the slowest (52), a little tight on purpose so it stays a test
+local ROW_SPACING = 45
 local PLATFORM_SEPARATION = 5
 
+-- Row 1 sits about 52 studs past the StartWall (it used to be 42), about 1 s to
+-- line up before the first choice. With the wider row spacing the lane, FinishWall
+-- and WinCourse were moved 38 studs further down to match (see WinCourseGenerator).
 local START_POSITION = Vector3.new(
 	-64.718,
 	67.994,
-	-154.612
+	-144.612
 )
 
 
@@ -1351,6 +1366,27 @@ function OilCourseGenerator.Generate(player)
 	--------------------------------------------------
 	-- COUNT POLARITIES
 	--------------------------------------------------
+
+	-- last guard: a divider (/2, /4) is ALWAYS a red, negative platform and a
+	-- multiplier (X2, X4) ALWAYS a green, positive one, whatever happened above
+	for _, platform in ipairs(playerCourse:GetDescendants()) do
+		local isDivider = platform:GetAttribute("IsDivider") == true
+		local isMultiplier = platform:GetAttribute("IsMultiplier") == true
+		if isDivider or isMultiplier then
+			local wantPositive = isMultiplier
+			local wantColor = wantPositive and POSITIVE_COLOR or NEGATIVE_COLOR
+			local wrong = platform:GetAttribute("Positive") ~= wantPositive
+			for _, part in ipairs(getPlatformParts(platform)) do
+				wrong = wrong or part.Color ~= wantColor
+			end
+			if wrong then
+				warn("[OilCourseGenerator] special platform on the wrong side, fixed:", platform:GetFullName())
+				platform:SetAttribute("Positive", wantPositive)
+				configurePlatformVisuals(platform, wantPositive)
+				platform.Parent:SetAttribute(platform.Name == "OilPlatformL" and "LeftPositive" or "RightPositive", wantPositive)
+			end
+		end
+	end
 
 	local positiveCount, negativeCount = countCoursePolarities(playerCourse)
 	playerCourse:SetAttribute("MultiplierPlatforms", helperUsed)

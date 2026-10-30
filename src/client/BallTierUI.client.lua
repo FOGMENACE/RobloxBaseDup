@@ -260,12 +260,93 @@ local function shake(holder)
 	end)
 end
 
+-- The ball itself reacts (local only, never replicated): a punchy explosion sound,
+-- a coloured aura that flashes around the ball (green up, red down) with a burst
+-- of light, and the ball blinking see-through and back while it changes.
+local RunService = game:GetService("RunService")
+local RunTiming = require(ReplicatedStorage:WaitForChild("RunTiming"))
+
+local AURA_TIME = 0.7
+
+local function ballAura(color, isUp)
+	local balls = workspace:FindFirstChild("PlayerBalls")
+	local ball = balls and balls:FindFirstChild("PlayerBall_" .. player.UserId)
+	if not ball or not ball:IsA("BasePart") then
+		return
+	end
+
+	local boom = create("Sound", {
+		SoundId = "rbxasset://sounds/impact_explosion_03.mp3",
+		Volume = 0.42,
+		PlaybackSpeed = isUp and 1.3 or 0.85,
+	}, gui)
+	boom:Play()
+	task.delay(3, function()
+		boom:Destroy()
+	end)
+
+	local aura = create("Highlight", {
+		Name = "TierAura",
+		Adornee = ball,
+		FillColor = color,
+		OutlineColor = isUp and Color3.fromRGB(220, 255, 225) or Color3.fromRGB(255, 200, 200),
+		FillTransparency = 1,
+		OutlineTransparency = 1,
+		DepthMode = Enum.HighlightDepthMode.Occluded,
+	}, ball)
+	local light = create("PointLight", {
+		Color = color,
+		Range = 18,
+		Brightness = 0,
+		Shadows = false,
+	}, ball)
+
+	-- the ball and its accessories blink: see-through, solid, see-through, solid
+	local parts = { ball }
+	for _, d in ipairs(ball:GetDescendants()) do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+		end
+	end
+
+	local started = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local t = (os.clock() - started) / AURA_TIME
+		if t >= 1 or not ball.Parent then
+			connection:Disconnect()
+			for _, part in ipairs(parts) do
+				if part.Parent then
+					part.LocalTransparencyModifier = 0
+				end
+			end
+			aura:Destroy()
+			light:Destroy()
+			return
+		end
+		-- two quick pulses, the second softer, then the aura fades out
+		local pulse = math.abs(math.sin(t * math.pi * 2)) * (1 - t * 0.6)
+		aura.FillTransparency = 1 - 0.75 * pulse
+		aura.OutlineTransparency = 1 - pulse
+		light.Brightness = 7 * pulse
+		local blink = (t < 0.6) and (0.55 * math.abs(math.sin(t * math.pi * 5))) or 0
+		for _, part in ipairs(parts) do
+			part.LocalTransparencyModifier = blink
+		end
+	end)
+end
+
 task.spawn(function()
 	local tierRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("BallTier")
 
 	tierRemote.OnClientEvent:Connect(function(kind, oldName, newName)
 		oldName = string.upper(tostring(oldName))
 		newName = string.upper(tostring(newName))
+
+		-- the burst lands when the ball the player SEES reaches the platform
+		if kind == "Up" or kind == "Down" then
+			task.delay(RunTiming.Delay(), ballAura, kind == "Up" and GREEN or RED, kind == "Up")
+		end
 
 		if kind == "Up" then
 			banner("BALL UPGRADE!", oldName .. "  >  " .. newName, GREEN)

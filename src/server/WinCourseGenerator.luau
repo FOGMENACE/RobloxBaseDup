@@ -41,6 +41,16 @@
 -- and is not recreated by this generator.
 --------------------------------------------------
 
+-- Routine per-run logging (every tile / platform) is off on live servers; set
+-- DEBUG_LOGS = true while testing. Warnings and [AUDIT] warns always show.
+local DEBUG_LOGS = false
+local rawPrint = print
+local function print(...)
+	if DEBUG_LOGS then
+		rawPrint(...)
+	end
+end
+
 local ServerStorage =
 	game:GetService("ServerStorage")
 
@@ -78,7 +88,7 @@ local course =
 
 local START_POSITION =
 	Vector3.new(
-		-64.726, 63.444, 366.0 -- starts just past the oil course (its floor ends at z 364.3, the finish wall at 365.8); it used to start at 353 and overlapped both
+		-64.726, 63.444, 404.0 -- starts just past the oil course (its floor ends at z 402.6, the finish wall at 403.8); the oil course was lengthened 38 studs for a longer start runway and wider row spacing
 	)
 
 

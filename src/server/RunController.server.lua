@@ -57,6 +57,13 @@ local ServerScriptService =
 
 local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
 
+-- FINISH CHECKS (anti-exploit): when each player's run started. A finish only counts if
+-- the server simulated the ball the whole way (it owns the ball during the course) and the
+-- run took at least as long as the fastest possible ball needs for the course length.
+-- The oil course tops out around 82-110 studs/s; 140 leaves a generous margin for lag.
+local MAX_PLAUSIBLE_COURSE_SPEED = 140
+local runStartedAt = setmetatable({}, { __mode = "k" }) -- [player] = os.clock()
+
 
 --------------------------------------------------
 -- REFERENCES
@@ -937,6 +944,7 @@ local function startRun(
 		"RunState",
 		"Running"
 	)
+	runStartedAt[player] = os.clock()
 
 
 	print(
@@ -1011,6 +1019,27 @@ local function finishRun(
 
 
 	--------------------------------------------------
+	-- FINISH CHECKS (server-side, anti-exploit)
+	--------------------------------------------------
+
+	local suspicious = nil
+	local okOwner, networkOwner = pcall(function()
+		return ball:GetNetworkOwner()
+	end)
+	if okOwner and networkOwner ~= nil then
+		suspicious = "the ball was not server-owned at the finish"
+	end
+	local startedAt = runStartedAt[player]
+	local minSeconds = (finishWall.Position - startWall.Position).Magnitude / MAX_PLAUSIBLE_COURSE_SPEED
+	local took = startedAt and (os.clock() - startedAt) or 0
+	if not startedAt then
+		suspicious = suspicious or "no recorded run start"
+	elseif took < minSeconds then
+		suspicious = suspicious or string.format("finished in %.1fs (fastest possible %.1fs)", took, minSeconds)
+	end
+	runStartedAt[player] = nil
+
+	--------------------------------------------------
 	-- LOCK FINISH
 	--------------------------------------------------
 
@@ -1018,6 +1047,25 @@ local function finishRun(
 		"RunState",
 		"Finishing"
 	)
+
+	-- an impossible finish earns nothing: this run's oil is taken back (from the run and
+	-- from the saved total it was added to), so the WinCourse sends the ball home with no wins
+	if suspicious then
+		warn("[AUDIT] invalid oil-course finish:", player.Name, player.UserId, suspicious)
+		local runOil = getCurrentRunOil(player)
+		if runOil > 0 then
+			pcall(function()
+				local PlayerDataService = require(ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService"))
+				local saved = PlayerDataService.GetOil(player)
+				local take = math.min(runOil, saved)
+				if take > 0 then
+					PlayerDataService.RemoveOil(player, take)
+				end
+			end)
+		end
+		player:SetAttribute("CurrentOil", 0)
+		player:SetAttribute("OilRawCollected", 0)
+	end
 
 
 	--------------------------------------------------
@@ -1597,6 +1645,27 @@ task.spawn(function()
 
 	end
 end)
+
+--------------------------------------------------
+-- FINISHED COURSE CLEANUP
+--
+-- Back in the lobby the finished course is removed: its rows sit exactly on the
+-- lobby preview's rows, and the leftover see-through panels mixed with the preview
+-- (a green preview panel behind a red one showed orange). Every run builds a new
+-- course anyway (startRun).
+--------------------------------------------------
+
+local function watchCourseCleanup(player)
+	player:GetAttributeChangedSignal("RunState"):Connect(function()
+		if player:GetAttribute("RunState") == "Waiting" then
+			removeOldPlayerCourse(player)
+		end
+	end)
+end
+Players.PlayerAdded:Connect(watchCourseCleanup)
+for _, existing in ipairs(Players:GetPlayers()) do
+	watchCourseCleanup(existing)
+end
 
 --------------------------------------------------
 -- STUCK-RUN WATCHDOG

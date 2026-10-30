@@ -69,7 +69,7 @@ local NUMBER_OF_ROWS =
 
 
 local ROW_SPACING =
-	42
+	45 -- MUST MATCH OilCourseGenerator
 
 
 local PLATFORM_SEPARATION =
@@ -86,7 +86,7 @@ local START_POSITION =
 	Vector3.new(
 		-64.718,
 		67.994,
-		-154.612
+		-144.612
 	)
 
 

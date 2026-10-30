@@ -2,8 +2,8 @@
 -- WIN CELEBRATION
 --
 -- CLIENT ONLY, visual.
---   * Countdown: a "HOLD ON!" banner, a tightening vignette and a tick
---     sound each second, so the 5 seconds before the WinCourse feel busy.
+--   * Countdown: the 3-2-1-GO is the place's own StarterGui.WinCourseUI; during it
+--     this script flies the oil multipliers into the meter.
 --   * Result: when the server finishes a course (WinRunId attribute) the
 --     tile total appears, multipliers (rebirth, boost) are dragged into it
 --     and the credited total lands with a fanfare and confetti.
@@ -102,54 +102,15 @@ end
 -- COUNTDOWN
 --------------------------------------------------
 
-local vignette = create("Frame", {
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	Visible = false,
-}, gui)
-create("UIStroke", { Color = Color3.fromRGB(255, 200, 60), Thickness = 0, Transparency = 0.4 }, vignette)
-
-local banner = create("TextLabel", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.22),
-	Size = UDim2.fromOffset(520, 70),
-	BackgroundTransparency = 1,
-	Font = FONT,
-	Text = "WIN RUSH INCOMING!",
-	TextColor3 = Color3.fromRGB(255, 225, 80),
-	TextSize = 46,
-	Visible = false,
-}, gui)
-create("UIStroke", { Color = INK, Thickness = 4 }, banner)
-local bannerScale = create("UIScale", { Scale = 1 }, banner)
-
+-- The 3 . 2 . 1 . GO itself is the place's own countdown (StarterGui.WinCourseUI, its
+-- WinCourseUIController listens to the same "CountdownStart"). This script only flies
+-- the oil multipliers into the meter during it.
 local showOilChips -- assigned below (needs the chip builder)
 
-local function countdown(seconds)
-	seconds = tonumber(seconds) or 5
-
-	banner.Visible = true
+local function countdown()
 	if showOilChips then
 		task.spawn(showOilChips)
 	end
-	vignette.Visible = true
-	local stroke = vignette:FindFirstChildOfClass("UIStroke")
-	stroke.Thickness = 0
-	TweenService:Create(stroke, TweenInfo.new(seconds, Enum.EasingStyle.Quad), { Thickness = 70 }):Play()
-
-	local messages = { "WIN RUSH INCOMING!", "HOLD ON TIGHT!", "GET READY!", "ALMOST...", "GO GO GO!" }
-	for step = 1, math.floor(seconds) do
-		banner.Text = messages[math.min(step, #messages)]
-		bannerScale.Scale = 1.3
-		TweenService:Create(bannerScale, TweenInfo.new(0.4, Enum.EasingStyle.Back), { Scale = 1 }):Play()
-		banner.Rotation = (step % 2 == 0) and 3 or -3
-		play(TICK_SOUND, 0.4, 0.9 + step * 0.08)
-		task.wait(seconds / math.floor(seconds))
-	end
-
-	banner.Visible = false
-	banner.Rotation = 0
-	vignette.Visible = false
 end
 
 --------------------------------------------------

@@ -27,6 +27,7 @@ local PlayerDataService = require(
 )
 
 local SweptTouch = require(ServerScriptService:WaitForChild("SweptTouch"))
+local WorldBallSpeed = require(ServerScriptService:WaitForChild("WorldBallSpeed"))
 local swapEvent = ServerScriptService:WaitForChild("SwapRunBall")
 local course = workspace:WaitForChild("Course")
 local playerBalls = workspace:WaitForChild("PlayerBalls")
@@ -114,13 +115,17 @@ local function applyGate(player, state, ball, delta)
 		return
 	end
 
-	local currentIndex = indexOf[state.BallId]
+	-- a ball from another world (no skin for this one) counts as the slowest ball
+	-- until its first platform (TierIndex, set at the run start)
+	local currentIndex = state.TierIndex or indexOf[state.BallId]
+	state.TierIndex = nil
 	local topIndex = (currentIndex == EXCLUSIVE_INDEX) and EXCLUSIVE_INDEX or #ordered
 	local newIndex = math.clamp(currentIndex + delta, 1, topIndex)
 	local oldName = displayName(state.BallId)
 
 	if newIndex == currentIndex then
 		-- Already at the top / bottom of the list.
+		state.TierIndex = (currentIndex ~= indexOf[state.BallId]) and currentIndex or nil
 		tierRemote:FireClient(player, delta > 0 and "MaxUp" or "MinDown", oldName, oldName, currentIndex, #ordered)
 		return
 	end
@@ -331,6 +336,7 @@ task.spawn(function()
 
 				if not state.BallId then
 					state.BallId = equippedId(player)
+					state.TierIndex = (state.BallId and not WorldBallSpeed.Fits(player, state.BallId)) and 1 or nil
 				end
 
 				if runState == "Running" then
@@ -349,7 +355,15 @@ task.spawn(function()
 
 				local swappedId = state.BallId
 				state.BallId = nil
+				state.TierIndex = nil
 				player:SetAttribute("RunBallName", nil)
+
+				-- the platform ball's full speed ends with the run (it may have been
+				-- downgraded back to the equipped ball, so no swap below clears it)
+				local lobbyBall = playerBalls:FindFirstChild("PlayerBall_" .. player.UserId)
+				if lobbyBall then
+					lobbyBall:SetAttribute("RunTierBall", nil)
+				end
 
 				local equipped = equippedId(player)
 				if swappedId and equipped and swappedId ~= equipped then

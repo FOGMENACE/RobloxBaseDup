@@ -86,7 +86,8 @@ end
 
 local function formatNumber(value)
 	value = math.floor(tonumber(value) or 0)
-	if value >= 1e6 then
+	-- millions start where thousands would round up to "1000.0K"
+	if value >= 999.95e3 then
 		return string.format("%.2fM", value / 1e6)
 	elseif value >= 1e4 then
 		return string.format("%.1fK", value / 1e3)
@@ -267,7 +268,7 @@ end
 local ballModels = ReplicatedStorage:FindFirstChild("BallModels")
 local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
 local spinners = {}
-local shines = {} -- Robux button shine frames (animated by the loop below)
+local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
 
 RunService.RenderStepped:Connect(function(deltaTime)
 	if not gui.Enabled then
@@ -285,15 +286,6 @@ RunService.RenderStepped:Connect(function(deltaTime)
 			BallAccessories.Pose(model, os.clock())
 		else
 			table.remove(spinners, index)
-		end
-	end
-
-	-- Shine: a 1 second sweep every 5 seconds, staggered per button.
-	local now = os.clock()
-	for _, entry in ipairs(shines) do
-		if entry.Frame.Parent then
-			local t = (now + entry.Offset) % 5
-			entry.Frame.Position = UDim2.fromScale(t < 1 and (-0.3 + t * 1.6) or -0.3, 0.5)
 		end
 	end
 end)
@@ -900,19 +892,9 @@ local function buildCard(ball, wins, rebirths, equippedSpeed, maxSpeed, topPrice
 			request("BuyWithRobux", ball.BallId)
 		end)
 
-		-- A soft shine sweeps across the Robux button every few seconds.
-		robuxButton.ClipsDescendants = true
-		local shine = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Size = UDim2.new(0, 22, 2, 0),
-			Rotation = 20,
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			BackgroundTransparency = 0.6,
-			BorderSizePixel = 0,
-			Position = UDim2.fromScale(-0.3, 0.5),
-			ZIndex = 5,
-		}, robuxButton)
-		table.insert(shines, { Frame = shine, Offset = math.random() * 2 })
+		-- A soft shine sweeps across the Robux button every few seconds
+		-- (the shared Shine keeps the button's rounded corners).
+		Shine.Attach(robuxButton, { Offset = math.random() * 2, Strength = 0.4 })
 	end
 end
 
@@ -987,7 +969,6 @@ refreshBody = function()
 		topPrice = math.max(topPrice, ShopConfig.RobuxPrices[ball.BallId] or 0)
 	end
 
-	table.clear(shines)
 	updateBanner(balls)
 
 	local world = WorldConfig.Of(player)

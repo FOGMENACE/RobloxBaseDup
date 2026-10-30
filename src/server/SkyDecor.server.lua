@@ -48,6 +48,16 @@ local function animate(part, spin, bob)
 end
 local DROP = Vector3.new(-230, 190, 470)
 
+-- The whole set is pulled in toward the lobby view and shrunk by the same factor,
+-- so it looks the same from the lobby but sits ~2x closer: at lower graphics
+-- quality (Automatic drops it on phones / busy frames) Roblox stops drawing parts
+-- this far out, and the sky objects kept vanishing and coming back.
+local EYE = Vector3.new(-65, 75, -230) -- the lobby camera, looking down the lane
+local PULL_IN = 0.45
+local function near(position)
+	return EYE + (position - EYE) * PULL_IN
+end
+
 local function settle(p, parent)
 	p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery, p.CastShadow = true, false, false, false, false
 	p.Parent = parent
@@ -76,8 +86,8 @@ local function build(world)
 		local moon = straight:Clone()
 		moon.Name = "BallMoon"
 		moon:ClearAllChildren()
-		moon.Size = straight.Size * (150 / math.max(straight.Size.X, 0.1))
-		moon.CFrame = CFrame.lookAt(MOON + offset, Vector3.new(-65, 70, -220) + offset)
+		moon.Size = straight.Size * (150 * PULL_IN / math.max(straight.Size.X, 0.1))
+		moon.CFrame = CFrame.lookAt(near(MOON) + offset, Vector3.new(-65, 70, -220) + offset)
 		settle(moon, folder)
 		animate(moon, Vector3.new(0, 0.05, 0), 0)
 		if world.Theme then
@@ -91,35 +101,37 @@ local function build(world)
 			local copy = pinTemplate:Clone()
 			copy.Name = "SkyPin" .. index
 			copy:ClearAllChildren()
-			copy.Size = pinTemplate.Size * 34
-			copy.CFrame = CFrame.new(pin[1] + offset) * CFrame.Angles(pin[2].X, pin[2].Y, pin[2].Z)
+			copy.Size = pinTemplate.Size * 34 * PULL_IN
+			copy.CFrame = CFrame.new(near(pin[1]) + offset) * CFrame.Angles(pin[2].X, pin[2].Y, pin[2].Z)
 			settle(copy, folder)
 			-- each pin tumbles slowly on its own, different speeds
-			animate(copy, Vector3.new(0.08 + index * 0.02, 0.05, 0.12 - index * 0.01), 6 + index)
+			animate(copy, Vector3.new(0.08 + index * 0.02, 0.05, 0.12 - index * 0.01), (6 + index) * PULL_IN)
 		end
 	end
 
 	-- a big glossy oil drop (the game's currency); glows in the world's colour
 	local tint = world.Theme and world.Theme.Glow or Color3.fromRGB(20, 18, 28)
 	local dark = Color3.fromRGB(20, 18, 28):Lerp(tint, world.Theme and 0.25 or 0)
-	ball("OilDrop", 70, DROP + offset, dark, Enum.Material.Glass, 0, folder)
+	local drop = near(DROP) + offset
+	local k = PULL_IN
+	ball("OilDrop", 70 * k, drop, dark, Enum.Material.Glass, 0, folder)
 	-- a smooth teardrop: a stack of shrinking, overlapping spheres (diameter, height above the centre)
 	for index, step in ipairs({ { 62, 20 }, { 52, 36 }, { 40, 50 }, { 28, 61 }, { 17, 69 }, { 8, 75 } }) do
-		ball("OilDropTaper" .. index, step[1], DROP + offset + Vector3.new(0, step[2], 0), dark, Enum.Material.Glass, 0, folder)
+		ball("OilDropTaper" .. index, step[1] * k, drop + Vector3.new(0, step[2] * k, 0), dark, Enum.Material.Glass, 0, folder)
 	end
 	-- a soft white glint on the drop's shoulder, flat against it (not a second ball)
-	local glint = ball("OilShine", 9, DROP + offset + Vector3.new(-17, 12, -24), Color3.new(1, 1, 1), Enum.Material.Neon, 0.25, folder)
-	glint.Size = Vector3.new(9, 22, 5)
+	local glint = ball("OilShine", 9 * k, drop + Vector3.new(-17, 12, -24) * k, Color3.new(1, 1, 1), Enum.Material.Neon, 0.25, folder)
+	glint.Size = Vector3.new(9, 22, 5) * k
 	if world.Theme then
 		local glow = Instance.new("PointLight")
 		glow.Color = tint
-		glow.Range = 60
+		glow.Range = 60 * k
 		glow.Brightness = 3
 		glow.Parent = folder:FindFirstChild("OilDrop")
 	end
 	for _, part in ipairs(folder:GetChildren()) do
 		if part.Name:find("^OilDrop") or part.Name == "OilShine" then
-			animate(part, Vector3.zero, 10) -- the whole drop bobs gently together
+			animate(part, Vector3.zero, 10 * PULL_IN) -- the whole drop bobs gently together
 		end
 	end
 
