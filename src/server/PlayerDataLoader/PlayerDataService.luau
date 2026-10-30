@@ -1359,14 +1359,36 @@ function PlayerDataService.AdminResetOnline(player)
     return saved, saved and key or "SAVE_FAILED"
 end
 
--- Offline player: back up and overwrite the stored record atomically.
+-- Offline player: back up, then overwrite the stored record.
+-- The backup is written BEFORE the UpdateAsync: Roblox does not allow a
+-- DataStore call inside an UpdateAsync callback, so a backup made there
+-- always failed (every offline reset ended in BACKUP_FAILED).
 function PlayerDataService.AdminResetOffline(userId)
-    local backupKey = nil
+    local key = "Player_" .. tostring(userId)
+
+    local okRead, old = pcall(function()
+        return playerDataStore:GetAsync(key)
+    end)
+    if not okRead then
+        return false, "READ_FAILED"
+    end
+
+    -- in another live server right now: that server would save over the reset
+    if typeof(old) == "table" and lockIsLive(old.SessionLock) then
+        return false, "PLAYER_ONLINE_ELSEWHERE"
+    end
+
+    local backupKey = backup(userId, old)
+    if not backupKey then
+        return false, "BACKUP_FAILED" -- never overwrite without a backup
+    end
+
+    local joinedMeanwhile = false
     local ok, err = pcall(function()
-        playerDataStore:UpdateAsync("Player_" .. tostring(userId), function(old)
-            backupKey = backup(userId, old)
-            if not backupKey then
-                return nil -- abort: never overwrite without a backup
+        playerDataStore:UpdateAsync(key, function(current)
+            if typeof(current) == "table" and lockIsLive(current.SessionLock) then
+                joinedMeanwhile = true
+                return nil -- they joined a server since the read: abort
             end
             local fresh = freshDefaults()
             fresh.SessionLock = nil
@@ -1377,8 +1399,11 @@ function PlayerDataService.AdminResetOffline(userId)
     if not ok then
         return false, tostring(err)
     end
+    if joinedMeanwhile then
+        return false, "PLAYER_ONLINE_ELSEWHERE"
+    end
 
-    return backupKey ~= nil, backupKey or "BACKUP_FAILED"
+    return true, backupKey
 end
 
 -- Forget a player's in-memory data WITHOUT saving it (used right after a

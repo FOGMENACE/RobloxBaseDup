@@ -33,6 +33,13 @@ local PlayerDataService = require(
 -- SETTINGS
 --------------------------------------------------
 
+-- accounts never shown on (or written to) the boards: AdminConfig.HiddenFromLeaderboards
+local HIDDEN = require(game:GetService("ServerScriptService"):WaitForChild("AdminConfig")).HiddenFromLeaderboards or {}
+local HIDDEN_COUNT = 0
+for _ in pairs(HIDDEN) do
+	HIDDEN_COUNT += 1
+end
+
 local TOTAL_ROWS = 20      -- stored / shown in the full panel
 local WALL_ROWS = 10       -- shown on the wall boards
 local REFRESH_SECONDS = 90
@@ -334,7 +341,7 @@ end
 
 local function refreshBoard(board)
 	local ok, pages = pcall(function()
-		return board.Store:GetSortedAsync(false, TOTAL_ROWS)
+		return board.Store:GetSortedAsync(false, TOTAL_ROWS + HIDDEN_COUNT)
 	end)
 
 	if not ok then
@@ -352,19 +359,21 @@ local function refreshBoard(board)
 
 	local cache = {}
 
-	for index = 1, TOTAL_ROWS do
-		local entry = entries[index]
-
-		if entry and entry.value > 0 then
-			local userId = tonumber(entry.key)
+	-- hidden accounts are skipped and the ranks close up behind them
+	for _, entry in ipairs(entries) do
+		if #cache >= TOTAL_ROWS then
+			break
+		end
+		local userId = tonumber(entry.key)
+		if entry.value > 0 and not (userId and HIDDEN[userId]) then
 			local name = userId and getName(userId) or tostring(entry.key)
 
-			cache[index] = {
-				Rank = index,
+			table.insert(cache, {
+				Rank = #cache + 1,
 				UserId = userId,
 				Name = name,
 				Value = board.Format(entry.value),
-			}
+			})
 		end
 	end
 
@@ -404,6 +413,9 @@ local lastWritten = {} -- [userId .. board key] = value
 local function writePlayer(player)
 	if not PlayerDataService.GetData(player) then
 		return -- data not loaded: never write zeros over a real score
+	end
+	if HIDDEN[player.UserId] then
+		return
 	end
 
 	for _, board in ipairs(BOARDS) do

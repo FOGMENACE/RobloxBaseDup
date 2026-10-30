@@ -35,6 +35,12 @@ AdminConfig.WatchLimits = {
 	LevelsPerSnapshot = 3000, -- global levels in 5 minutes
 }
 
+-- Never shown on the leaderboards (wall boards, holograms, full panel) and never
+-- written to them. UserIds only.
+AdminConfig.HiddenFromLeaderboards = {
+	[50333721] = true, -- owner (Studio account)
+}
+
 -- give <player> wins|oil <amount>: the largest single support grant
 AdminConfig.MaxGrant = 10000000
 
