@@ -582,6 +582,51 @@ end
 
 local restartState = { Active = false, Deadline = 0, Token = 0, Reason = "" }
 
+-- RESTART ROUTE (no teleport loops)
+-- A plain TeleportAsync(PlaceId) lets Roblox matchmake players straight back into
+-- the restarting server (it is still open while it empties) or into another old
+-- server that is restarting too, which then bounced them again: a loop until Roblox
+-- answered "too many teleport requests". So a restart goes:
+--   old server --> a fresh RESERVED holding server (nobody else can enter it)
+--   holding server waits HOLD_SECONDS for the old servers to empty and close,
+--   then --> the public game, which now only has fresh servers.
+-- Every hop is counted in the teleport data. Anyone who still lands on an old
+-- restarting server after a hop is kicked with "please rejoin" instead of being
+-- teleported again, so one player is never teleported more than twice in a row.
+local TeleportService = game:GetService("TeleportService")
+local HOLD_SECONDS = 8
+
+local function joinTransfer(player)
+	local ok, joinData = pcall(function()
+		return player:GetJoinData()
+	end)
+	local data = ok and joinData and joinData.TeleportData
+	if typeof(data) == "table" then
+		return data.Transfer, tonumber(data.Hop) or 0
+	end
+	return nil, 0
+end
+
+-- old server -> one new reserved holding server (friends stay together)
+local function sendToHolding(list)
+	local okCode, code = pcall(function()
+		return TeleportService:ReserveServer(game.PlaceId)
+	end)
+	if not okCode then
+		return false
+	end
+	local options = Instance.new("TeleportOptions")
+	options.ReservedServerAccessCode = code
+	options:SetTeleportData({ Transfer = "update", Hop = 1 })
+	local ok = pcall(function()
+		TeleportService:TeleportAsync(game.PlaceId, list, options)
+	end)
+	return ok
+end
+
+-- THIS server is a restart holding server (a reserved server, no owner)
+local isHoldingServer = game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0
+
 local function startRestart(seconds, reason)
 	if restartState.Active then
 		return false
@@ -612,19 +657,9 @@ local function startRestart(seconds, reason)
 		if game:GetService("RunService"):IsStudio() then
 			print("[AdminService] (Studio) would now move", #everyone, "player(s) to a new server")
 		elseif #everyone > 0 then
-			local TeleportService = game:GetService("TeleportService")
-			local options = Instance.new("TeleportOptions")
-			options:SetTeleportData({ Transfer = "update" })
-			local ok = pcall(function()
-				TeleportService:TeleportAsync(game.PlaceId, everyone, options)
-			end)
-			if not ok then
+			if not sendToHolding(everyone) then
 				for _, p in ipairs(everyone) do
-					local single = Instance.new("TeleportOptions")
-					single:SetTeleportData({ Transfer = "update" })
-					pcall(function()
-						TeleportService:TeleportAsync(game.PlaceId, { p }, single)
-					end)
+					sendToHolding({ p })
 				end
 			end
 			task.delay(12, function()
@@ -653,11 +688,11 @@ Players.PlayerAdded:Connect(function(player)
 	if restartState.Active then
 		if os.clock() >= restartState.Deadline then
 			task.defer(function()
-				-- a late joiner on an old server is sent on to a fresh one
-				local ok = not game:GetService("RunService"):IsStudio() and pcall(function()
-					game:GetService("TeleportService"):TeleportAsync(game.PlaceId, { player })
-				end)
-				if not ok then
+				-- a late joiner on an old server: ONE hop to a holding server, never a
+				-- second one (someone who already hopped is asked to rejoin instead)
+				local _, hop = joinTransfer(player)
+				local moved = hop == 0 and not game:GetService("RunService"):IsStudio() and sendToHolding({ player })
+				if not moved then
 					player:Kick("The game is updating. Please rejoin in a moment.")
 				end
 			end)
@@ -666,6 +701,52 @@ Players.PlayerAdded:Connect(function(player)
 		end
 	end
 end)
+
+-- HOLDING SERVER: show the loading screen, wait for the old servers to close, then
+-- send everyone who arrived on to the public game together (one teleport per wave).
+if isHoldingServer then
+	local wave = {}
+	local waveScheduled = false
+	local transferNotice = remotes:WaitForChild("ServerTransferNotice", 10)
+
+	local function release()
+		waveScheduled = false
+		local list = {}
+		for _, p in ipairs(wave) do
+			if p.Parent then
+				table.insert(list, p)
+			end
+		end
+		wave = {}
+		if #list == 0 then
+			return
+		end
+		for _, p in ipairs(list) do
+			pcall(PlayerDataService.SavePlayer, p)
+		end
+		local options = Instance.new("TeleportOptions")
+		options:SetTeleportData({ Transfer = "updateReturn", Hop = 2 })
+		local ok = pcall(function()
+			TeleportService:TeleportAsync(game.PlaceId, list, options)
+		end)
+		if not ok then
+			for _, p in ipairs(list) do
+				p:Kick("The game updated! Please rejoin.")
+			end
+		end
+	end
+
+	Players.PlayerAdded:Connect(function(player)
+		if transferNotice then
+			transferNotice:FireClient(player, "Moving you to a fresh server...")
+		end
+		table.insert(wave, player)
+		if not waveScheduled then
+			waveScheduled = true
+			task.delay(HOLD_SECONDS, release)
+		end
+	end)
+end
 
 task.spawn(function()
 	local ok, err = pcall(function()

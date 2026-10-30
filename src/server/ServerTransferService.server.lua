@@ -152,6 +152,11 @@ connectionRejoin.OnServerEvent:Connect(function(player)
 	end)
 end)
 
+-- players whose ONE fallback retry was already used: a failure after that is final
+-- (it used to retry on every failure with no limit, which can end in Roblox's
+-- "too many teleport requests" block)
+local retried = {}
+
 TeleportService.TeleportInitFailed:Connect(function(player, result, message)
 	local reason = pending[player]
 	if not reason then
@@ -159,12 +164,24 @@ TeleportService.TeleportInitFailed:Connect(function(player, result, message)
 	end
 	pending[player] = nil
 	warn("[ServerTransfer] teleport failed:", player.Name, result, message)
-	-- the same server is full / closing: any server of the game instead
-	if (reason == "afk" or reason == "connection") and (result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.GameEnded) then
+	-- the same server is full / closing: any server of the game instead, ONCE
+	if not retried[player] and (reason == "afk" or reason == "connection")
+		and (result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.GameEnded) then
+		retried[player] = true
 		pending[player] = reason
 		teleport({ player }, false, reason, connectionAttempts(player) + (reason == "connection" and 1 or 0))
 	end
 end)
+
+-- arrived through a lag move recently: not moved again (it could land back on this server)
+local function arrivedByLagMove(player)
+	local ok, joinData = pcall(function()
+		return player:GetJoinData()
+	end)
+	local data = ok and joinData and joinData.TeleportData
+	return typeof(data) == "table" and data.Transfer == "lag"
+		and os.clock() - (joinedAt[player] or 0) < LAG_RETRY
+end
 
 --------------------------------------------------
 -- LAGGY SERVER -> MOVE IN FRIEND GROUPS
@@ -211,7 +228,7 @@ local function moveServer()
 	for _, group in pairs(groups) do
 		local ready = true
 		for _, p in ipairs(group) do
-			if not inLobby(p) or pending[p] then
+			if not inLobby(p) or pending[p] or arrivedByLagMove(p) then
 				ready = false
 			end
 		end
@@ -266,4 +283,5 @@ Players.PlayerRemoving:Connect(function(player)
 	lastConnection[player] = nil
 	joinedAt[player] = nil
 	pending[player] = nil
+	retried[player] = nil
 end)

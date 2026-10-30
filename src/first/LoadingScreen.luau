@@ -10,12 +10,10 @@
 
 local LoadingScreen = {}
 
--- Thumbnail art (FOGMENACE group images). One is picked at random per screen;
--- add more ids here to rotate them. Empty list = purple sky gradient only.
+-- Thumbnail art (FOGMENACE group images). The screen always uses this one image
+-- (it used to rotate at random between three). Empty list = purple sky gradient only.
 LoadingScreen.IMAGES = {
 	"rbxassetid://117374859939690", -- Neon Skyway Oil Barrel Challenge
-	"rbxassetid://76074930356028", -- Neon Bowling Ball Scoreboards
-	"rbxassetid://94774229870375",
 }
 
 local function make(className, props, parent)
@@ -94,7 +92,7 @@ function LoadingScreen.Build(status)
 	local title = make("TextLabel", {
 		Name = "Title",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -110),
+		Position = UDim2.new(0.5, 0, 1, -150),
 		Size = UDim2.new(0.9, 0, 0, 80),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.FredokaOne,
@@ -104,6 +102,22 @@ function LoadingScreen.Build(status)
 	}, gui)
 	make("UITextSizeConstraint", { MaxTextSize = 72 }, title)
 	make("UIStroke", { Color = Color3.fromRGB(30, 20, 60), Thickness = 4 }, title)
+
+	-- retro arcade progress line, slightly see-through: "LOADING DATA...  47%"
+	local load = make("TextLabel", {
+		Name = "LoadText",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -98),
+		Size = UDim2.new(0.9, 0, 0, 44),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.Arcade,
+		Text = "LOADING DATA",
+		TextColor3 = Color3.fromRGB(255, 214, 70),
+		TextScaled = true,
+		TextTransparency = 0.25,
+	}, gui)
+	make("UITextSizeConstraint", { MaxTextSize = 40 }, load)
+	make("UIStroke", { Color = Color3.fromRGB(30, 20, 60), Thickness = 3, Transparency = 0.35 }, load)
 
 	make("TextLabel", {
 		Name = "Status",
@@ -128,16 +142,56 @@ function LoadingScreen.Build(status)
 	return gui
 end
 
--- Animates +1s and dots while the gui is parented; stops by itself after.
+-- The status line.
+function LoadingScreen.SetStatus(gui, text)
+	local label = gui and gui:FindFirstChild("Status", true)
+	if label then
+		label.Text = text
+	end
+end
+
+-- Loading progress for the "LOADING DATA  %" line. The number moves smoothly from
+-- `from` toward `to` while a step is waiting (slowing near `to`, never passing it),
+-- then the next Step continues from there. Screens that never call this (world
+-- moves, server moves) fill up slowly by themselves.
+function LoadingScreen.Step(gui, from, to)
+	gui:SetAttribute("ProgFrom", from)
+	gui:SetAttribute("ProgTo", to)
+	gui:SetAttribute("ProgStart", os.clock())
+end
+
+-- Animates +1s, dots and the progress line while the gui is parented; stops by itself after.
 function LoadingScreen.Animate(gui)
 	local RunService = game:GetService("RunService")
+	local load = gui:FindFirstChild("LoadText")
+	local born = os.clock()
+	local shown = 0
 	local conn
-	conn = RunService.RenderStepped:Connect(function()
+	conn = RunService.RenderStepped:Connect(function(dt)
 		if not gui.Parent then
 			conn:Disconnect()
 			return
 		end
 		local t = os.clock()
+
+		local from, to = gui:GetAttribute("ProgFrom"), gui:GetAttribute("ProgTo")
+		local target
+		if typeof(from) == "number" and typeof(to) == "number" then
+			local since = t - (gui:GetAttribute("ProgStart") or t)
+			target = (to >= 1) and 1 or from + (to - from) * (1 - math.exp(-since / 2.5)) * 0.92
+		else
+			target = 0.92 * (1 - math.exp(-(t - born) / 3))
+		end
+		shown += (target - shown) * math.min(1, dt * 4)
+		if target >= 1 and shown > 0.995 then
+			shown = 1
+		end
+		gui:SetAttribute("ProgShown", shown)
+		if load then
+			local ticks = string.rep(".", math.floor(t * 3) % 4)
+			load.Text = string.format("LOADING DATA%-3s  %d%%", ticks, math.floor(shown * 100 + 0.5))
+		end
+
 		for _, c in ipairs(gui:GetChildren()) do
 			if c.Name == "PlusOne" then
 				local p = c:GetAttribute("Phase") or 0
