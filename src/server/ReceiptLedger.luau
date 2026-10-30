@@ -22,14 +22,14 @@ local MAX_RECORDED = 100
 
 local ReceiptLedger = {}
 
-local pending = {} -- [purchaseId] = true
+local pending = {} -- [purchaseId] = player whose data holds the grant
 
 function ReceiptLedger.IsPending(purchaseId)
-	return pending[purchaseId] == true
+	return pending[purchaseId] ~= nil
 end
 
-function ReceiptLedger.MarkPending(purchaseId)
-	pending[purchaseId] = true
+function ReceiptLedger.MarkPending(purchaseId, player)
+	pending[purchaseId] = player or true
 end
 
 function ReceiptLedger.ClearPending(purchaseId)
@@ -85,6 +85,27 @@ function ReceiptLedger.Record(player, purchaseId)
 	return ok
 end
 
+-- LEAVE: a purchase granted in memory whose save or record failed is still pending.
+-- If the player's leave-save then SUCCEEDS, the grant is stored, so its PurchaseId
+-- must be recorded now; otherwise the next server would see an unrecorded receipt and
+-- grant it a second time. Called by PlayerDataLoader only after a confirmed save.
+-- (A failed leave-save records nothing: the grant was lost, so a retry is correct.)
+function ReceiptLedger.FlushPending(player)
+	local ids = {}
+	for purchaseId, owner in pairs(pending) do
+		if owner == player then
+			table.insert(ids, purchaseId)
+		end
+	end
+	for _, purchaseId in ipairs(ids) do
+		if ReceiptLedger.Record(player, purchaseId) then
+			pending[purchaseId] = nil
+			print("[AUDIT] pending purchase recorded on leave:", player.Name, player.UserId, "purchase", purchaseId)
+		end
+	end
+	return #ids
+end
+
 --------------------------------------------------
 -- CONSUME (the durable purchase pattern, shared by every product)
 --
@@ -120,7 +141,7 @@ function ReceiptLedger.Consume(player, receiptInfo, grantFunction, onConfirmed)
 			warn("[AUDIT] purchase grant FAILED (receipt stays pending):", player.Name, player.UserId, "product", receiptInfo.ProductId, "purchase", purchaseId)
 			return false
 		end
-		ReceiptLedger.MarkPending(purchaseId)
+		ReceiptLedger.MarkPending(purchaseId, player)
 	end
 
 	if PlayerDataService.SavePlayer(player) ~= true then

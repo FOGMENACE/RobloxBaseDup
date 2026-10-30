@@ -288,8 +288,27 @@ end
 
 commands.feedback = function(_, args)
 	local day = dayKey(args[1])
+	local store = DataStoreService:GetDataStore("Feedback_v1")
+	-- one key per server per day ("<day>/<server>"), plus the old single "<day>" key
 	local ok, list = pcall(function()
-		return DataStoreService:GetDataStore("Feedback_v1"):GetAsync(day)
+		local all = {}
+		local keys = { day }
+		local pages = store:ListKeysAsync(day .. "/", 50)
+		for _, item in ipairs(pages:GetCurrentPage()) do
+			table.insert(keys, item.KeyName)
+		end
+		for _, key in ipairs(keys) do
+			local entries = store:GetAsync(key)
+			if typeof(entries) == "table" then
+				for _, e in ipairs(entries) do
+					table.insert(all, e)
+				end
+			end
+		end
+		table.sort(all, function(a, b)
+			return (tonumber(a.Time) or 0) < (tonumber(b.Time) or 0)
+		end)
+		return all
 	end)
 	if not ok then
 		return false, "could not read feedback"

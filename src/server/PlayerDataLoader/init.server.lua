@@ -195,6 +195,24 @@ end
 
 
 --------------------------------------------------
+-- PENDING PURCHASES
+--
+-- After a CONFIRMED leave / shutdown save, purchases that were granted but not
+-- yet recorded are recorded (ReceiptLedger.FlushPending), so the next server
+-- never grants them again.
+--------------------------------------------------
+
+local function recordPendingPurchases(player)
+	local ok, err = pcall(function()
+		require(game:GetService("ServerScriptService"):WaitForChild("ReceiptLedger")).FlushPending(player)
+	end)
+	if not ok then
+		warn("[PlayerDataLoader] Recording pending purchases failed:", player.Name, err)
+	end
+end
+
+
+--------------------------------------------------
 -- PLAYER REMOVING
 --------------------------------------------------
 
@@ -212,7 +230,9 @@ local function onPlayerRemoving(player)
 		return
 	end
 
-	savePlayer(player, "PlayerRemoving")
+	if savePlayer(player, "PlayerRemoving") then
+		recordPendingPurchases(player)
+	end
 
 	pcall(function()
 		PlayerDataService.ReleasePlayer(player)
@@ -292,6 +312,9 @@ game:BindToClose(function()
 			)
 
 			saveResults[player] = success
+			if success then
+				recordPendingPurchases(player)
+			end
 
 			-- free the session lock so the next server can load immediately
 			pcall(function()

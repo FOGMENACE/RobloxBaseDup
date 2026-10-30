@@ -88,8 +88,9 @@ local DataStoreService = game:GetService("DataStoreService")
 local receiptStore = DataStoreService:GetDataStore("ProcessedReceipts_v1")
 local MAX_RECORDED_RECEIPTS = 100
 
--- PurchaseIds granted in memory but not yet saved + recorded.
-local pendingGrants = {}
+-- PurchaseIds granted in memory but not yet saved + recorded: kept in the shared
+-- ReceiptLedger (same store and format), so PlayerDataLoader can record them on leave.
+local ReceiptLedger = require(game:GetService("ServerScriptService"):WaitForChild("ReceiptLedger"))
 
 -- true / false = recorded or not; nil = DataStore failure.
 local function isReceiptRecorded(player, purchaseId)
@@ -1799,7 +1800,7 @@ local function registerBallProducts()
 							--   3. force a confirmed save of the player's data
 							--   4. record the PurchaseId, then consume the receipt
 							-- Any failure returns false, so Roblox retries the receipt;
-							-- pendingGrants stops a retry from granting/compensating twice.
+							-- the ReceiptLedger pending list stops a retry from granting/compensating twice.
 
 							local recorded =
 								isReceiptRecorded(
@@ -1822,7 +1823,7 @@ local function registerBallProducts()
 								return false
 							end
 
-							if not pendingGrants[purchaseId] then
+							if not ReceiptLedger.IsPending(purchaseId) then
 
 								if ownsBall(
 									player,
@@ -1886,7 +1887,7 @@ local function registerBallProducts()
 
 								end
 
-								pendingGrants[purchaseId] = true
+								ReceiptLedger.MarkPending(purchaseId, player)
 
 							end
 
@@ -1907,7 +1908,7 @@ local function registerBallProducts()
 								return false
 							end
 
-							pendingGrants[purchaseId] = nil
+							ReceiptLedger.ClearPending(purchaseId)
 
 							return true
 

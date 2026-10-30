@@ -7,7 +7,7 @@
 --   client (FeedbackUI) -> RemoteFunction FeedbackSubmit(text)
 --   server: validates type / length / rate limit, runs Roblox's text
 --   filter, saves the message in DataStore "Feedback_v1" (one array per
---   UTC day), and only then answers true.
+--   UTC day per server, key "<day>/<server>"), and only then answers true.
 --
 -- The player is told "sent" ONLY when the save succeeded. Read the
 -- messages in the Creator Hub's Data Stores explorer (key = the date).
@@ -24,7 +24,8 @@ local POSITION = Vector3.new(-30.5, FLOOR_Y, -261) -- east wall, back end: open 
 local MIN_LENGTH, MAX_LENGTH = 5, 400
 local COOLDOWN = 45 -- seconds between messages per player
 local MAX_PER_SESSION = 6
-local MAX_PER_DAY_STORE = 150
+local MAX_PER_DAY_STORE = 150 -- per server per day
+local SERVER_TAG = game.JobId ~= "" and string.sub(game.JobId, 1, 8) or "studio"
 
 local store = DataStoreService:GetDataStore("Feedback_v1")
 
@@ -231,7 +232,10 @@ submit.OnServerInvoke = function(player, text)
 		return false, "FILTER_FAILED"
 	end
 
-	local day = os.date("!%Y-%m-%d", os.time())
+	-- one key per UTC day PER SERVER ("2026-10-31/1a2b3c4d"): every server used to write the
+	-- same day key, so busy days queued up and the 150 cap threw most messages away.
+	-- The admin "feedback" command lists the day's keys (and still reads the old day key).
+	local day = os.date("!%Y-%m-%d", os.time()) .. "/" .. SERVER_TAG
 	local entry = {
 		UserId = player.UserId,
 		Name = player.Name,

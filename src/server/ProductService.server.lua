@@ -109,7 +109,7 @@ local function consume(player, receiptInfo, grantFunction, label)
 		if not grantFunction() then
 			return false
 		end
-		ReceiptLedger.MarkPending(purchaseId)
+		ReceiptLedger.MarkPending(purchaseId, player)
 	end
 
 	-- Persist BEFORE the receipt is consumed.
