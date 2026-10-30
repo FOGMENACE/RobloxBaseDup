@@ -102,9 +102,7 @@ local function loadPlayer(player)
 
 	require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
 
-	local ok, value = pcall(function()
-		return calendarStore:GetAsync(calendarKey(player))
-	end)
+	local ok, value = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry")).Get(calendarStore, calendarKey(player))
 
 	if not ok then
 		warn("[GiftService] Calendar load failed:", player.Name, value)

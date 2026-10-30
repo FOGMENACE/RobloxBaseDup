@@ -51,9 +51,7 @@ Players.PlayerAdded:Connect(function(player)
 	task.spawn(function()
 		require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
 
-		local ok, value = pcall(function()
-			return store:GetAsync(key(player))
-		end)
+		local ok, value = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry")).Get(store, key(player))
 
 		if player.Parent then
 			if ok and typeof(value) == "table" and value.AutoRebirth == true then

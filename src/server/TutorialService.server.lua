@@ -97,9 +97,7 @@ local function loadPlayer(player)
 
 	require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
 
-	local ok, value = pcall(function()
-		return store:GetAsync(key(player))
-	end)
+	local ok, value = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry")).Get(store, key(player))
 
 	if not ok then
 		warn("[TutorialService] Load failed:", player.Name, value)

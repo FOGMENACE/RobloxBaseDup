@@ -24,6 +24,7 @@ local BoostService = require(ServerScriptService:WaitForChild("BoostService"))
 local ReceiptLedger = require(ServerScriptService:WaitForChild("ReceiptLedger"))
 local PurchaseService = require(ServerScriptService:WaitForChild("PurchaseServiceModule"))
 local GameAnalytics = require(ServerScriptService:WaitForChild("GameAnalytics"))
+local DataRetry = require(ServerScriptService:WaitForChild("DataRetry"))
 local PlayerDataService = require(
 	ServerScriptService:WaitForChild("PlayerDataLoader"):WaitForChild("PlayerDataService")
 )
@@ -222,7 +223,8 @@ end
 
 local function saveDaily(player)
 	local state = states[player]
-	if not state then
+	-- a failed read must never be overwritten: no save, so every claim fails safely
+	if not state or not state.Loaded then
 		return false
 	end
 
@@ -241,7 +243,7 @@ end
 local function saveWeekly(player)
 	local state = states[player]
 	local w = state and state.Weekly
-	if not w then
+	if not w or not w.Loaded then
 		return false
 	end
 
@@ -260,13 +262,8 @@ end
 local function load(player)
 	require(ServerScriptService:WaitForChild("SessionGate")).Wait(player)
 
-	local ok, value = pcall(function()
-		return dailyStore:GetAsync(dailyKey(player))
-	end)
-
-	local okW, weeklyValue = pcall(function()
-		return weeklyStore:GetAsync(dailyKey(player))
-	end)
+	local ok, value = DataRetry.Get(dailyStore, dailyKey(player))
+	local okW, weeklyValue = DataRetry.Get(weeklyStore, dailyKey(player))
 
 	if not player.Parent then
 		return
@@ -580,13 +577,13 @@ skipPromptEvent.OnServerEvent:Connect(function(player, index, kind)
 	if kind == "Weekly" then
 		local w = state.Weekly
 		local milestone = QuestConfig.Weekly[index]
-		if not w or not milestone or w.Claimed[index] == true
+		if not w or not w.Loaded or not milestone or w.Claimed[index] == true
 			or (w.Counters[milestone.Id] or 0) >= milestone.Target then
 			return
 		end
 	else
 		local quest = state.Quests[index]
-		if not quest or quest.Claimed or quest.Progress >= quest.Target then
+		if not state.Loaded or not quest or quest.Claimed or quest.Progress >= quest.Target then
 			return
 		end
 	end
@@ -600,8 +597,8 @@ end)
 
 PurchaseService.RegisterProduct(StoreConfig.QuestSkip.ProductId, function(player, receiptInfo)
 	local state = player and states[player]
-	if not state then
-		return false -- not loaded yet: Roblox will retry
+	if not state or not state.Loaded then
+		return false -- not loaded (or the read failed): Roblox will retry
 	end
 
 	return ReceiptLedger.Consume(player, receiptInfo, function()

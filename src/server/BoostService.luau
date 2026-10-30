@@ -61,9 +61,8 @@ local function loadPlayer(player)
 
 	require(game:GetService("ServerScriptService"):WaitForChild("SessionGate")).Wait(player)
 
-	local ok, value = pcall(function()
-		return store:GetAsync(keyFor(player))
-	end)
+	-- retried: a failed read leaves bought boost time running out unused all session
+	local ok, value = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry")).Get(store, keyFor(player))
 
 	if not ok then
 		warn("[BoostService] Load failed:", player.Name, value)

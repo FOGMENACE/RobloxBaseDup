@@ -46,9 +46,7 @@ local function grantOnce(player)
 	end
 	busy[player] = true
 
-	local okRead, already = pcall(function()
-		return store:GetAsync(key(player))
-	end)
+	local okRead, already = require(game:GetService("ServerScriptService"):WaitForChild("DataRetry")).Get(store, key(player))
 
 	if okRead and already ~= true and player.Parent == Players then
 		-- atomic across servers: only the call that flips it to true grants the pack

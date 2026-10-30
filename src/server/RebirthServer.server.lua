@@ -100,8 +100,8 @@ RebirthRemote.OnServerEvent:Connect(function(player, action)
 			return
 		end
 
-		local requiredLevel =
-			65 + (data.Rebirths * 15)
+		-- the saved requirement (RebirthBonuses schedule), not an old fixed formula
+		local requiredLevel = data.RebirthLevelRequirement
 
 		local progress =
 			PlayerDataService.GetXPProgress(player)
