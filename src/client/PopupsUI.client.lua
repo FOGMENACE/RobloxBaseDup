@@ -7,7 +7,8 @@
 --   * "WAIT! Don't Leave!": shown when the player opens the Roblox menu
 --     (GuiService.MenuOpened). Roblox gives games no hook into the real
 --     "close Roblox" prompt, so the menu is the closest trigger. The server
---     decides if it is claimable (25 minute cooldown) and what it pays.
+--     decides if it is claimable (time played this session, 25 minute
+--     cooldown) and what it pays.
 --------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -661,8 +662,14 @@ local function setLeaveOpen(open)
 	end
 end
 
+-- closing the card keeps it away for a while, so it never nags on every menu open
+local LEAVE_SNOOZE_SECONDS = 10 * 60
+local leaveSnoozedUntil = 0
+
 leaveNo.Activated:Connect(function()
+	leaveSnoozedUntil = os.clock() + LEAVE_SNOOZE_SECONDS
 	setLeaveOpen(false)
+	remotes.LeaveCardEvent:FireServer("Dismissed")
 end)
 
 local claiming = false
@@ -682,7 +689,7 @@ leaveClaimButton.Activated:Connect(function()
 		task.wait(1.2)
 		setLeaveOpen(false)
 	else
-		leaveClaimButton.Text = (ok and reason == "COOLDOWN") and "NOT READY" or "TRY AGAIN"
+		leaveClaimButton.Text = (ok and (reason == "COOLDOWN" or reason == "TOO_SOON")) and "NOT READY" or "TRY AGAIN"
 		task.wait(1.5)
 		leaveClaimButton.Text = "CLAIM & STAY!"
 	end
@@ -691,19 +698,30 @@ leaveClaimButton.Activated:Connect(function()
 end)
 
 local showStayMessage -- defined below (needs the toast label)
+local stayMessageShown = false
 
 GuiService.MenuOpened:Connect(function()
 	local step = player:GetAttribute("TutorialStep")
 	if typeof(step) == "number" and step < 12 then
-		-- still in the tutorial: no "claim and stay" card on top of it, a friendly nudge instead
-		if showStayMessage then
+		-- still in the tutorial: no "claim and stay" card on top of it, a friendly nudge
+		-- instead (once per session)
+		if showStayMessage and not stayMessageShown then
+			stayMessageShown = true
 			showStayMessage()
 		end
 		return
 	end
+	-- the server decides when this session has earned the offer (RewardService);
+	-- never during a run, where the dimmed card would cost the player their roll
 	local nextAt = player:GetAttribute("LeaveRewardNextAt")
-	if typeof(nextAt) == "number" and os.time() >= nextAt and not leaveFrame.Visible and player:GetAttribute("SettingPopups") ~= false then
+	local offerAt = player:GetAttribute("LeaveOfferAt")
+	if (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+		and typeof(nextAt) == "number" and os.time() >= nextAt
+		and typeof(offerAt) == "number" and os.time() >= offerAt
+		and os.clock() >= leaveSnoozedUntil
+		and not leaveFrame.Visible and player:GetAttribute("SettingPopups") ~= false then
 		setLeaveOpen(true)
+		remotes.LeaveCardEvent:FireServer("Shown")
 	end
 end)
 

@@ -437,6 +437,89 @@ player:GetAttributeChangedSignal("WinRunId"):Connect(function()
 end)
 
 --------------------------------------------------
+-- NEXT GOAL HINT
+--
+-- A short line back in the lobby saying what to chase next (NextGoalService). It only
+-- shows when the goal changes, plus a reminder every few runs: the same line after
+-- every roll would just become noise. Never during the tutorial.
+--------------------------------------------------
+
+local GOAL_REMINDER_RUNS = 4
+
+local goalLabel = create("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.17),
+	Size = UDim2.new(0.9, 0, 0, 40),
+	BackgroundTransparency = 1,
+	Font = FONT,
+	Text = "",
+	TextColor3 = Color3.fromRGB(255, 226, 120),
+	TextSize = 30,
+	TextTransparency = 1,
+}, gui)
+local goalStroke = create("UIStroke", { Color = INK, Thickness = 3, Transparency = 1 }, goalLabel)
+local goalScale = create("UIScale", { Scale = 1 }, goalLabel)
+
+local function goalMessage()
+	local level = player:GetAttribute("Level") or 1
+	local required = player:GetAttribute("RebirthLevelRequirement")
+	if typeof(required) == "number" and level >= required then
+		return "rebirth", "REBIRTH READY! KEEP YOUR BONUSES GROWING"
+	end
+	local ball = player:GetAttribute("NextGoalBall")
+	local left = player:GetAttribute("NextGoalWinsLeft")
+	if typeof(ball) ~= "string" or typeof(left) ~= "number" then
+		return nil
+	end
+	if left <= 0 then
+		return "buy:" .. ball, "YOU CAN BUY " .. string.upper(ball) .. " NOW!"
+	end
+	return "next:" .. ball, "NEXT: " .. string.upper(ball) .. " - " .. commas(left) .. " WINS TO GO"
+end
+
+local lastGoalKey = nil
+local runsSinceGoal = 0
+local goalToken = 0
+
+local function showGoal(text)
+	goalToken += 1
+	local token = goalToken
+	goalLabel.Text = text
+	goalScale.Scale = screenFit() * 0.85
+	local info = TweenInfo.new(0.3, Enum.EasingStyle.Quad)
+	TweenService:Create(goalScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = screenFit() }):Play()
+	TweenService:Create(goalLabel, info, { TextTransparency = 0 }):Play()
+	TweenService:Create(goalStroke, info, { Transparency = 0 }):Play()
+
+	local shownAt = os.clock()
+	while token == goalToken and os.clock() - shownAt < 5 and player:GetAttribute("RunState") == "Waiting" do
+		task.wait(0.1)
+	end
+	if token == goalToken then
+		TweenService:Create(goalLabel, info, { TextTransparency = 1 }):Play()
+		TweenService:Create(goalStroke, info, { Transparency = 1 }):Play()
+	end
+end
+
+player:GetAttributeChangedSignal("NextGoalRun"):Connect(function()
+	runsSinceGoal += 1
+	-- let the result sequence finish first
+	task.wait(1.5)
+	while celebrating do
+		task.wait(0.2)
+	end
+	local step = player:GetAttribute("TutorialStep")
+	if (typeof(step) == "number" and step < 12) or player:GetAttribute("RunState") ~= "Waiting" then
+		return
+	end
+	local key, text = goalMessage()
+	if key and (key ~= lastGoalKey or runsSinceGoal >= GOAL_REMINDER_RUNS) then
+		lastGoalKey = key
+		runsSinceGoal = 0
+		showGoal(text)
+	end
+end)
+
 --------------------------------------------------
 -- SERVER EVENTS
 --------------------------------------------------

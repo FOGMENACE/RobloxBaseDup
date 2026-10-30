@@ -8,6 +8,7 @@
 -- world's barrel texture (same layout, pearly sign).
 --   WorldSkinStyle.Apply(ball, theme, withParticles)
 --   WorldSkinStyle.Restore(ball)
+--   WorldSkinStyle.Reset(ball, template)
 --------------------------------------------------
 
 local WorldSkinStyle = {}
@@ -41,6 +42,28 @@ function WorldSkinStyle.Restore(ball)
 				part.TextureID = o.Texture
 			end
 			saved[part] = nil
+		end
+	end
+end
+
+-- The ball became a different ball (an upgrade / downgrade platform swaps it in place):
+-- what was remembered belongs to the old ball and must never be painted back on the new
+-- one. Forgets it, drops the old coat and takes the look of the new ball's own model.
+function WorldSkinStyle.Reset(ball, template)
+	for _, child in ipairs(ball:GetChildren()) do
+		if child.Name == TAG then
+			child:Destroy()
+		end
+	end
+	for part in pairs(saved) do
+		if part == ball or part:IsDescendantOf(ball) then
+			saved[part] = nil
+		end
+	end
+	if template and template:IsA("BasePart") then
+		ball.Color, ball.Reflectance, ball.Material = template.Color, template.Reflectance, template.Material
+		if ball:IsA("MeshPart") and template:IsA("MeshPart") then
+			ball.TextureID = template.TextureID
 		end
 	end
 end

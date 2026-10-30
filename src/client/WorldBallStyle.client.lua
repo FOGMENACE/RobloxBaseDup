@@ -30,6 +30,10 @@ local function highestOwnedSkin(owner, ballId)
 	return best
 end
 
+-- which ball each part was last styled as: a platform swap keeps the same part
+local lastBallId = setmetatable({}, { __mode = "k" })
+local models = ReplicatedStorage:WaitForChild("BallModels")
+
 task.spawn(function()
 	local balls = workspace:WaitForChild("PlayerBalls")
 	while true do
@@ -39,6 +43,12 @@ task.spawn(function()
 				local owner = userId and Players:GetPlayerByUserId(userId)
 				local world = owner and WorldConfig.Of(owner)
 				local ballId = ball:GetAttribute("BallId")
+				if ballId and lastBallId[ball] and lastBallId[ball] ~= ballId then
+					WorldSkinStyle.Reset(ball, models:FindFirstChild(ballId))
+					ball:SetAttribute("StyledWorld", nil)
+					ball:SetAttribute("StyledParts", nil)
+				end
+				lastBallId[ball] = ballId
 				local want = nil
 				if world and ballId then
 					if ball:GetAttribute("RunTierBall") == true then
@@ -66,6 +76,6 @@ task.spawn(function()
 				end
 			end
 		end
-		task.wait(0.5)
+		task.wait(0.1) -- quick, so a swapped ball never shows the old ball's look for long
 	end
 end)

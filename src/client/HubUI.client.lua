@@ -1391,18 +1391,31 @@ end)
 -- "Claim before you leave": opening the Roblox menu (the way players leave)
 -- with an unclaimed daily reward opens the calendar with a reminder. The
 -- leave-reward card in PopupsUI takes priority when that one is ready.
+-- Once per session, never in the first 3 minutes or during a run, so it stays a
+-- reminder and not something that pops up on every menu open.
+local DAILY_REMINDER_AFTER = 3 * 60
+local sessionStarted = os.clock()
+local dailyReminderShown = false
 game:GetService("GuiService").MenuOpened:Connect(function()
 	if not (calendar and calendar.NextSlot) or not dailyButton.Button.Visible then
 		return
 	end
+	if dailyReminderShown or os.clock() - sessionStarted < DAILY_REMINDER_AFTER
+		or (player:GetAttribute("RunState") or "Waiting") ~= "Waiting"
+		or player:GetAttribute("SettingPopups") == false then
+		return
+	end
 	local leaveAt = player:GetAttribute("LeaveRewardNextAt")
-	if typeof(leaveAt) == "number" and os.time() >= leaveAt then
+	local offerAt = player:GetAttribute("LeaveOfferAt")
+	if typeof(leaveAt) == "number" and os.time() >= leaveAt
+		and typeof(offerAt) == "number" and os.time() >= offerAt then
 		return
 	end
 	local step = player:GetAttribute("TutorialStep")
 	if typeof(step) == "number" and step < 12 then
 		return
 	end
+	dailyReminderShown = true
 	setCalendarOpen(true)
 	showToast("Claim your daily reward before you leave!", true)
 end)

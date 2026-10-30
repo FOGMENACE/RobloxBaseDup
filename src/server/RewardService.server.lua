@@ -3,7 +3,8 @@
 --
 --   * LEAVE REWARD ("WAIT! Don't Leave!"): 360 wins + x4 XP for 8 minutes,
 --     claimable once per 25 minutes. The cooldown is saved as an absolute
---     timestamp ("LeaveReward_v1"), so rejoining never resets it.
+--     timestamp ("LeaveReward_v1"), so rejoining never resets it. It also has
+--     to be unlocked by playing each session (LeaveOfferAt, see below).
 --   * COMMUNITY REWARD: +500 wins once per account, only if the player is
 --     in the group (verified here) and has completed the favorite prompt
 --     (flag written by PromptService). Roblox exposes no API to verify a
@@ -73,7 +74,54 @@ local function publishLeave(player, nextAt)
 	player:SetAttribute("LeaveRewardNextAt", nextAt)
 end
 
+-- The offer is earned by playing, and rolled once per session so reopening the menu
+-- cannot re-roll it: most sessions unlock it after LEAVE_OFFER_MINUTES of play, some
+-- earlier as a surprise to catch a player leaving early. Never in the first 3 minutes,
+-- and the claim below enforces the same time, so calling the remote early pays nothing.
+local LEAVE_OFFER_SECONDS = 10 * 60
+local LEAVE_EARLY_CHANCE = 0.35
+local LEAVE_EARLY_MIN, LEAVE_EARLY_MAX = 3 * 60, 5 * 60
+local offerRng = Random.new()
+
+local offerKind = {} -- [player] = "Early" / "Regular" (analytics only)
+local lastCardEvent = {} -- [player] = os.clock() of the last reported card event
+
+local function rollLeaveOffer(player)
+	local wait = LEAVE_OFFER_SECONDS
+	offerKind[player] = "Regular"
+	if offerRng:NextNumber() < LEAVE_EARLY_CHANCE then
+		wait = offerRng:NextInteger(LEAVE_EARLY_MIN, LEAVE_EARLY_MAX)
+		offerKind[player] = "Early"
+	end
+	player:SetAttribute("LeaveOfferAt", os.time() + wait)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	busy[player] = nil
+	offerKind[player] = nil
+	lastCardEvent[player] = nil
+end)
+
+-- The client reports when the card is shown or closed. Analytics only: it pays nothing,
+-- is rate limited and is ignored while this session has not unlocked the offer.
+getOrCreate("RemoteEvent", "LeaveCardEvent").OnServerEvent:Connect(function(player, action)
+	if action ~= "Shown" and action ~= "Dismissed" then
+		return
+	end
+	local offerAt = player:GetAttribute("LeaveOfferAt")
+	if typeof(offerAt) ~= "number" or os.time() < offerAt then
+		return
+	end
+	local now = os.clock()
+	if now - (lastCardEvent[player] or -math.huge) < 2 then
+		return
+	end
+	lastCardEvent[player] = now
+	GameAnalytics.LeaveCard(player, action, offerKind[player])
+end)
+
 Players.PlayerAdded:Connect(function(player)
+	rollLeaveOffer(player)
 	local ok, value = DataRetry.Get(leaveStore, key(player))
 	if player.Parent then
 		publishLeave(player, ok and tonumber(value) or 0)
@@ -81,6 +129,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
+	rollLeaveOffer(player)
 	task.spawn(function()
 		local ok, value = DataRetry.Get(leaveStore, key(player))
 		publishLeave(player, ok and tonumber(value) or 0)
@@ -100,6 +149,11 @@ leaveClaim.OnServerInvoke = function(player)
 	local now = os.time()
 	if now < nextAt then
 		return false, "COOLDOWN"
+	end
+
+	local offerAt = player:GetAttribute("LeaveOfferAt")
+	if typeof(offerAt) ~= "number" or now < offerAt then
+		return false, "TOO_SOON"
 	end
 
 	busy[player] = true
@@ -134,6 +188,7 @@ leaveClaim.OnServerInvoke = function(player)
 	GameAnalytics.WinsChanged(player, winsBefore, "Social", "LeaveReward")
 	BoostService.Grant(player, "XP4", LEAVE_BOOST_SECONDS)
 	PlayerDataService.SavePlayer(player)
+	GameAnalytics.LeaveCard(player, "Claimed", offerKind[player])
 
 	busy[player] = nil
 	return true, "OK"

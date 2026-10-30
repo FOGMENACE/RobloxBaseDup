@@ -14,7 +14,8 @@
 --   Progression        "Rebirth" path, level = rebirth count
 --   Economy            "Wins" sources / sinks, amount = ACTUAL balance change
 --   Custom             RunFinished, SessionMinutes, SessionRuns,
---                      ProductPurchased, GamePassPurchased, QuestClaimed
+--                      ProductPurchased, GamePassPurchased, QuestClaimed,
+--                      LeaveCardShown, LeaveCardDismissed, LeaveCardClaimed
 --------------------------------------------------
 
 local AnalyticsService = game:GetService("AnalyticsService")
@@ -254,6 +255,18 @@ function GameAnalytics.QuestClaimed(player, questId)
 	end
 	send("Custom", "QuestClaimed " .. player.Name .. " " .. tostring(questId), function()
 		AnalyticsService:LogCustomEvent(player, "QuestClaimed", 1, fields(questId))
+	end)
+end
+
+-- The "Don't leave" card: action is Shown / Dismissed / Claimed, offer is Early / Regular
+-- (the session's roll in RewardService), so its timing can be tuned from real numbers.
+function GameAnalytics.LeaveCard(player, action, offer)
+	if not isLivePlayer(player) then
+		return
+	end
+	local name = "LeaveCard" .. tostring(action)
+	send("Custom", name .. " " .. player.Name .. " " .. tostring(offer), function()
+		AnalyticsService:LogCustomEvent(player, name, 1, fields(offer))
 	end)
 end
 
