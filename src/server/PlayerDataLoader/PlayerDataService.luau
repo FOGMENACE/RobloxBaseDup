@@ -1406,6 +1406,31 @@ function PlayerDataService.AdminResetOffline(userId)
     return true, backupKey
 end
 
+-- Permanently delete a player's main record, WITHOUT a backup (admin "wipe").
+-- Refuses while another live server holds the player's session lock: that
+-- server would write the old data straight back.
+function PlayerDataService.AdminWipe(userId)
+    local key = "Player_" .. tostring(userId)
+
+    local okRead, old = pcall(function()
+        return playerDataStore:GetAsync(key)
+    end)
+    if not okRead then
+        return false, "READ_FAILED"
+    end
+    if typeof(old) == "table" and lockIsLive(old.SessionLock) then
+        return false, "PLAYER_ONLINE_ELSEWHERE"
+    end
+
+    local ok, err = pcall(function()
+        playerDataStore:RemoveAsync(key)
+    end)
+    if not ok then
+        return false, tostring(err)
+    end
+    return true
+end
+
 -- Forget a player's in-memory data WITHOUT saving it (used right after a
 -- reset so a stale session cannot write the old progression back).
 function PlayerDataService.AdminForget(player)

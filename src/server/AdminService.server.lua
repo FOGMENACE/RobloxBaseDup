@@ -10,7 +10,7 @@
 --
 -- Commands:  help | whoami | find <text> | inspect <name|userid>
 --            kick <name> [reason] | goto <name> | bring <name>
---            reset <userid> [dry] | confirm <code> | cancel
+--            reset <userid> [dry] | wipe <userid> | confirm <code> | cancel
 --
 -- RESET (progression only, one explicit UserId):
 --   "reset 123" shows what would be reset and returns a one-time code
@@ -146,6 +146,7 @@ commands.help = function()
 		"give <name> wins|oil <amount> | grant <name> ball <id> | grant <name> skin <ballId> <world>",
 		"feedback [YYYY-MM-DD | days ago] | flags [YYYY-MM-DD | days ago] | history <name|userid> | blockers [name]",
 		"reset <userid> [dry]  then  confirm <code>  (progression reset, backed up)",
+		"wipe <userid>  then  confirm <code>  (PERMANENT delete, no backup; owner only)",
 		"restart [seconds] [reason] | restartall [seconds] [reason]  (confirm <code> first)  |  cancelrestart",
 		"cancel",
 	}, "\n")
@@ -760,6 +761,108 @@ commands.reset = function(admin, args)
 	)
 end
 
+-- WIPE: delete one player's data for good, with NO backup. Owner-level only
+-- (AdminConfig.CanGrant) and a 6-digit confirmation code.
+-- Deleted: progression (level, wins, oil, rebirths, balls), boosts, quests, weekly
+-- milestones, calendar, tutorial, X6 generator, settings, world skins, world and
+-- ball memory, progress history, and their Wins / Rebirths leaderboard entries.
+-- KEPT on purpose: purchase receipts (deleting them could let Roblox grant an old
+-- purchase again), the Starter Pack and free-reward claim flags (no farming the
+-- one-time rewards), Robux-spent totals, bans, reset backups and the admin log.
+local WIPE_KEYS = {
+	{ "Boosts_v1", "Boosts_%d" },
+	{ "DailyQuests_v1", "u_%d" },
+	{ "WeeklyMilestones_v1", "u_%d" },
+	{ "DailyCalendar_v1", "Calendar_%d" },
+	{ "Tutorial_v1", "Tutorial_%d" },
+	{ "LimitedGen_v1", "X6_%d" },
+	{ "PlayerSettings_v1", "u_%d" },
+	{ "UiSettings_v1", "%d" },
+	{ "WorldSkins_v1", "%d" },
+	{ "WorldPref_v1", "%d" },
+	{ "WorldBall_v1", "%d" },
+	{ "ProgressHistory_v1", "u_%d" },
+}
+local WIPE_ORDERED = { "LB_Wins_v1", "LB_Rebirths_v1" }
+
+commands.wipe = function(admin, args)
+	if not canGrant(admin) then
+		return false, "wipe is not enabled for your account (AdminConfig.CanGrant)"
+	end
+	local id = tonumber(args[1] or "")
+	if not id or id <= 0 or id % 1 ~= 0 then
+		return false, "usage: wipe <numeric userid>"
+	end
+	if AdminConfig.ResetAllowList and not AdminConfig.ResetAllowList[id] then
+		return false, "that UserId is not on AdminConfig.ResetAllowList"
+	end
+
+	local online = Players:GetPlayerByUserId(id)
+	local data = online and PlayerDataService.GetData(online)
+	if not data then
+		local stored, err = PlayerDataService.AdminRead(id)
+		if err then
+			return false, "could not read saved data: " .. tostring(err)
+		end
+		data = stored
+	end
+
+	local code = tostring(math.random(100000, 999999))
+	pending[admin] = { Kind = "wipe", Code = code, UserId = id, Time = os.clock() }
+
+	return true, string.format(
+		"PERMANENT WIPE for %d (%s)\nNOW: %s\nNO BACKUP. Deletes progression, balls (also Robux balls), skins, boosts, quests, calendar, tutorial and settings.%s\nType:  confirm %s   (within %ds) or  cancel",
+		id, online and ("online as " .. online.Name .. ", will be kicked") or "offline", summary(data),
+		online == admin and "\nTHIS IS YOUR OWN ACCOUNT." or "", code, AdminConfig.ConfirmSeconds
+	)
+end
+
+local function runWipe(admin, id)
+	local online = Players:GetPlayerByUserId(id)
+	if online then
+		-- drop the session WITHOUT saving, then give the leave-saves of the other
+		-- per-player services time to land before deleting over them
+		PlayerDataService.AdminForget(online)
+		online:Kick("Your data was reset by an admin. Please rejoin.")
+		task.wait(5)
+	end
+
+	local ok, detail = PlayerDataService.AdminWipe(id)
+	if not ok then
+		log(admin, "wipe", id, "FAILED " .. tostring(detail))
+		return false, "wipe FAILED (nothing was deleted): " .. tostring(detail)
+	end
+
+	pcall(function()
+		MessagingService:PublishAsync(TOPIC, HttpService:JSONEncode({ UserId = id, JobId = game.JobId }))
+	end)
+
+	local failed = {}
+	for _, entry in ipairs(WIPE_KEYS) do
+		local removed = pcall(function()
+			DataStoreService:GetDataStore(entry[1]):RemoveAsync(string.format(entry[2], id))
+		end)
+		if not removed then
+			table.insert(failed, entry[1])
+		end
+	end
+	for _, name in ipairs(WIPE_ORDERED) do
+		local removed = pcall(function()
+			DataStoreService:GetOrderedDataStore(name):RemoveAsync(tostring(id))
+		end)
+		if not removed then
+			table.insert(failed, name)
+		end
+	end
+
+	local result = #failed == 0 and "OK" or ("PARTIAL, failed: " .. table.concat(failed, ", "))
+	log(admin, "wipe", id, result)
+	if #failed > 0 then
+		return true, "WIPED " .. id .. " (main data deleted). Could not clear: " .. table.concat(failed, ", ") .. " - run wipe again to retry."
+	end
+	return true, "WIPED " .. id .. " for good. They start fresh on their next join."
+end
+
 commands.confirm = function(admin, args)
 	local action = pending[admin]
 	if not action or os.clock() - action.Time > AdminConfig.ConfirmSeconds then
@@ -770,6 +873,10 @@ commands.confirm = function(admin, args)
 		return false, "wrong code"
 	end
 	pending[admin] = nil
+
+	if action.Kind == "wipe" then
+		return runWipe(admin, action.UserId)
+	end
 
 	if action.Kind == "grant" then
 		local ok, message = action.Run()
