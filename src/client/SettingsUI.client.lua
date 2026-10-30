@@ -98,13 +98,22 @@ local tutorialButton = create("TextButton", {
 create("UICorner", { CornerRadius = UDim.new(1, 0) }, tutorialButton)
 create("UIStroke", { Color = GOLD, Thickness = 2.5 }, tutorialButton)
 
+-- hidden on every course (oil course, countdown, win course): on phones it sat over the oil bar
+local function onCourse()
+	local state = player:GetAttribute("RunState")
+	return state == "Starting" or state == "Running" or state == "Finishing"
+		or typeof(player:GetAttribute("WinTravelBudget")) == "number"
+end
+
 local function refreshTutorialButton()
 	local finished = (player:GetAttribute("TutorialStep") or 0) >= 12
-	tutorialButton.Visible = finished
+	tutorialButton.Visible = finished and not onCourse()
 	tutorialButton.Text = player:GetAttribute("TutorialReplayStep") ~= nil and "STOP GUIDE" or "TUTORIAL"
 end
 player:GetAttributeChangedSignal("TutorialStep"):Connect(refreshTutorialButton)
 player:GetAttributeChangedSignal("TutorialReplayStep"):Connect(refreshTutorialButton)
+player:GetAttributeChangedSignal("RunState"):Connect(refreshTutorialButton)
+player:GetAttributeChangedSignal("WinTravelBudget"):Connect(refreshTutorialButton)
 refreshTutorialButton()
 
 local lastTutorialPress = 0
