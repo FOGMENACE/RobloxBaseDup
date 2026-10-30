@@ -604,6 +604,63 @@ end
 refreshRebirthPercent()
 local giftButton = makeHubButton(3, "GiftButton", "🎁", "...", SKY, 3)
 local dailyButton = makeHubButton(4, "DailyButton", "📅", "...", GREEN, -2)
+
+-- The Daily icon: a real desk calendar showing the player's actual date, instead of an
+-- emoji (emoji look different on every device and clash with the chunky outlined UI).
+do
+	local holder = dailyButton.Button.Icon
+	holder.Emoji.Visible = false
+
+	local page = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.52),
+		Size = UDim2.fromOffset(38, 38),
+		BackgroundColor3 = CREAM,
+	}, holder)
+	round(page, 7)
+	outline(page, INK, 2.5)
+
+	local header = create("Frame", {
+		Size = UDim2.new(1, 0, 0, 13),
+		BackgroundColor3 = PIN_RED,
+		BorderSizePixel = 0,
+	}, page)
+	round(header, 7)
+	-- squares off the header's lower edge, where it meets the page
+	create("Frame", {
+		Position = UDim2.new(0, 0, 1, -5),
+		Size = UDim2.new(1, 0, 0, 5),
+		BackgroundColor3 = PIN_RED,
+		BorderSizePixel = 0,
+	}, header)
+
+	local month = create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 13),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = CREAM,
+		TextSize = 10,
+		ZIndex = 2,
+	}, page)
+	local day = create("TextLabel", {
+		Position = UDim2.fromOffset(0, 13),
+		Size = UDim2.new(1, 0, 1, -13),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		TextColor3 = INK,
+		TextSize = 21,
+		ZIndex = 2,
+	}, page)
+
+	task.spawn(function()
+		while page.Parent do
+			local today = os.date("*t")
+			month.Text = string.upper(os.date("%b"))
+			day.Text = tostring(today.day)
+			task.wait(60)
+		end
+	end)
+end
 local x6Button = makeHubButton(5, "X6Button", "X6", "...", Color3.fromRGB(255, 170, 40), 3)
 x6Button.Button.Visible = false -- X6 now arrives as a random timed popup (PopupsUI)
 
@@ -1352,6 +1409,7 @@ local calendarBackdrop = create("TextButton", {
 	BackgroundTransparency = 1,
 	Text = "",
 	AutoButtonColor = false,
+	Selectable = false, -- or the controller cursor highlights the whole screen between the days
 	Visible = false,
 	ZIndex = 19,
 }, gui)
@@ -1656,17 +1714,105 @@ do
 	pcall(function()
 		player:GetPropertyChangedSignal("HasRobloxSubscription"):Connect(refreshPlus)
 	end)
-	plusBanner.Activated:Connect(function()
-		if hasPlus() then
-			showToast("Roblox Plus is active. Your discount is applied!", true)
-			return
-		end
+	local function promptPlus()
 		local ok = pcall(function()
 			MarketplaceService:PromptRobloxSubscriptionPurchase(player)
 		end)
 		if not ok then
 			showToast("Roblox Plus is not available right now.", false)
 		end
+	end
+
+	-- Controller players: a game can't tell when Roblox's window has gone, so this card
+	-- sits behind it, cursor only, and the player leaves it when they are done. That way
+	-- the store never has to guess, and it is still there underneath.
+	local plusGui = create("ScreenGui", {
+		Name = "PlusControllerCard",
+		ResetOnSpawn = false,
+		DisplayOrder = 40,
+		IgnoreGuiInset = true,
+	}, playerGui)
+	local plusShade = create("TextButton", { -- also stops the cursor clicking the store behind
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = INK,
+		BackgroundTransparency = 0.45,
+		AutoButtonColor = false,
+		Selectable = false,
+		Text = "",
+		Visible = false,
+	}, plusGui)
+	local plusCard = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(400, 190),
+		BackgroundColor3 = Color3.fromRGB(70, 40, 170),
+	}, plusShade)
+	round(plusCard, 18)
+	outline(plusCard, INK, 3.5)
+	create("UIGradient", {
+		Color = ColorSequence.new(Color3.fromRGB(140, 96, 255), Color3.fromRGB(70, 40, 170)),
+		Rotation = 90,
+	}, plusCard)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(16, 16),
+		Size = UDim2.new(1, -32, 0, 36),
+		Font = FONT,
+		Text = "GET ROBLOX PLUS?",
+		TextColor3 = Color3.fromRGB(255, 226, 120),
+		TextSize = 30,
+	}, plusCard)
+	create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(16, 56),
+		Size = UDim2.new(1, -32, 0, 24),
+		Font = Enum.Font.GothamMedium,
+		Text = "Members save on passes & items.",
+		TextColor3 = CREAM,
+		TextSize = 16,
+	}, plusCard)
+	local function plusCardButton(label, x, color)
+		local button = create("TextButton", {
+			Position = UDim2.fromOffset(x, 104),
+			Size = UDim2.fromOffset(172, 62),
+			BackgroundColor3 = color,
+			Font = FONT,
+			Text = label,
+			TextColor3 = CREAM,
+			TextSize = 20,
+			TextWrapped = true,
+		}, plusCard)
+		round(button, 14)
+		outline(button, INK, 3)
+		return button
+	end
+	plusCardButton("GET ROBLOX PLUS", 20, Color3.fromRGB(70, 180, 90)).Activated:Connect(promptPlus)
+	plusCardButton("NO, GO BACK", 208, Color3.fromRGB(200, 70, 70)).Activated:Connect(function()
+		plusShade.Visible = false
+		PanelManager.ReclaimController()
+	end)
+	PanelManager.RegisterModal(plusShade)
+
+	-- they subscribed: nothing left to answer, so the card hands back the store
+	pcall(function()
+		player:GetPropertyChangedSignal("HasRobloxSubscription"):Connect(function()
+			if plusShade.Visible and hasPlus() then
+				plusShade.Visible = false
+				PanelManager.ReclaimController()
+				showToast("Roblox Plus is active. Your discount is applied!", true)
+			end
+		end)
+	end)
+
+	plusBanner.Activated:Connect(function()
+		if hasPlus() then
+			showToast("Roblox Plus is active. Your discount is applied!", true)
+			return
+		end
+		if PanelManager.ReleaseController() then
+			plusShade.Visible = true
+		end
+		promptPlus()
 	end)
 end
 

@@ -155,6 +155,7 @@ Shine.Attach(x6Button, { Offset = 0.5 })
 -- This one leaves the input alone (Active = false): a drag starting on it orbits the camera
 -- as usual, and a short press-and-release on it (little movement) counts as the click.
 local TAP_SLOP = 14 -- pixels a finger / cursor may move and still be a tap
+local GamepadService = game:GetService("GamepadService")
 
 local function tapOnly(button, onTap)
 	button.Active = false
@@ -198,6 +199,23 @@ local function tapOnly(button, onTap)
 		starts[input] = nil
 		local at = Vector2.new(input.Position.X, input.Position.Y)
 		if (at - start).Magnitude <= TAP_SLOP and cardGui.Enabled and topmostIsButton(at) then
+			onTap()
+		end
+	end)
+
+	-- The controller's free cursor clicks with A, which is neither input above. Roblox
+	-- selects what the cursor hovers; its mouse location is the backup for when it doesn't.
+	UserInputService.InputBegan:Connect(function(input)
+		if input.KeyCode ~= Enum.KeyCode.ButtonA or not GamepadService.GamepadCursorEnabled or not cardGui.Enabled then
+			return
+		end
+		local selected = GuiService.SelectedObject
+		local hovering = selected ~= nil and (selected == button or selected:IsDescendantOf(button))
+		if not hovering then
+			local inset = GuiService:GetGuiInset()
+			hovering = topmostIsButton(UserInputService:GetMouseLocation() - inset)
+		end
+		if hovering and button.AbsoluteSize.X > 0 and button.Parent.Visible then
 			onTap()
 		end
 	end)
@@ -512,6 +530,7 @@ local leaveDim = create("TextButton", {
 	BackgroundTransparency = 1,
 	Text = "",
 	AutoButtonColor = false,
+	Selectable = false, -- or the controller cursor highlights the whole screen
 	Visible = false,
 	ZIndex = 48,
 }, gui)
@@ -666,11 +685,13 @@ end
 local LEAVE_SNOOZE_SECONDS = 10 * 60
 local leaveSnoozedUntil = 0
 
-leaveNo.Activated:Connect(function()
+local function dismissLeaveCard()
 	leaveSnoozedUntil = os.clock() + LEAVE_SNOOZE_SECONDS
 	setLeaveOpen(false)
 	remotes.LeaveCardEvent:FireServer("Dismissed")
-end)
+end
+leaveNo.Activated:Connect(dismissLeaveCard)
+require(ReplicatedStorage:WaitForChild("PanelManager")).RegisterModal(leaveFrame, dismissLeaveCard)
 
 local claiming = false
 

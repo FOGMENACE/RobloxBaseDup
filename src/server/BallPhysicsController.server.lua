@@ -1803,6 +1803,19 @@ end
 					end
 				end
 
+				-- Tutorial steps 1-2 (first run not finished): no lobby XP at all, not even
+				-- on a generator, and nothing banked for later. The client shows why when
+				-- the ball is on a generator (XPLockedOnGenerator).
+				local tutorialStep = player:GetAttribute("TutorialStep")
+				if typeof(tutorialStep) == "number" and tutorialStep <= 2 then
+					distance = 0
+					xpDistanceBuffer[player] = 0
+					local _, standingOn = getActiveGeneratorMultiplier(player, ball)
+					player:SetAttribute("XPLockedOnGenerator", standingOn ~= nil or nil)
+				elseif player:GetAttribute("XPLockedOnGenerator") then
+					player:SetAttribute("XPLockedOnGenerator", nil)
+				end
+
 				if distance > 0
 					and distance <= MAX_XP_DISTANCE_PER_HEARTBEAT then
 

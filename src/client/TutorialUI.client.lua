@@ -60,6 +60,35 @@ local gui = create("ScreenGui", {
 }, playerGui)
 
 --------------------------------------------------
+-- XP LOCKED NOTE
+--
+-- Rolling onto a generator before the first run earns nothing (the server decides,
+-- BallPhysicsController), so plain text says what to do instead.
+--------------------------------------------------
+
+local xpLockedNote = create("TextLabel", {
+	Name = "XPLockedNote",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.68),
+	Size = UDim2.new(0.9, 0, 0, 44),
+	BackgroundTransparency = 1,
+	Font = FONT,
+	Text = "Finish your first roll to start earning XP!",
+	TextColor3 = CREAM,
+	TextSize = 30,
+	TextTransparency = 1,
+	ZIndex = 30,
+}, gui)
+local xpLockedStroke = create("UIStroke", { Color = INK, Thickness = 3, Transparency = 1 }, xpLockedNote)
+
+player:GetAttributeChangedSignal("XPLockedOnGenerator"):Connect(function()
+	local show = player:GetAttribute("XPLockedOnGenerator") == true
+	local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad)
+	TweenService:Create(xpLockedNote, info, { TextTransparency = show and 0 or 1 }):Play()
+	TweenService:Create(xpLockedStroke, info, { Transparency = show and 0 or 1 }):Play()
+end)
+
+--------------------------------------------------
 -- SPOTLIGHT (dims everything except the target)
 --------------------------------------------------
 
@@ -67,7 +96,7 @@ local function dimFrame(name)
 	return create("Frame", {
 		Name = name,
 		BackgroundColor3 = Color3.fromRGB(8, 6, 24),
-		BackgroundTransparency = 0.38,
+		BackgroundTransparency = 1, -- invisible: `shade` below draws the dark, with a rounded hole
 		BorderSizePixel = 0,
 		Active = true, -- sinks clicks everywhere except the hole
 		Visible = false,
@@ -83,8 +112,25 @@ local ring = create("Frame", {
 	Visible = false,
 	ZIndex = 3,
 }, gui)
-create("UICorner", { CornerRadius = UDim.new(0, 18) }, ring)
+local ringCorner = create("UICorner", { CornerRadius = UDim.new(0, 18) }, ring)
 local ringStroke = create("UIStroke", { Color = GOLD, Thickness = 5 }, ring)
+
+-- The dark around the spotlight: an outline so thick it covers the whole screen, around
+-- an empty frame with the ring's corners, which leaves a rounded hole. (The four frames
+-- above could only leave a square one, with lit corners sticking out past the ring.)
+local shade = create("Frame", {
+	Name = "Shade",
+	BackgroundTransparency = 1,
+	Visible = false,
+	ZIndex = 1,
+}, gui)
+local shadeCorner = create("UICorner", { CornerRadius = UDim.new(0, 18) }, shade)
+create("UIStroke", {
+	Color = Color3.fromRGB(8, 6, 24),
+	Thickness = 4000,
+	Transparency = 0.38,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, shade)
 
 local pointer = create("TextLabel", {
 	Name = "Pointer",
@@ -131,7 +177,7 @@ end
 
 local function setSpotlight(target, extra)
 	if not target or not isShown(target) then
-		for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, ring, pointer }) do
+		for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, shade, ring, pointer }) do
 			frame.Visible = false
 		end
 		return
@@ -164,6 +210,11 @@ local function setSpotlight(target, extra)
 	dimBottom.Position, dimBottom.Size = UDim2.fromOffset(-2, y1), UDim2.fromOffset(sw, math.max(0, sh - y1 - 2))
 	dimLeft.Position, dimLeft.Size = UDim2.fromOffset(-2, y0), UDim2.fromOffset(math.max(0, x0 + 2), y1 - y0)
 	dimRight.Position, dimRight.Size = UDim2.fromOffset(x1, y0), UDim2.fromOffset(math.max(0, sw - 2 - x1), y1 - y0)	ring.Position, ring.Size = UDim2.fromOffset(x, y), UDim2.fromOffset(w, h)
+	-- the ring and the hole follow the target's own corners, a pad's width further out
+	local corner = PanelManager.CornerFor(target, pad)
+	ringCorner.CornerRadius = corner
+	shade.Position, shade.Size = ring.Position, ring.Size
+	shadeCorner.CornerRadius = corner
 	ringStroke.Transparency = 0.5 - math.sin(os.clock() * 6) * 0.45
 
 	local bob = math.sin(os.clock() * 6) * 6
@@ -177,7 +228,7 @@ local function setSpotlight(target, extra)
 		pointer.Position = UDim2.fromOffset(x + w / 2, y + h + 2 - bob)
 	end
 
-	for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, ring, pointer }) do
+	for _, frame in ipairs({ dimTop, dimBottom, dimLeft, dimRight, shade, ring, pointer }) do
 		frame.Visible = true
 	end
 end
@@ -351,16 +402,15 @@ create("UIStroke", { Color = INK, Thickness = 3 }, distanceLabel)
 local aftershockCost = nil -- the tutorial ball's Wins price (fetched when step 7 starts)
 
 local function worldTarget(step)
+	-- Arrows are for where to go next on the lobby floor. During a run the player can't
+	-- turn back, so they only pointed back down the course and confused people.
+	local runState = player:GetAttribute("RunState")
+	if runState ~= nil and runState ~= "" and runState ~= "Waiting" then
+		return nil
+	end
+
 	if step == 1 or step == 5 or step == 9 then
 		return workspace:FindFirstChild("StartWall")
-
-	elseif step == 2 or step == 6 or step == 10 then
-		-- Only during the oil course. Once the finish wall is hit (RunState
-		-- Finishing) and the WinCourse runs, there is nothing to point at.
-		if player:GetAttribute("RunState") ~= "Running" then
-			return nil
-		end
-		return workspace:FindFirstChild("FinishWall")
 
 	elseif step == 3 then
 		local generators = workspace:FindFirstChild("XPGenerators")
@@ -370,9 +420,6 @@ local function worldTarget(step)
 		-- not enough wins for the tutorial ball yet: point at the START wall so they
 		-- roll more courses first (the win course pays the wins)
 		if step == 7 and aftershockCost and (player:GetAttribute("Wins") or 0) < aftershockCost then
-			if player:GetAttribute("RunState") == "Running" then
-				return workspace:FindFirstChild("FinishWall")
-			end
 			return workspace:FindFirstChild("StartWall")
 		end
 		local shop = workspace:FindFirstChild("BowlingShop")
@@ -663,6 +710,8 @@ local function showCard(opts, onContinue)
 
 	TweenService:Create(cardScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = math.clamp(math.min(gui.AbsoluteSize.X / 560, gui.AbsoluteSize.Y / 380), 0.5, 1.1) }):Play()
 
+	PanelManager.RegisterModal(dim) -- controllers land on its button; it has no close
+
 	button.Activated:Once(function()
 		introDone = true
 		TweenService:Create(dim, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
@@ -696,8 +745,196 @@ local function showOutro()
 	}, function() end)
 end
 
+--------------------------------------------------
+-- CONTROLLER WALKTHROUGH
+--
+-- Right after the welcome card, for controller players: try the controls, then a look at
+-- the menu buttons. On screen only: it sends nothing to the server and changes no step or
+-- reward. Every part has a time limit and any failure skips it, so nobody gets stuck.
+--------------------------------------------------
+
+local CONTROLS_TIME = 10 -- seconds before the controls part moves on by itself
+local MENUS_TIME = 12
+
+local tourTarget, tourButton = nil, nil -- what RenderStepped spotlights and selects
+
+local function tourPanel(title, body, height)
+	local frame = create("Frame", {
+		Size = UDim2.fromOffset(330, height),
+		BackgroundColor3 = Color3.fromRGB(24, 16, 60),
+		ZIndex = 50,
+	}, gui)
+	create("UICorner", { CornerRadius = UDim.new(0, 18) }, frame)
+	create("UIStroke", { Color = GOLD, Thickness = 3 }, frame)
+	create("TextLabel", {
+		Position = UDim2.fromOffset(14, 8),
+		Size = UDim2.new(1, -28, 0, 32),
+		BackgroundTransparency = 1,
+		Font = FONT,
+		Text = title,
+		TextColor3 = GOLD,
+		TextSize = 24,
+		ZIndex = 51,
+	}, frame)
+	local label = create("TextLabel", {
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -32, 0, height - 54),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamMedium,
+		Text = body,
+		TextColor3 = CREAM,
+		TextSize = 18,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 51,
+	}, frame)
+	return frame, label
+end
+
+local function runControllerTour(onDone)
+	local UserInputService = game:GetService("UserInputService")
+	local lastInput = UserInputService:GetLastInputType()
+
+	-- only someone really on a controller: a plugged-in pad nobody is using doesn't count
+	if player:GetAttribute("TutorialReplayStep") ~= nil
+		or not (lastInput.Name:sub(1, 7) == "Gamepad" or GuiService:IsTenFootInterface()) then
+		onDone()
+		return
+	end
+
+	-- a run starting, or the player moving to a mouse, keyboard or touch, ends it at once
+	local function stillOn()
+		local kind = UserInputService:GetLastInputType()
+		return (player:GetAttribute("RunState") or "Waiting") == "Waiting"
+			and kind ~= Enum.UserInputType.Keyboard and kind ~= Enum.UserInputType.MouseButton1
+			and kind ~= Enum.UserInputType.Touch
+	end
+
+	introActive = true
+	local panel, connections = nil, {}
+
+	local function clearPart()
+		for _, connection in ipairs(connections) do
+			connection:Disconnect()
+		end
+		connections = {}
+		if panel then
+			panel:Destroy()
+			panel = nil
+		end
+		tourTarget, tourButton = nil, nil
+		PanelManager.ControllerTour = nil
+	end
+
+	local function controlsPart()
+		local hints = playerGui:FindFirstChild("ConsoleHints")
+		local row = hints and hints:FindFirstChild("HintRow")
+		if not row then
+			return
+		end
+		PanelManager.ControllerTour = "Controls"
+		tourTarget = row
+
+		local names = { "Move", "Jump", "All Buttons" }
+		local done = { false, false, false }
+		local label
+		panel, label = tourPanel("TRY THE CONTROLS!", "", 136)
+		panel.AnchorPoint = Vector2.new(1, 1)
+		panel.Position = UDim2.new(1, -12, 1, -124)
+
+		local function redraw()
+			local lines = {}
+			for index, name in ipairs(names) do
+				table.insert(lines, (done[index] and "✓  " or "•  ") .. name)
+			end
+			label.Text = table.concat(lines, "\n")
+		end
+		redraw()
+
+		local function mark(index)
+			if not done[index] then
+				done[index] = true
+				redraw()
+			end
+		end
+		-- only real input from the controller earns a check
+		table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+			if input.KeyCode == Enum.KeyCode.Thumbstick1 and input.Position.Magnitude >= 0.5 then
+				mark(1)
+			end
+		end))
+		table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+			if input.KeyCode == Enum.KeyCode.ButtonA then
+				mark(2)
+			elseif input.KeyCode == Enum.KeyCode.DPadDown then
+				mark(3)
+			end
+		end))
+
+		local deadline = os.clock() + CONTROLS_TIME
+		while os.clock() < deadline and stillOn() and not (done[1] and done[2] and done[3]) do
+			task.wait(0.1)
+		end
+		if done[1] and done[2] and done[3] then
+			task.wait(0.7) -- let the last check be seen
+		end
+	end
+
+	local function menusPart()
+		local hub = playerGui:FindFirstChild("HubUI")
+		local tile = hub and hub:FindFirstChild("ShopButton", true)
+		local grid = tile and tile.Parent
+		if not stillOn() or not grid or not isShown(grid) then
+			return
+		end
+		PanelManager.ControllerTour = "Menus"
+		tourTarget = grid
+
+		local _
+		panel, _ = tourPanel("YOUR MENUS", "As you unlock them, each one shows its own shortcut button.", 170)
+		local position, size = screenRect(grid)
+		panel.AnchorPoint = Vector2.new(0, 0.5)
+		panel.Position = UDim2.fromOffset(position.X + size.X + 28, position.Y + size.Y / 2)
+
+		local pressed = false
+		local button = create("TextButton", {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 1, -12),
+			Size = UDim2.fromOffset(200, 46),
+			BackgroundColor3 = Color3.fromRGB(88, 196, 110),
+			Font = FONT,
+			Text = "CONTINUE",
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextSize = 24,
+			ZIndex = 52,
+		}, panel)
+		create("UICorner", { CornerRadius = UDim.new(0, 14) }, button)
+		table.insert(connections, button.Activated:Connect(function()
+			pressed = true
+		end))
+		tourButton = button -- ConsoleControls selects it, so A presses it
+
+		local deadline = os.clock() + MENUS_TIME
+		while os.clock() < deadline and stillOn() and not pressed do
+			task.wait(0.1)
+		end
+	end
+
+	task.spawn(function()
+		for _, part in ipairs({ controlsPart, menusPart }) do
+			local ok, problem = pcall(part)
+			if not ok then
+				warn("[TutorialUI] Controller walkthrough skipped a part:", problem)
+			end
+			clearPart()
+		end
+		introActive = false
+		onDone()
+	end)
+end
+
 local shownStep = nil
-local calendarOpened = false
 local wasInTutorial = false
 
 local function updateBanner(step)
@@ -707,8 +944,10 @@ local function updateBanner(step)
 	-- first time in the tutorial: the welcome card comes first, hints start after CONTINUE
 	if step == 1 and not introDone and not introActive and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
 		showIntro(function()
-			shownStep = nil
-			updateBanner(player:GetAttribute("TutorialReplayStep") or player:GetAttribute("TutorialStep"))
+			runControllerTour(function()
+				shownStep = nil
+				updateBanner(player:GetAttribute("TutorialReplayStep") or player:GetAttribute("TutorialStep"))
+			end)
 		end)
 	end
 	shownStep = step
@@ -769,14 +1008,6 @@ RunService.RenderStepped:Connect(function()
 		banner.Text = textFor(step)
 	end
 
-	-- step 11: the calendar appears on screen by itself, once
-	if active and step == 11 and not calendarOpened and (player:GetAttribute("RunState") or "Waiting") == "Waiting" then
-		calendarOpened = true
-		task.delay(0.6, function()
-			PanelManager.Open("Calendar")
-		end)
-	end
-
 	-- spotlight for button steps (only in the lobby)
 	local lobby = (player:GetAttribute("RunState") or "Waiting") == "Waiting"
 	local extra = (step == 4 and PanelManager.IsOpen("Rebirth")) and findGui("FreeTag") or nil
@@ -802,7 +1033,15 @@ RunService.RenderStepped:Connect(function()
 			frame.Active = true
 		end
 	end
-	setSpotlight(active and lobby and spotlightTarget(step) or nil, extra)
+	local spotlight = active and lobby and spotlightTarget(step) or nil
+	if tourTarget then
+		-- the controller walkthrough: lights its target, selects only its own button
+		PanelManager.TutorialTarget = tourButton
+		setSpotlight(tourTarget, nil)
+	else
+		PanelManager.TutorialTarget = spotlight -- controllers get it selected (ConsoleControls)
+		setSpotlight(spotlight, extra)
+	end
 
 	local target = active and worldTarget(step) or nil
 	local ball = getOwnBall()

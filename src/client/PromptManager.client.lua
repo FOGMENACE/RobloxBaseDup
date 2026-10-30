@@ -10,7 +10,8 @@
 --      allowed over the store and other panels, and only held back during a
 --      run. A short, non-blocking "do it now" banner appears with each one.
 --      The server says what is already done (PromptService) and re-checks
---      group membership itself.
+--      group membership itself. Controller players get a message instead of
+--      the prompts (see usingController).
 --   2. AFK: Roblox kicks after 20 minutes without input and scripts cannot
 --      fake input (VirtualUser needs plugin security, so the old virtual
 --      click silently failed). After AFK_REJOIN_AFTER seconds idle the
@@ -181,6 +182,29 @@ end
 
 local favoriteBusy = false
 
+-- These prompts open by themselves, mid-play, in Roblox's own windows, and one can leave
+-- a controller player stuck on it. Those players get a single message per session that
+-- blocks nothing instead. (The virtual cursor is for windows the player opens on
+-- purpose, like Plus in the store: PanelManager.ReleaseController.)
+local CONTROLLER_MESSAGES = {
+	Group = "Enjoying it? Join our group from the game page!",
+	Favorite = "Enjoying it? Favorite us from the game page!",
+}
+local controllerMessageShown = {}
+
+local function usingController()
+	local lastInput = UserInputService:GetLastInputType()
+	return lastInput.Name:sub(1, 7) == "Gamepad"
+		or (UserInputService.GamepadEnabled and not UserInputService.MouseEnabled and not UserInputService.TouchEnabled)
+end
+
+local function offerToController(kind)
+	if not controllerMessageShown[kind] then
+		controllerMessageShown[kind] = true
+		showBanner(CONTROLLER_MESSAGES[kind])
+	end
+end
+
 local function offerGroup(groupId)
 	showBanner("JOIN OUR COMMUNITY for free wins!")
 	local ok, status = pcall(function()
@@ -243,12 +267,20 @@ local function runLoop(kind)
 				if state.GroupDone then
 					return -- done: stop for the rest of the session
 				end
-				offerGroup(state.GroupId)
+				if usingController() then
+					offerToController("Group")
+				else
+					offerGroup(state.GroupId)
+				end
 			else
 				if state.FavoriteDone then
 					return
 				end
-				offerFavorite()
+				if usingController() then
+					offerToController("Favorite")
+				else
+					offerFavorite()
+				end
 			end
 		end
 

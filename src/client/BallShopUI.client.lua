@@ -269,6 +269,7 @@ local ballModels = ReplicatedStorage:FindFirstChild("BallModels")
 local BallAccessories = require(ReplicatedStorage:WaitForChild("BallAccessories"))
 local spinners = {}
 local Shine = require(ReplicatedStorage:WaitForChild("Shine"))
+local PanelManager = require(ReplicatedStorage:WaitForChild("PanelManager"))
 
 RunService.RenderStepped:Connect(function(deltaTime)
 	if not gui.Enabled then
@@ -441,6 +442,8 @@ local function showOriginalPopup(ball, wins, rebirths)
 		ZIndex = 50,
 	}, popup)
 	dim.Activated:Connect(closePopup)
+	dim.Selectable = false -- a click-away backdrop, not a button for controllers to land on
+	PanelManager.RegisterModal(popup, closePopup)
 
 	local box = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1036,6 +1039,9 @@ setOpen = function(open)
 end
 
 closeButton.Activated:Connect(function()
+	setOpen(false)
+end)
+PanelManager.RegisterModal(panel, function()
 	setOpen(false)
 end)
 

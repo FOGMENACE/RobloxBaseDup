@@ -183,6 +183,16 @@ local function updateKeys()
 		return
 	end
 
+	-- A controller browsing a menu, or steering Roblox's virtual cursor: the stick moves
+	-- that, not the ball.
+	if game:GetService("GamepadService").GamepadCursorEnabled
+		or (game:GetService("GuiService").SelectedObject
+			and UserInputService:GetLastInputType().Name:sub(1, 7) == "Gamepad") then
+		inputX = 0
+		inputZ = 0
+		return
+	end
+
 	local x = 0
 	local z = 0
 
@@ -269,6 +279,19 @@ local function updateKeys()
 
 	if x == 0 and z == 0 and (stickX ~= 0 or stickZ ~= 0) then
 		x, z = stickX, stickZ
+	end
+
+	-- Controller left stick, read directly in case the control module reports nothing
+	-- (it only drives a controller it has made active, and needs a character).
+	if x == 0 and z == 0 and UserInputService.GamepadEnabled then
+		for _, state in ipairs(UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)) do
+			if state.KeyCode == Enum.KeyCode.Thumbstick1 then
+				if state.Position.Magnitude > 0.2 then
+					x, z = state.Position.X, state.Position.Y
+				end
+				break
+			end
+		end
 	end
 
 	if x == 0 and arrowX ~= 0 then
@@ -869,6 +892,11 @@ local lastJumpSent = 0
 
 local function requestJump(held)
 	if UserInputService:GetFocusedTextBox() or player:GetAttribute("LoadingDone") ~= true then
+		return
+	end
+
+	-- A is the cursor's click while Roblox's virtual cursor is on
+	if game:GetService("GamepadService").GamepadCursorEnabled then
 		return
 	end
 

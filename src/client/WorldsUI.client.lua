@@ -183,6 +183,9 @@ end
 close.Activated:Connect(function()
 	panel.Visible = false
 end)
+require(ReplicatedStorage:WaitForChild("PanelManager")).RegisterModal(panel, function()
+	panel.Visible = false
+end)
 
 --------------------------------------------------
 -- HIDE LOCKED WORLDS + THEMED LIGHTING

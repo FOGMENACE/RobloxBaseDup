@@ -1038,6 +1038,18 @@ end
 
 local lastCameraMode = nil
 
+local rightStick = Vector3.zero
+UserInputService.InputChanged:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Thumbstick2 then
+		rightStick = input.Position
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Thumbstick2 then
+		rightStick = Vector3.zero
+	end
+end)
+
 local function updateCamera(
 	deltaTime
 )
@@ -1076,6 +1088,13 @@ local function updateCamera(
 	--------------------------------------------------
 
 	if mode == "Lobby" then
+
+		-- controller right stick orbits like a mouse drag (not while browsing a menu)
+		local stick = rightStick
+		if stick.Magnitude > 0.15 and not game:GetService("GuiService").SelectedObject then
+			lobbyYaw -= stick.X * 2.6 * deltaTime
+			lobbyPitch = math.clamp(lobbyPitch - stick.Y * 1.6 * deltaTime, MIN_LOBBY_PITCH, MAX_LOBBY_PITCH)
+		end
 
 		-- back from a run: the smoothed lobby camera restarts at the lobby view (it
 		-- used to ease in from where the course camera left off and fly through
@@ -1241,6 +1260,17 @@ end
 zoomButton.Activated:Connect(function()
 	cycleLobbyZoom()
 	refreshZoomButton()
+end)
+
+-- controller: click the right stick to change the lobby zoom
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed or input.KeyCode ~= Enum.KeyCode.ButtonR3 then
+		return
+	end
+	local ball = getBall()
+	if ball and getCameraMode(ball) == "Lobby" then
+		cycleLobbyZoom()
+	end
 end)
 
 RunService.RenderStepped:Connect(refreshZoomButton)
